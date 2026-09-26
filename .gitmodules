@@ -1,0 +1,3 @@
+[submodule "render/vulkan-jai"]
+    path = render/vulkan-jai
+    url = https://github.com/rytc/vulkan-jai
