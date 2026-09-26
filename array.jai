@@ -25,7 +25,7 @@ array_element_index :: inline (array: []T, item: *$T) -> s64 {
 
 arrays_equal :: inline (a: []$T, b: []T) -> bool {
     if a.count != b.count return false;
-    return memcmp(a.data, b.data, a.count) == 0;
+    return memcmp(a.data, b.data, a.count * size_of(T)) == 0;
 }
 
 array_append :: (a: *[..]$T, b: []T) {
