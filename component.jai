@@ -15,7 +15,7 @@
 // );
 //
 // 'entity' in this case just means a struct that has a pointer to an instance of the relevant component type. 
-// the first pointer of the component's type on said entity struct is assumed to be the relevant component pointer.
+// the first pointer of the component's type on said entity struct is assumed to be the relevant component pointer, unless the pointer is explicitly provided.
 //
 // e.g. 
 // {
