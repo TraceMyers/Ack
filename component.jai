@@ -39,11 +39,12 @@
 //      
 //      es := Entity_Subtype.{id=2};
 //      
-//      // same as above, this only sets 'left_cheek' on the base type.
+//      // this only sets 'freak_cheek', since the component pointer search does not recurse into the base type
 //      create_component(*entity_cheeks, es.id);
 //
-//      // if we want to initialize 'freak_cheek', we must pass a pointer to it.
-//      create_component(*entity_cheeks, es.id, *es.freak_cheek);
+//      // if we want to initialize 'left_cheek' and 'right_cheek', we must pass pointers.
+//      create_component(*entity_cheeks, es.id, *es.left_cheek);
+//      create_component(*entity_cheeks, es.id, *es.right_cheek);
 // }
 //
 // the consistency and simplicity of this approach makes it easier to manage than other implementations I have tried.
