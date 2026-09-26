@@ -1,8 +1,8 @@
-TeRM
+Ack!
 ===
 
 MIT-licensed modules for .jai language programs.
 
-Meant to be used in addition to the base modules, not a replacement, mostly.
+A video game engine that doesn't define the entity type, for people who like that.
 
-The structure of these things is still being figured out, many are unfinished and more are to be added. This framework is being developed alongside several applications, including a 3D first-person video game.
+Very unfinished. I expect this will be worth using mid-2027.
