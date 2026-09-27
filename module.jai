@@ -7,8 +7,17 @@
     MIN_PHYSICS_BODY_SPEED_ALONG_AXIS := 0.000001,
     FLIP_VECTOR_2D_Y_AXIS := false, // origin at upper left? flip it
     LOG_VERTICAL_MODE := true,
+    // for users, 'validation' is split into 'validation' and 'verbosity' so that your asserts and logs can be controlled separately.
+    // USER_VERBOSITY_LEVEL = 0 turns off user logs.
+    // USER_VALIDATION_LEVEL = 0 turns off user asserts
+    // you can use every other integer value to have as many validation and assert levels as you like. 
     USER_VERBOSITY_LEVEL     := 1,
     USER_VALIDATION_LEVEL    := 1,
+    // engine validation levels control both asserts and log verbosity:
+    // 0 = no logs or asserts
+    // 1 = just asserts
+    // 2 = adds logs
+    // 3 = more asserts + verbose logs
     GENERAL_VALIDATION_LEVEL := 2,
     PHYSICS_VALIDATION_LEVEL := 2,
     RENDER_VALIDATION_LEVEL  := 2,
@@ -35,20 +44,20 @@ Gen_Ref :: struct {
     generation: u32;
 }
 
-Ack_Validation_Level :: enum u8 {
-    // 0 = no asserts or logs.
-    NONE   :: 0;
-    // 1 = some asserts.
-    LOW    :: 1;
-    // 2 = more asserts, some logs.
-    MEDIUM :: 2;
-    // 3 = all errors asserted, verbose logs.
-    HIGH   :: 3;
+operator == :: (a: Gen_Ref, b: Gen_Ref) -> bool {
+    return a.index == b.index && a.generation == b.generation;
 }
 
-#assert(GENERAL_VALIDATION_LEVEL >= Ack_Validation_Level.NONE && GENERAL_VALIDATION_LEVEL <= Ack_Validation_Level.HIGH);
-#assert(PHYSICS_VALIDATION_LEVEL >= Ack_Validation_Level.NONE && PHYSICS_VALIDATION_LEVEL <= Ack_Validation_Level.HIGH);
-#assert(RENDER_VALIDATION_LEVEL  >= Ack_Validation_Level.NONE && RENDER_VALIDATION_LEVEL  <= Ack_Validation_Level.HIGH);
+Ack_Validation_Level :: enum u8 {
+    NONE    :: 0;
+    LOW     :: 1;
+    MEDIUM  :: 2;
+    HIGH    :: 3;
+}
+
+#assert(GENERAL_VALIDATION_LEVEL >= Ack_Validation_Level.LOW && GENERAL_VALIDATION_LEVEL <= Ack_Validation_Level.HIGH);
+#assert(PHYSICS_VALIDATION_LEVEL >= Ack_Validation_Level.LOW && PHYSICS_VALIDATION_LEVEL <= Ack_Validation_Level.HIGH);
+#assert(RENDER_VALIDATION_LEVEL  >= Ack_Validation_Level.LOW && RENDER_VALIDATION_LEVEL  <= Ack_Validation_Level.HIGH);
 
 // ---------------------------------------------------------------------------------------------
 // context additions
@@ -123,23 +132,58 @@ ImGui :: #import "Ack!/render/ImGui_VulkanWin32";
 
 #scope_module
 
-engine_log :: ($verbosity: Ack_Validation_Level, fmt: string, args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) #expand {
-    #assert(verbosity >= .MEDIUM);
-    #if verbosity <= validation_level {
-        do_log("LOG", false);
-    }
+// -----------------------------------------------------------------------------------------------
+
+#if GENERAL_VALIDATION_LEVEL > 0 {
+    engine_check   :: engine_check_impl;
+    engine_log     :: engine_log_impl;
+    engine_warning :: engine_warning_impl;
+} else {
+    engine_check   :: discard_engine_check_impl;
+    engine_log     :: discard_engine_log_impl;
+    engine_warning :: discard_engine_warning_impl;
 }
 
-engine_warning :: ($verbosity: Ack_Validation_Level, fmt: string, args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) #expand {
-    #assert(verbosity >= .MEDIUM);
-    #if verbosity <= validation_level {
-        do_log("WARNING", true);
-    }
+#if PHYSICS_VALIDATION_LEVEL > 0 {
+    physics_check    :: #bake_arguments engine_check_impl(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
+    physics_log      :: #bake_arguments engine_log_impl(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
+    physics_warning  :: #bake_arguments engine_warning_impl(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
+} else {
+    physics_check    :: #bake_arguments discard_engine_check_impl(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
+    physics_log      :: #bake_arguments discard_engine_log_impl(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
+    physics_warning  :: #bake_arguments discard_engine_warning_impl(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
 }
 
-// todo: does the bool evaluate before the expansion? if so, may need to pass code
-engine_check :: ($assert_level: Ack_Validation_Level, condition: bool, fmt := "", args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) -> bool #no_debug #expand {
-    #if validation_level > .NONE && assert_level <= validation_level {
+#if RENDER_VALIDATION_LEVEL > 0 {
+    render_check     :: #bake_arguments engine_check_impl(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+    render_log       :: #bake_arguments engine_log_impl(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+    render_warning   :: #bake_arguments engine_warning_impl(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+
+    render_check :: ($assert_level: Ack_Validation_Level, result: VkResult, fmt := "", args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) #no_debug #expand {
+        #if assert_level <= validation_level {
+            if result != .SUCCESS && assert_helper(fmt, ..args, caller_loc) {
+                ack_log("vk error: %", result);
+                if fmt.count > 0 {
+                    do_log("ERROR", true);
+                }
+                debug_break();
+            }
+        }
+    }
+} else {
+    render_check     :: #bake_arguments discard_engine_check_impl(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+    render_log       :: #bake_arguments discard_engine_log_impl(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+    render_warning   :: #bake_arguments discard_engine_warning_impl(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+
+    render_check :: ($assert_level: Ack_Validation_Level, #discard result: VkResult, #discard fmt := "", #discard args: ..Any, #discard add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, #discard caller_loc := #caller_location) #expand {}
+}
+
+// -----------------------------------------------------------------------------------------------
+// ..._evaluate() procedures always evaluate the condition and return it, even if
+// the assert level is not met.
+
+engine_evaluate :: ($assert_level: Ack_Validation_Level, condition: bool, fmt := "", args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) -> bool #no_debug #expand {
+    #if assert_level <= validation_level {
         if !condition && assert_helper(fmt, ..args, caller_loc) {
             if fmt.count > 0 {
                 do_log("ERROR", true);
@@ -150,9 +194,9 @@ engine_check :: ($assert_level: Ack_Validation_Level, condition: bool, fmt := ""
     return condition;
 }
 
-render_check :: ($assert_level: Ack_Validation_Level, result: VkResult, fmt := "", args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) -> bool #no_debug #expand {
+render_evaluate :: ($assert_level: Ack_Validation_Level, result: VkResult, fmt := "", args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) -> bool #no_debug #expand {
     success := result == .SUCCESS;
-    #if validation_level > .NONE && assert_level <= validation_level {
+    #if assert_level <= validation_level {
         if !success && assert_helper(fmt, ..args, caller_loc) {
             ack_log("vk error: %", result);
             if fmt.count > 0 {
@@ -164,14 +208,10 @@ render_check :: ($assert_level: Ack_Validation_Level, result: VkResult, fmt := "
     return success;
 }
 
-render_log       :: #bake_arguments engine_log(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
-render_warning   :: #bake_arguments engine_warning(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
-render_check     :: #bake_arguments engine_check(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+render_evaluate  :: #bake_arguments engine_evaluate(sector="render", validation_level=RENDER_VALIDATION_LEVEL);
+physics_evaluate  :: #bake_arguments engine_evaluate(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
 
-physics_log      :: #bake_arguments engine_log(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
-physics_warning  :: #bake_arguments engine_warning(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
-physics_check    :: #bake_arguments engine_check(sector="physics", validation_level=PHYSICS_VALIDATION_LEVEL);
-
+// -----------------------------------------------------------------------------------------------
 
 #if OS == .WINDOWS {
     Win32 :: #import "Windows";
@@ -236,6 +276,7 @@ physics_check    :: #bake_arguments engine_check(sector="physics", validation_le
 #import "Machine_X64";
 #import "Compiler";
 #import "String";
+#import "Hash";
 #import "Hash_Table";
 #import "Sort";
 #import "md5";
@@ -255,6 +296,24 @@ Program_Print :: #import "Program_Print";
 
 #scope_file
 
+engine_log_impl :: ($verbosity: Ack_Validation_Level, fmt: string, args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) #expand {
+    #assert(verbosity >= .MEDIUM);
+    #if verbosity <= validation_level {
+        do_log("LOG", false);
+    }
+}
+
+discard_engine_log_impl :: ($verbosity: Ack_Validation_Level, #discard fmt: string, #discard args: ..Any, #discard add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, #discard caller_loc := #caller_location) #expand {}
+
+engine_warning_impl :: ($verbosity: Ack_Validation_Level, fmt: string, args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) #expand {
+    #assert(verbosity >= .MEDIUM);
+    #if verbosity <= validation_level {
+        do_log("WARNING", true);
+    }
+}
+
+discard_engine_warning_impl :: ($verbosity: Ack_Validation_Level, #discard fmt: string, #discard args: ..Any, #discard add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, #discard caller_loc := #caller_location) #expand {}
+
 do_log :: ($type: string, $log_location: bool) #expand {
     header :: #run tprint("% Ack!", type);
     use_header := header;
@@ -262,8 +321,21 @@ do_log :: ($type: string, $log_location: bool) #expand {
         use_header = tprint("%%", header, `sector);
     }
     do_log_location :: #ifx log_location then Ack_Log_Location.YES else Ack_Log_Location.NO;
-    ack_log(fmt=`fmt, args=..`args, add_newline=`add_newline, log_location=do_log_location, verbosity=S64_MAX, caller_loc=`caller_loc, override_header=use_header);
+    ack_log(fmt=`fmt, args=..`args, add_newline=`add_newline, log_location=do_log_location, verbosity=FORCE_LOG, caller_loc=`caller_loc, override_header=use_header);
 }
+
+engine_check_impl :: ($assert_level: Ack_Validation_Level, condition: bool, fmt := "", args: ..Any, add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, caller_loc := #caller_location) #no_debug #expand {
+    #if assert_level <= validation_level {
+        if !condition && assert_helper(fmt, ..args, caller_loc) {
+            if fmt.count > 0 {
+                do_log("ERROR", true);
+            }
+            debug_break();
+        }
+    }
+}
+
+discard_engine_check_impl :: ($assert_level: Ack_Validation_Level, #discard condition: bool, #discard fmt := "", #discard args: ..Any, #discard add_newline := true, $sector := "", $validation_level := cast(Ack_Validation_Level) GENERAL_VALIDATION_LEVEL, #discard caller_loc := #caller_location) #expand {}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

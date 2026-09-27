@@ -17,9 +17,9 @@ create_vk_instance :: () -> bool {
     using context.renderer;
     auto_release_temp();
     
-    if !render_check(.LOW, instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
+    if !render_evaluate(.LOW, instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
 
-    if !render_check(.LOW, instance_layers_are_supported(required_layers), "required instance layers unsupported") then return false;
+    if !render_evaluate(.LOW, instance_layers_are_supported(required_layers), "required instance layers unsupported") then return false;
 
     app_info := VkApplicationInfo.{
         pApplicationName    = temp_c_string(application_name),
@@ -36,7 +36,7 @@ create_vk_instance :: () -> bool {
         ppEnabledExtensionNames = required_instance_extensions.data
     };
 
-    if !render_check(.LOW, vkCreateInstance(*create_info, null, *vk_instance), "failed to create vulkan instance") then return false;
+    if !render_evaluate(.LOW, vkCreateInstance(*create_info, null, *vk_instance), "failed to create vulkan instance") then return false;
 
     render_log(.MEDIUM, "created vk instance");
     return true;
@@ -46,7 +46,7 @@ instance_extensions_are_supported :: (extensions: []*u8) -> bool {
     auto_release_temp();
 
     available_extensions, result := vkEnumerateInstanceExtensionProperties(null,,temp);
-    if !render_check(.LOW, result, "failed to enumerate instance extension properties") then return false;
+    if !render_evaluate(.LOW, result, "failed to enumerate instance extension properties") then return false;
 
     for need_ext : extensions {
         ext_found: bool;
@@ -69,7 +69,7 @@ instance_layers_are_supported :: (layers: []*u8) -> bool {
     auto_release_temp();
     
     available_layers, result := vkEnumerateInstanceLayerProperties(,,temp);
-    if !render_check(.LOW, result, "failed to enumerate instance instance layer properties") then return false;
+    if !render_evaluate(.LOW, result, "failed to enumerate instance instance layer properties") then return false;
 
     for need_layer : layers {
         layer_found: bool;
@@ -100,7 +100,7 @@ create_surface :: () -> bool {
             hwnd = window,
             hinstance = Win32.GetModuleHandleW(null)
         };
-        if !render_check(.LOW, vkCreateWin32SurfaceKHR(vk_instance, *create_info, null, *surface), "failed to create surface") then return false;
+        if !render_evaluate(.LOW, vkCreateWin32SurfaceKHR(vk_instance, *create_info, null, *surface), "failed to create surface") then return false;
     } else {
         return false;
     }
@@ -117,8 +117,8 @@ select_physical_device :: () -> bool {
     auto_release_temp();
 
     devices, result := vkEnumeratePhysicalDevices(vk_instance,,temp);
-    if !render_check(.LOW, result, "failed to enumerate physical devices") then return false;
-    if !render_check(.LOW, devices.count > 0, "no physical devices found on the system") then return false;
+    if !render_evaluate(.LOW, result, "failed to enumerate physical devices") then return false;
+    if !render_evaluate(.LOW, devices.count > 0, "no physical devices found on the system") then return false;
 
     best_score: s32;
     best_scored_device: VkPhysicalDevice;
@@ -131,10 +131,10 @@ select_physical_device :: () -> bool {
         }
     }
 
-    if !render_check(.LOW, best_scored_device != null, "unable to find a suitable physical device") then return false;
+    if !render_evaluate(.LOW, best_scored_device != null, "unable to find a suitable physical device") then return false;
 
     context.renderer.physical.obj = best_scored_device;
-    if !render_check(.LOW, determine_physical_device_queue_family_capabilities(*context.renderer.physical), "unable to set selected physical device queue family properties") then return false;
+    if !render_evaluate(.LOW, determine_physical_device_queue_family_capabilities(*context.renderer.physical), "unable to set selected physical device queue family properties") then return false;
 
     set_physical_device_properties(*physical);
     {
@@ -220,7 +220,7 @@ determine_physical_device_queue_family_capabilities :: (physical: *Physical_Devi
     physical.queue_family_indices = .{};
 
     queue_family_properties := vkGetPhysicalDeviceQueueFamilyProperties(physical.obj,,temp);
-    if !render_check(.LOW, queue_family_properties.count > 0, "physical device queue family properties count is 0") then return false;
+    if !render_evaluate(.LOW, queue_family_properties.count > 0, "physical device queue family properties count is 0") then return false;
 
     max_support_score: float;
 
@@ -280,7 +280,7 @@ device_extensions_are_supported :: (phys: VkPhysicalDevice, extensions: []*u8) -
     auto_release_temp();
 
     available_extensions, result := vkEnumerateDeviceExtensionProperties(phys, null,,temp);
-    if !render_check(.LOW, result, "unable to enumerate physical device extension properties") then return false;
+    if !render_evaluate(.LOW, result, "unable to enumerate physical device extension properties") then return false;
 
     for need_ext : extensions {
         ext_found: bool;
@@ -420,7 +420,7 @@ create_logical_device :: () -> bool {
     };
 
     result := vkCreateDevice(physical.obj, *device_create_info, null, *logical.obj);
-    if !render_check(.LOW, result, "failed to create the logical device") return false;
+    if !render_evaluate(.LOW, result, "failed to create the logical device") return false;
 
     vkGetDeviceQueue(logical.obj, xx physical.queue_family_indices.graphics_index, 0, *graphics_queue);
     vkGetDeviceQueue(logical.obj, xx physical.queue_family_indices.transfer_index, 0, *transfer_queue);
@@ -465,7 +465,7 @@ create_frame_datas :: () -> bool {
     semaphore_info := VkSemaphoreCreateInfo.{};
 
     for 0..frames.count-1 {
-        if !render_check(.LOW, vkCreateCommandPool(logical.obj, *command_pool_info, null, *frames[it].command_pool), "failed to create a command pool") then return false;
+        if !render_evaluate(.LOW, vkCreateCommandPool(logical.obj, *command_pool_info, null, *frames[it].command_pool), "failed to create a command pool") then return false;
 
         command_alloc_info := VkCommandBufferAllocateInfo.{
             commandPool = frames[it].command_pool,
@@ -473,15 +473,15 @@ create_frame_datas :: () -> bool {
             level = .PRIMARY
         };
 
-        if !render_check(.LOW, vkAllocateCommandBuffers(logical.obj, *command_alloc_info, *frames[it].command_buffer), "failed to create a command buffer") then return false;
+        if !render_evaluate(.LOW, vkAllocateCommandBuffers(logical.obj, *command_alloc_info, *frames[it].command_buffer), "failed to create a command buffer") then return false;
 
-        if !render_check(.LOW, vkCreateFence(logical.obj, *fence_info, null, *frames[it].render_fence), "failed to create a render fence") then return false;
+        if !render_evaluate(.LOW, vkCreateFence(logical.obj, *fence_info, null, *frames[it].render_fence), "failed to create a render fence") then return false;
 
-        if !render_check(.LOW, vkCreateFence(logical.obj, *fence_info, null, *frames[it].present_fence), "failed to create a present fence") then return false;
+        if !render_evaluate(.LOW, vkCreateFence(logical.obj, *fence_info, null, *frames[it].present_fence), "failed to create a present fence") then return false;
 
-        if !render_check(.LOW, vkCreateSemaphore(logical.obj, *semaphore_info, null, *frames[it].image_available_semaphore), "failed to create a semaphore") then return false;
+        if !render_evaluate(.LOW, vkCreateSemaphore(logical.obj, *semaphore_info, null, *frames[it].image_available_semaphore), "failed to create a semaphore") then return false;
 
-        if !render_check(.LOW, vkCreateSemaphore(logical.obj, *semaphore_info, null, *frames[it].image_rendered_semaphore), "failed to create a semaphore") then return false;
+        if !render_evaluate(.LOW, vkCreateSemaphore(logical.obj, *semaphore_info, null, *frames[it].image_rendered_semaphore), "failed to create a semaphore") then return false;
     }
 
     fence_info.flags = 0;
@@ -492,7 +492,7 @@ create_frame_datas :: () -> bool {
             queueFamilyIndex = xx physical.queue_family_indices.transfer_index
         };
 
-        if !render_check(.LOW, vkCreateCommandPool(logical.obj, *pool_info, null, *transfer_command_pool), "failed to create the transfer command pool") then return false;
+        if !render_evaluate(.LOW, vkCreateCommandPool(logical.obj, *pool_info, null, *transfer_command_pool), "failed to create the transfer command pool") then return false;
 
         buffer_alloc_info := VkCommandBufferAllocateInfo.{
             commandPool = transfer_command_pool,
@@ -500,9 +500,9 @@ create_frame_datas :: () -> bool {
             level = .PRIMARY
         };
 
-        if !render_check(.LOW, vkAllocateCommandBuffers(logical.obj, *buffer_alloc_info, *transfer_command_buffer), "failed to create the transfer command pool") then return false;
+        if !render_evaluate(.LOW, vkAllocateCommandBuffers(logical.obj, *buffer_alloc_info, *transfer_command_buffer), "failed to create the transfer command pool") then return false;
 
-        if !render_check(.LOW, vkCreateFence(logical.obj, *fence_info, null, *transfer_fence), "failed to create the transfer fence") then return false;
+        if !render_evaluate(.LOW, vkCreateFence(logical.obj, *fence_info, null, *transfer_fence), "failed to create the transfer fence") then return false;
     }
 
     render_log(.MEDIUM, "created frame datas. max frames in flight %", frames.count);
@@ -617,7 +617,7 @@ create_default_pipeline_layouts :: () -> bool {
             pSetLayouts = descriptor_set_layouts.data,
         };
 
-        if !render_check(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create billboard pipeline layout") {
+        if !render_evaluate(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *billboard_pipeline_layout), "failed to create billboard pipeline layout") {
             return false;
         }
     }
@@ -637,7 +637,7 @@ create_default_pipeline_layouts :: () -> bool {
             pSetLayouts = descriptor_set_layouts.data
         };
 
-        if !render_check(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_mesh_pipeline_layout), "failed to create mesh pipeline layout") {
+        if !render_evaluate(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_mesh_pipeline_layout), "failed to create mesh pipeline layout") {
             return false;
         }
     }
@@ -659,7 +659,7 @@ create_default_pipeline_layouts :: () -> bool {
             pSetLayouts = descriptor_set_layouts.data
         };
 
-        if !render_check(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_skinned_mesh_pipeline_layout), "failed to create skinned mesh pipeline layout") {
+        if !render_evaluate(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *opaque_skinned_mesh_pipeline_layout), "failed to create skinned mesh pipeline layout") {
             return false;
         }
     }

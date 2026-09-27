@@ -70,7 +70,7 @@ make_pmf :: (pdf: (x: float) -> y: float, min_x: float, max_x: float, sample_res
     max_y: float;
     for y : curve.y_values {
         // (pseudo) likelihood values must be >= 0
-        engine_check(.MEDIUM, y >= 0);
+        engine_check(.HIGH, y >= 0);
         max_y = max(y, max_y);
     }
 

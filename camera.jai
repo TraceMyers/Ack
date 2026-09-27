@@ -131,7 +131,7 @@ get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_I
 get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2) -> origin: Vector3, direction: Vector3 {
     engine_check(.LOW, viewport.x > 0);
     engine_check(.LOW, viewport.y > 0);
-    engine_check(.MEDIUM, is_normalized(camera_orientation));
+    engine_check(.HIGH, is_normalized(camera_orientation));
 
     norm_position := window_pos / viewport;
     norm_clip_rect_center := Vector2.{0.5,0.5};
@@ -168,7 +168,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 
 // ray doesn't have to be normalized (?)
 get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
-    engine_check(.MEDIUM, is_normalized(camera_orientation));
+    engine_check(.HIGH, is_normalized(camera_orientation));
 
     camera_axis_fore  := rotate(WORLD_AXIS_FORE, camera_orientation);
     camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
@@ -235,9 +235,9 @@ make_draw_plane :: (camera: Camera_Info, viewport: Vector2, distance: float) -> 
 
 // 0,0 -> bottom left
 get_point_on_draw_plane :: (draw_plane: Draw_Plane, camera: Camera_Info, camera_center: Vector3, camera_fore: Vector3, camera_up: Vector3, norm_point: Vector2) -> Vector3 {
-    engine_check(.MEDIUM, is_normalized(camera_fore));
-    engine_check(.MEDIUM, is_normalized(camera_up));
-    engine_check(.MEDIUM, is_normalized(norm_point));
+    engine_check(.HIGH, is_normalized(camera_fore));
+    engine_check(.HIGH, is_normalized(camera_up));
+    engine_check(.HIGH, is_normalized(norm_point));
 
     camera_right := cross(camera_up, camera_fore);
     return camera_center + camera_fore * draw_plane.centerline_distance - camera_right * ((norm_point.x-0.5) * 2 * draw_plane.half_plane_width) + camera_up * ((norm_point.y-0.5) * 2 * draw_plane.half_plane_height);

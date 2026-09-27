@@ -1,5 +1,6 @@
 #run {
     set_build_options_dc({do_output=false});
+    process_command_line_arguments();
 
     Shader_File :: struct {
         input_path: string;
@@ -43,10 +44,10 @@
 
     compile_shader :: (header_text: string, shader: Shader_File) {
         auto_release_temp();
-        log("shader compilation: % -> %", shader.input_path, shader.output_path);
+        do_log("shader compilation: % -> %", shader.input_path, shader.output_path);
         shader_text, read_success := read_entire_file(shader.input_path, true,, temp);
         if !read_success {
-            log("failed reading input file. exiting.");
+            do_log("failed reading input file. exiting.");
             exit(1);
         }
 
@@ -72,20 +73,20 @@
         combined_shader_text := tprint("%\n%", header_text, shader_text);
         write_success := write_entire_file("temp.glsl", combined_shader_text);
         if !write_success {
-            log("failed writing temp file. exiting.");
+            do_log("failed writing temp file. exiting.");
             exit(1);
         }
         stage := tprint("-fshader-stage=%", shader.stage);
         result := run_command("glslc.exe", stage, "temp.glsl", "-o", shader.output_path);
         if result.exit_code != 0 {
-            log("failed compilation. glslc exit code: %. exiting.", result.exit_code);
+            do_log("failed compilation. glslc exit code: %. exiting.", result.exit_code);
             exit(1);
         }
     }
 
     header_text, success := read_entire_file(files.header);
     if !success {
-        log("failed loading header file %. exiting.", files.header);
+        do_log("failed loading header file %. exiting.", files.header);
         exit(1);
     }
 
@@ -95,6 +96,25 @@
 
     file_delete("temp.glsl");
 }
+
+process_command_line_arguments :: () {
+    build_options := get_build_options();
+    cl_args := build_options.compile_time_command_line;
+
+    for arg : cl_args {
+        if arg == "no-log" {
+            should_do_log = false;
+        }
+    }
+}
+
+do_log :: (fmt: string, args: ..Any, caller_loc := #caller_location) #expand {
+    if should_do_log {
+        log(fmt, ..args, caller_loc);
+    }
+}
+
+should_do_log := true;
 
 #import "Basic";
 #import "File_Utilities";

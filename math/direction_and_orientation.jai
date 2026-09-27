@@ -186,9 +186,19 @@ distance :: inline (q1: Quaternion, q2: Quaternion) -> float {
 }
 
 make_quat :: (fore: Vector3, right: Vector3, up: Vector3) -> Quaternion {
-    engine_check(.HIGH, is_normalized(fore,  SMALL_NUMBER));
-    engine_check(.HIGH, is_normalized(right, SMALL_NUMBER));
-    engine_check(.HIGH, is_normalized(up,    SMALL_NUMBER));
+    #if GENERAL_VALIDATION_LEVEL == Ack_Validation_Level.HIGH {
+        if !is_normalized(fore,  SMALL_NUMBER) 
+        || !is_normalized(right, SMALL_NUMBER)
+        || !is_normalized(up,    SMALL_NUMBER) {
+            ONE_OVER_ROOT_2 :: #run 1. / sqrt(2.);
+            // if any of the vectors isn't normalized, randomly return one of two highly different rotations to make it obvious something is wrong. using % 4 (as opposed to % 2) to try to dodge the cpus that might only return even tsc values. https://community.intel.com/t5/Mobile-and-Desktop-Processors/RDTSC-only-returns-evenly-numbered-values-on-some-chips/m-p/1231812/highlight/true?profile.language=en
+            if rdtsc() % 4 == 0 {
+                return {x=ONE_OVER_ROOT_2, w=ONE_OVER_ROOT_2};
+            } else {
+                return {y=ONE_OVER_ROOT_2, w=ONE_OVER_ROOT_2};
+            }
+        }
+    }
     rot_matrix := Matrix3.{
         right.x, fore.x, up.x,
         right.y, fore.y, up.y,

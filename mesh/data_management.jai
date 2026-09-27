@@ -133,12 +133,12 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
     version := read_s32(file, *pos);
     engine_check(.LOW, version == 1);
  
-    array_reset(*context.term_mesh_buffer_table);
-    array_reserve(*context.term_mesh_buffer_table, 256,, temp);
-    array_reset(*context.term_mesh_texture_buffer_table);
-    array_reserve(*context.term_mesh_texture_buffer_table, 128,, temp);
-    array_reset(*context.term_mesh_self_allocation);
-    array_reserve(*context.term_mesh_self_allocation, 16 * 1024 * 1024,, temp);
+    array_reset(*context.ack_mesh_buffer_table);
+    array_reserve(*context.ack_mesh_buffer_table, 256,, temp);
+    array_reset(*context.ack_mesh_texture_buffer_table);
+    array_reserve(*context.ack_mesh_texture_buffer_table, 128,, temp);
+    array_reset(*context.ack_mesh_self_allocation);
+    array_reserve(*context.ack_mesh_self_allocation, 16 * 1024 * 1024,, temp);
 
     mesh_sections_header := read_block_header(file, *pos);
     animations_header    := read_block_header(file, *pos);
@@ -253,9 +253,9 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
         }
     }
 
-    if context.term_mesh_texture_buffer_table.count > 0 {
-        mesh.texture_buffers = allocate_self_array(Texture_Buffer, context.term_mesh_texture_buffer_table.count);
-        for temp_item : context.term_mesh_texture_buffer_table {
+    if context.ack_mesh_texture_buffer_table.count > 0 {
+        mesh.texture_buffers = allocate_self_array(Texture_Buffer, context.ack_mesh_texture_buffer_table.count);
+        for temp_item : context.ack_mesh_texture_buffer_table {
             temp_buf := *temp_item.texture_buffer;
             out_buf := *mesh.texture_buffers[it_index];
             out_buf.* = temp_buf.*;
@@ -264,9 +264,9 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
 
     // little awkward, but allocating on-struct arrays into a temp buffer then copying stuff over
     // and fixing the pointers avoids making a bunch of spaced-out allocations.
-    mesh.self_cpu_allocation = alloc_string(context.term_mesh_self_allocation.count);
+    mesh.self_cpu_allocation = alloc_string(context.ack_mesh_self_allocation.count);
 
-    old_allocation := context.term_mesh_self_allocation.data;
+    old_allocation := context.ack_mesh_self_allocation.data;
     new_allocation := mesh.self_cpu_allocation.data;
     memcpy(new_allocation, old_allocation, mesh.self_cpu_allocation.count);
 
@@ -299,13 +299,15 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
 
     if is_static_mesh(mesh) {
         instanced.instances.type = .STATIC;
-        engine_check(.LOW, instanced.instances.static.count == 0 && instanced.instances.static.data == null);
+        engine_check(.LOW, instanced.instances.static.components.count == 0 && instanced.instances.static.components.data == null);
     } else {
         instanced.instances.type = .SKELETAL;
-        engine_check(.LOW, instanced.instances.skeletal.count == 0 && instanced.instances.skeletal.data == null);
+        engine_check(.LOW, instanced.instances.skeletal.components.count == 0 && instanced.instances.skeletal.components.data == null);
     }
 
     upload_mesh_to_gpu(renderer, mesh);
+
+    engine_log(.MEDIUM, "mesh % loaded", path);
 
     return ref;
 }

@@ -10,7 +10,7 @@
 // index = 0 if the pattern exists when it begins at the least significant bit
 find_index_of_missing_bit_sequence_lsb :: inline (bits: $T, sequence: u64, sequence_bit_count: s64) -> s8 {
     TYPE_BIT_COUNT :: (size_of(T) * 8);
-    engine_check(.MEDIUM, sequence_bit_count > 0 && sequence_bit_count <= TYPE_BIT_COUNT);
+    engine_check(.HIGH, sequence_bit_count > 0 && sequence_bit_count <= TYPE_BIT_COUNT);
     shift_range := TYPE_BIT_COUNT - sequence_bit_count;
     for 0..shift_range {
         mask := sequence << it;

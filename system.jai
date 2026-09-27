@@ -231,11 +231,6 @@ wait :: (start_time: float64, wait_ms: float64) -> time_spent_ms: float64, begin
         spent_ms = (end_time - start_time) * 1000.0;
     }
 
-    while spent_ms < wait_ms {
-        end_time = seconds_since_init();
-        spent_ms = (end_time - start_time) * 1000.0;
-    }
-
     return spent_ms, begin_wait_time, end_time;
 }
 
@@ -264,10 +259,10 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
             remaining_time_in_hundreds_of_ns.QuadPart *= -1; 
 
             set_success := Win32.SetWaitableTimer(context.system_timer, *remaining_time_in_hundreds_of_ns, 0, null, null, Win32.BOOL.FALSE);
-            engine_check(.MEDIUM, set_success == .TRUE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
+            engine_check(.LOW, set_success == .TRUE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
 
             wait_success := Win32.WaitForSingleObject(context.system_timer, 20);
-            engine_check(.MEDIUM, wait_success == Win32.WAIT_OBJECT_0, "win32 WaitForSingleObject error: %", Win32.GetLastError());
+            engine_check(.LOW, wait_success == Win32.WAIT_OBJECT_0, "win32 WaitForSingleObject error: %", Win32.GetLastError());
 
             end_time = seconds_since_init();
             spent_ms = (end_time - start_time) * 1000.0;

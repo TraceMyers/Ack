@@ -3,7 +3,7 @@ upload_mesh_to_gpu :: (renderer: *Renderer, mesh: *Mesh) {
     using context.renderer;
 
     for *buf : mesh.texture_buffers {
-        buf.gpu_allocation = -1;
+        buf.index = -1;
     }
 
     texture_counter: int;
@@ -83,7 +83,7 @@ upload_mesh_to_gpu :: (renderer: *Renderer, mesh: *Mesh) {
 
         // todo: the material is stored twice. this is annoying. fix it!
         // also index type misalignment
-        section.material.user_data = xx allocate_material(*section.material);
+        section.material.index = xx allocate_material(*section.material);
     }
 }
 
@@ -94,8 +94,8 @@ upload_texture :: (using tex: *Texture, mesh: *Mesh, counter: *int) {
         buffer := *mesh.texture_buffers[local_buffer];
 
         // todo: texture buffer sharing with filtering per-texture
-        if buffer.gpu_allocation != -1 {
-            global_buffer = buffer.gpu_allocation;
+        if buffer.index != -1 {
+            global_buffer = buffer.index;
             return;
         }
 
@@ -106,8 +106,8 @@ upload_texture :: (using tex: *Texture, mesh: *Mesh, counter: *int) {
         // assuming all textures are unique -> adding one buffer per texture
         // render_check(.LOW, buffer.gpu_allocation == -1);
 
-        buffer.gpu_allocation = add_gpu_image_for_sampling(buffer.cpu_allocation.data, buffer.width, buffer.height, sampler).pool_index;
-        global_buffer = buffer.gpu_allocation;
+        buffer.index = add_gpu_image_for_sampling(buffer.cpu_allocation.data, buffer.width, buffer.height, sampler).pool_index;
+        global_buffer = buffer.index;
 
         stbi_image_free(buffer.cpu_allocation.data);
         buffer.cpu_allocation.data = null;

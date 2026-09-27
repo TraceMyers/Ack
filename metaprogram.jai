@@ -149,7 +149,7 @@ struct_visit :: (struct_data: *$T, user_data: *void, visitor: Struct_Visitor, op
     array_reserve(*parent_stack, 16);
 
     cur_parent_tinfo := cast(*Type_Info_Struct) type_info(T);
-    engine_check(.MEDIUM, cur_parent_tinfo.type == .STRUCT);
+    engine_check(.LOW, cur_parent_tinfo.type == .STRUCT);
     array_add(*parent_stack, {xx struct_data, cur_parent_tinfo, null, 0, 0});
     
     struct_visit_impl(*parent_stack, user_data, visitor, options);
@@ -237,7 +237,7 @@ struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data:
             if path.sizes.count > 0 {
                 pop(*path);
             } else {
-                engine_check(.MEDIUM, parent_stack.count == 0);
+                engine_check(.LOW, parent_stack.count == 0);
             }
         }
     }

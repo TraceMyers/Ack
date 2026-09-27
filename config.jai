@@ -218,7 +218,7 @@ load_config_visitor :: (visit: *Struct_Visit, load_data: *Load_Data) -> Struct_V
         }
     case .FLOAT;
         info_float := cast(*Type_Info_Float) visit.info;
-        engine_check(.MEDIUM, info_float.runtime_size == 4);
+        engine_check(.LOW, info_float.runtime_size == 4);
         load_float(visit.data, item.values[0], item.floats[0]);
     case .STRING;
         str := cast(*string) visit.data;
@@ -277,7 +277,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
         print(*save_data.file_builder, "% = %\n", view_string(visit.path), (cast(*bool) visit.data).*);
     case .ENUM;
         info_enum := cast(*Type_Info_Enum) visit.info;
-        engine_check(.MEDIUM, info_enum.runtime_size <= 8);
+        engine_check(.LOW, info_enum.runtime_size <= 8);
         if info_enum.values.count > 0 {
             enum_str := "?";
             enum_value: int;
@@ -292,7 +292,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
         }
     case .INTEGER;
         info_integer := cast(*Type_Info_Integer) visit.info;
-        engine_check(.MEDIUM, info_integer.runtime_size <= 8);
+        engine_check(.LOW, info_integer.runtime_size <= 8);
         int_value: s64;
         memcpy(*int_value, visit.data, visit.info.runtime_size);
         if info_integer.signed {
@@ -302,7 +302,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
         }
     case .FLOAT;
         info_float := cast(*Type_Info_Float) visit.info;
-        engine_check(.MEDIUM, info_float.runtime_size == 4);
+        engine_check(.LOW, info_float.runtime_size == 4);
         float_value: float32;
         memcpy(*float_value, visit.data, 4);
         print(*save_data.file_builder, "% = % (%)\n", view_string(visit.path), float_fmt(float_value), bytes(*float_value));

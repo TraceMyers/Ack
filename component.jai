@@ -122,28 +122,30 @@ init :: (storage: *Component_Storage, size: int) {
 }
 
 create_component :: (storage: *Component_Storage($component_type), id: user_types.entity_id_type, component: **component_type = null) -> *component_type, reallocated: bool {
-    engine_check(.MEDIUM, storage.components.count == storage.ids.count && storage.components.count == storage.infos.count);
+    engine_check(.LOW, storage.components.count == storage.ids.count && storage.components.count == storage.infos.count);
 
     entity := user_types.id_to_entity_proc(id);
     component_ptr, component_ptr_offset := get_component_pointer_and_offset(storage, entity, component);
 
-    return component_ptr.*, add_new_component(storage, component_ptr, id, entity, component_ptr_offset, -1);
+    need_fix_pointers := add_new_component(storage, component_ptr, id, entity, component_ptr_offset, -1);
+    return component_ptr.*, need_fix_pointers;
 }
 
 create_component_in_array :: (storage: *Component_Storage($component_type), id: user_types.entity_id_type, array: *[..]*component_type) -> *component_type, reallocated: bool {
-    engine_check(.MEDIUM, storage.components.count == storage.ids.count && storage.components.count == storage.infos.count);
+    engine_check(.LOW, storage.components.count == storage.ids.count && storage.components.count == storage.infos.count);
 
     entity        := user_types.id_to_entity_proc(id);
     component_ptr := array_add(array);
     array_offset  := cast(*u8) array - cast(*u8) entity;
 
-    return component_ptr.*, add_new_component(storage, component_ptr, id, entity, array_offset, array.count - 1);
+    need_fix_pointers := add_new_component(storage, component_ptr, id, entity, array_offset, array.count - 1);
+    return component_ptr.*, need_fix_pointers;
 }
 
 // if the component ptr is in an array (added via create_component_in_array), it will
 // be removed by swapping with the last component in the array.
 destroy_component :: (storage: *Component_Storage($component_type), id: user_types.entity_id_type, component: **component_type, auto_shrink := false, reset_array_on_entity_if_empty := true) {
-    engine_check(.MEDIUM, storage.components.count == storage.ids.count && storage.components.count == storage.infos.count);
+    engine_check(.LOW, storage.components.count == storage.ids.count && storage.components.count == storage.infos.count);
 
     index  := component.* - storage.components.data;
     entity := user_types.id_to_entity_proc(id);
@@ -232,7 +234,7 @@ fix_component_pointers :: inline (storage: *Component_Storage) {
     }
 }
 
-get_component_pointer_and_offset :: inline (storage: *Component_Storage($component_type), entity: *$Entity_Type, component_ptr_override: **component_type) -> **component_type, int {
+get_component_pointer_and_offset :: no_inline (storage: *Component_Storage($component_type), entity: *$Entity_Type, component_ptr_override: **component_type) -> **component_type, int {
     first_component_ptr_offset :: #run get_first_component_pointer_offset(component_type);
 
     component_ptr_offset: int = -1;
@@ -246,7 +248,7 @@ get_component_pointer_and_offset :: inline (storage: *Component_Storage($compone
         component_ptr = cast(**component_type) ((cast(*u8) entity) + component_ptr_offset);
     }
 
-    engine_check(.MEDIUM, component_ptr_offset >= 0 && component_ptr_offset < size_of(type_of(entity.*)));
+    engine_check(.HIGH, component_ptr_offset >= 0 && component_ptr_offset < size_of(type_of(entity.*)));
     return component_ptr, component_ptr_offset;
 }
 

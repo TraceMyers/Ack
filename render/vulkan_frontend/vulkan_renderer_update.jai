@@ -54,11 +54,11 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     if !is_window_open(window) || is_window_minimized(window) then return false;
 
     frame_fences := VkFence.[current_frame.render_fence, current_frame.present_fence];
-    if !render_check(.LOW, vkWaitForFences(logical.obj, frame_fences.count, frame_fences.data, VK_TRUE, NANOSECONDS_PER_SECOND), "timed out waiting for frame fences") then return false;
+    if !render_evaluate(.LOW, vkWaitForFences(logical.obj, frame_fences.count, frame_fences.data, VK_TRUE, NANOSECONDS_PER_SECOND), "timed out waiting for frame fences") then return false;
 
-    if !render_check(.LOW, vkResetFences(logical.obj, frame_fences.count, frame_fences.data), "failed to reset frame fences") then return false;
+    if !render_evaluate(.LOW, vkResetFences(logical.obj, frame_fences.count, frame_fences.data), "failed to reset frame fences") then return false;
 
-    if should_recreate_swapchain && !render_check(.LOW, create_swapchain_and_attachments(), "failed to recreate the swapchain when it was expected") then return false;
+    if should_recreate_swapchain && !render_evaluate(.LOW, create_swapchain_and_attachments(), "failed to recreate the swapchain when it was expected") then return false;
 
     swapchain_image_index, acquire_success := acquire_next_swapchain_image(current_frame);
     render_target := swapchain.images[swapchain_image_index];
@@ -139,7 +139,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // must be compatible with.
     transition_image(cmd, render_target, .COLOR_ATTACHMENT_OPTIMAL, .PRESENT_SRC_KHR);
 
-    if !render_check(.LOW, vkEndCommandBuffer(cmd), "failed to end the main command buffer") then return false;
+    if !render_evaluate(.LOW, vkEndCommandBuffer(cmd), "failed to end the main command buffer") then return false;
 
     submit_command_info := command_buffer_submit_info(cmd);
     wait_info := semaphore_submit_info(
@@ -152,7 +152,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     );
     submit_info := roll_submit_info(*submit_command_info, *wait_info, *signal_info);
 
-    if !render_check(.LOW, vkQueueSubmit2(graphics_queue, 1, *submit_info, current_frame.render_fence), "failed to submit draw commands to the graphics queue") then return false;
+    if !render_evaluate(.LOW, vkQueueSubmit2(graphics_queue, 1, *submit_info, current_frame.render_fence), "failed to submit draw commands to the graphics queue") then return false;
 
     present_fence_info := VkSwapchainPresentFenceInfoEXT.{
         swapchainCount = 1,
@@ -168,7 +168,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         pNext = *present_fence_info
     };
 
-    if !render_check(.LOW, vkQueuePresentKHR(graphics_queue, *present_info), "failed to present the render target") then return false;
+    if !render_evaluate(.LOW, vkQueuePresentKHR(graphics_queue, *present_info), "failed to present the render target") then return false;
 
     rendered_frame_count += 1;
     return true;

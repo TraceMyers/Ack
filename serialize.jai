@@ -302,7 +302,7 @@ serialize :: (using buffer: *Serializer, str: *string) -> bool {
 }
 
 serialize_string :: (using buffer: *Serializer, str: *string, $mode: Rw_Mode) -> bool {
-    engine_check(.MEDIUM, rw_mode == mode);
+    engine_check(.LOW, rw_mode == mode);
     array: []u8;
     #if mode == .WRITE {
         array.data = str.data;
@@ -412,7 +412,7 @@ check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
 
     // ---
 
-    engine_check(.MEDIUM, new_head >= 0);
+    engine_check(.LOW, new_head >= 0);
     #if alloc_mode == .STATIC {
         return new_head <= memory.count;
     } else { // DYNAMIC
@@ -428,7 +428,7 @@ check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
 }
 
 advance_head :: inline (using buffer: *Serializer, by_count: s64) -> bool {
-    engine_check(.MEDIUM, by_count >= 0);
+    engine_check(.HIGH, by_count >= 0);
     new_head := head + by_count;
     if new_head <= memory.count {
         head = new_head;
@@ -488,7 +488,7 @@ reverse_bytes :: inline (in: $T) -> T
 }
 
 reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, size: s64) {
-    engine_check(.MEDIUM, size > 0);
+    engine_check(.LOW, size > 0);
     if size == {
     case 1;
         bytes_out.* = bytes_in.*;
@@ -524,7 +524,7 @@ reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, size: s64) {
                         bytes_in[1],
                         bytes_in[0];
     case;
-        engine_check(.MEDIUM, bytes_out != bytes_in, "can't do byte swaps in a for loop (not sure why), so pointers should not alias");
+        engine_check(.LOW, bytes_out != bytes_in, "can't do byte swaps in a for loop (not sure why), so pointers should not alias");
         for 0..size-1 {
             bytes_out[it] = bytes_in[(size-1)-it];
         }
@@ -601,9 +601,9 @@ is_serial_primitive :: (T: Type) -> bool {
 }
 
 validate_read_write :: () #expand {
-    engine_check(.MEDIUM, `rw_mode == `mode, "expected mode %, have mode %", `mode, `rw_mode);
+    engine_check(.LOW, `rw_mode == `mode, "expected mode %, have mode %", `mode, `rw_mode);
     if `pad_for_checksum {
-        engine_check(.MEDIUM, `head >= SERIALIZER_CHECKSUM_SIZE);
+        engine_check(.LOW, `head >= SERIALIZER_CHECKSUM_SIZE);
     }
 }
 

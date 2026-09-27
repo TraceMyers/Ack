@@ -12,32 +12,32 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
 
 draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    mesh := *renderer.meshes[draw.ref.index];
-    render_check(.MEDIUM, is_static_mesh(mesh));
+    mesh := get_mesh(draw.ref);
+    render_check(.LOW, is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, draw);
     renderer.last_mesh_draw_was_static = true;
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    mesh := *renderer.meshes[ref.index];
-    render_check(.MEDIUM, is_static_mesh(mesh));
+    mesh := get_mesh(ref);
+    render_check(.LOW, is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, {ref, position, orientation, {scale,scale,scale}, layer, -1});
     renderer.last_mesh_draw_was_static = true;
 }
 
 draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    mesh := *renderer.meshes[ref.index];
-    render_check(.MEDIUM, is_static_mesh(mesh));
+    mesh := get_mesh(ref);
+    render_check(.LOW, is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, {ref, position, orientation, scale, layer, -1});
     renderer.last_mesh_draw_was_static = true;
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    mesh := *renderer.meshes[draw.ref.index];
-    render_check(.MEDIUM, !is_static_mesh(mesh));
+    mesh := get_mesh(ref);
+    render_check(.LOW, !is_static_mesh(mesh));
     add_skinning_joints(renderer, *draw);
     array_add(*renderer.skinned_mesh_draws, draw);
     renderer.last_mesh_draw_was_static = false;
@@ -45,8 +45,8 @@ draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
 
 draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    mesh := *renderer.meshes[ref.index];
-    render_check(.MEDIUM, !is_static_mesh(mesh));
+    mesh := get_mesh(ref);
+    render_check(.LOW, !is_static_mesh(mesh));
     new_draw := array_add(*renderer.skinned_mesh_draws);
     new_draw.* = {static_draw={ref, position, orientation, scale, layer, -1}, joint_data._interface.pose=pose};
     add_skinning_joints(renderer, new_draw);
@@ -197,7 +197,7 @@ draw_box :: (renderer: *Renderer, center: Vector3, extent: Vector3, up: Vector3,
 draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
     render_check(.LOW, segment_count >= 3);
-    render_check(.MEDIUM, draw_portion >= 0 && draw_portion <= 1);
+    render_check(.LOW, draw_portion >= 0 && draw_portion <= 1);
 
     fore := cross(up, right);
 
@@ -250,7 +250,7 @@ draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, half_hei
     MAX_SEGMENTS :: 64;
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
     render_check(.LOW, segment_count >= 3 && segment_count <= MAX_SEGMENTS);
-    render_check(.MEDIUM, draw_portion >= 0 && draw_portion <= 1);
+    render_check(.LOW, draw_portion >= 0 && draw_portion <= 1);
 
     fore := cross(up, right);
 

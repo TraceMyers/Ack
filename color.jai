@@ -238,7 +238,7 @@ get_lightness :: (hsy: Color_HSY) -> float32 {
 
 scale_saturation :: inline (color: $T/FLOAT_RGB_TYPES, scale: float32, try_preserve_aspect := HSY_Component.HUE) -> T {
     debug__check_float_rgb(color);
-    engine_check(.MEDIUM, scale >= 0);
+    engine_check(.HIGH, scale >= 0);
     engine_check(.LOW, try_preserve_aspect != .SATURATION);
 
     min_saturation := to_min_saturation(color);

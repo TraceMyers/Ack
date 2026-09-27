@@ -12,7 +12,7 @@ GPU_Linear_Allocator :: struct {
 gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, size: int, usage_flags: VkBufferUsageFlags, temp := false) -> GPU_Buffer {
     using context.renderer;
 
-    render_check(.MEDIUM, is_buffer_type(heap_type));
+    render_check(.LOW, is_buffer_type(heap_type));
 
     align := usage_alignment(usage_flags);
     buffer := GPU_Buffer.{
@@ -26,10 +26,10 @@ gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, size: int, usage_flags:
 gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32, usage_flags: VkImageUsageFlags, format := VkFormat.R8G8B8A8_UNORM, mip_count: u32 = 1, layer_count: u32 = 1, create_color_view := true) -> *GPU_Image {
     using context.renderer;
 
-    render_check(.MEDIUM, is_image_type(heap_type));
+    render_check(.LOW, is_image_type(heap_type));
 
     image_index := pool_borrow(*image_pool);
-    render_check(.MEDIUM, image_index < max_texture_count);
+    render_check(.LOW, image_index < max_texture_count);
     image := *image_pool[image_index];
     image.pool_index = xx image_index;
 
@@ -68,7 +68,7 @@ gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32
 
     if create_color_view {
         view_create_info := image_view_create_info(image.format, image.obj, .COLOR_BIT, image.mip_count);
-        render_check(.LOW, vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
+        render_evaluate(.LOW, vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
     }
 
     return image;
@@ -90,7 +90,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
     while allocator.frontier < allocator.heaps.count {
         frontier_heap_index := allocator.heaps[allocator.frontier];
         heap = *gpu_heap_pool[frontier_heap_index];
-        render_check(.MEDIUM, heap.is_valid);
+        render_check(.LOW, heap.is_valid);
 
         if heap_type == .VERTEX_BUFFER || heap_type == .INDEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER {
             // vertices and indices should be packed without align padding
@@ -120,12 +120,12 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
             target_heap_size = VERTEX_BUFFER_SIZE;
             buffer_usage = .VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT;
             // there can be only one vertex buffer, because all draws use one buffer for draw simplicity
-            render_check(.MEDIUM, allocator.heaps.count == 0);
+            render_check(.LOW, allocator.heaps.count == 0);
         } else if heap_type == .INDEX_BUFFER {
             target_heap_size = INDEX_BUFFER_SIZE;
             buffer_usage = .INDEX_BUFFER_BIT | .TRANSFER_DST_BIT;
             // there can be only one index buffer, because all draws use one buffer for draw simplicity
-            render_check(.MEDIUM, allocator.heaps.count == 0);
+            render_check(.LOW, allocator.heaps.count == 0);
         } else if is_buffer_type(heap_type) {
             target_heap_size = DEFAULT_BUFFER_HEAP_SIZE;
             buffer_usage = 
@@ -143,7 +143,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
         heap_size := max(size, target_heap_size);
 
         heap_index := allocate_gpu_heap(heap_size, heap_type, .LINEAR_ALLOCATOR, buffer_usage);
-        render_check(.MEDIUM, heap_index != 0xffff);
+        render_check(.LOW, heap_index != 0xffff);
         array_add(*allocator.heaps, heap_index);
         heap = *gpu_heap_pool[heap_index];
 

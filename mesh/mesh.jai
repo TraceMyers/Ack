@@ -296,14 +296,14 @@ read_block_header :: (file: string, location: *int) -> Block_Header {
 }
 
 read_string :: inline (file: string, location: *int, length: int) -> string {
-    engine_check(.MEDIUM, location.* + length <= file.count);
+    engine_check(.LOW, location.* + length <= file.count);
     str := string.{length, file.data + location.*};
     location.* += length;
     return str;
 }
 
 read_primitive :: inline (file: string, location: *int, $T: Type) -> T {
-    engine_check(.MEDIUM, location.* + size_of(T) <= file.count);
+    engine_check(.LOW, location.* + size_of(T) <= file.count);
     val := (cast(*T) (file.data + location.*)).*;
     location.* += size_of(T);
     return val;
@@ -351,12 +351,12 @@ read_texture :: (tex: *Texture, file: string, pos: *int) {
 }
 
 allocate_self_array :: ($T: Type, count: int) -> []T {
-    buf_pos := align_up(context.term_mesh_self_allocation.count, #run align_of(T));
+    buf_pos := align_up(context.ack_mesh_self_allocation.count, #run align_of(T));
     buf_end := buf_pos + size_of(T) * count;
-    engine_check(.LOW, context.term_mesh_self_allocation.allocated >= buf_end);
-    array_resize(*context.term_mesh_self_allocation, buf_end);
+    engine_check(.LOW, context.ack_mesh_self_allocation.allocated >= buf_end);
+    array_resize(*context.ack_mesh_self_allocation, buf_end);
     array: []T = ---;
-    array.data = xx (context.term_mesh_self_allocation.data + buf_pos);
+    array.data = xx (context.ack_mesh_self_allocation.data + buf_pos);
     array.count = count;
     return array;
 }
@@ -367,18 +367,18 @@ move_pointer :: inline (ptr: **u8, old_allocation: *u8, new_allocation: *u8) {
 }
 
 clear_mesh_loading_arrays :: () {
-    array_reset(*context.term_mesh_self_allocation); 
-    array_reset(*context.term_mesh_buffers_allocation);
+    array_reset(*context.ack_mesh_self_allocation); 
+    array_reset(*context.ack_mesh_buffers_allocation);
 }
 
 alloc_or_look_up_texture_buffer :: (file: string, start_pos: int) -> s32 {
-    for item : context.term_mesh_texture_buffer_table {
+    for item : context.ack_mesh_texture_buffer_table {
         if item.file_position == start_pos {
             return xx it_index;
         }
     }
 
-    new_item := array_add(*context.term_mesh_texture_buffer_table);
+    new_item := array_add(*context.ack_mesh_texture_buffer_table);
     new_item.file_position = xx start_pos;
 
     pos := start_pos;
@@ -393,16 +393,16 @@ alloc_or_look_up_texture_buffer :: (file: string, start_pos: int) -> s32 {
     engine_check(.LOW, channels == 4);
     buf.cpu_allocation.count = count / 4;
 
-    return xx (context.term_mesh_texture_buffer_table.count-1);
+    return xx (context.ack_mesh_texture_buffer_table.count-1);
 }
 
 alloc_or_look_up_buffer :: (file: string, start_pos: int, self_allocation := false) -> []u8, Buffer_Type {
-    for item : context.term_mesh_buffer_table {
+    for item : context.ack_mesh_buffer_table {
         if item.file_position == start_pos {
             return item.bytes, item.type;
         }
     }
-    new_item := array_add(*context.term_mesh_buffer_table);
+    new_item := array_add(*context.ack_mesh_buffer_table);
     new_item.file_position = xx start_pos;
     new_item.bytes, new_item.type = alloc_buffer(file, start_pos, self_allocation);
     return new_item.bytes, new_item.type;
@@ -466,7 +466,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
             read_joint_transform(t, file, *pos);
         }
     case;
-        engine_check(.LOW, false, "invalid buffer type % read from term mesh file", type);
+        engine_check(.LOW, false, "invalid buffer type % read from ack mesh file", type);
     }
 
     return bytes, type;

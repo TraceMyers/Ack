@@ -41,17 +41,12 @@ prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_
 
     temp_draw_batch := make_dynamic_array(Static_Mesh_Vertex, draws.count*2,, temp);
     batch_width := draws[0].width;
-    flush_draws: bool;
 
     array_add(*temp_draw_batch, {position=draws[0].a, color=to_color4f(draws[0].color)});
     array_add(*temp_draw_batch, {position=draws[0].b, color=to_color4f(draws[0].color)});
 
     for 1..draws.count {
         if it == draws.count || draws[it].width != batch_width {
-            flush_draws = true;
-        }
-
-        if flush_draws {
             draw_batch: *Line_Draw_Batch;
             if transparent {
                 if in_front {
@@ -79,7 +74,6 @@ prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_
 
             batch_width = draws[it].width;
             array_reset_keeping_memory(*temp_draw_batch);
-            flush_draws = false;
         }
 
         array_add(*temp_draw_batch, {position=draws[it].a, color=to_color4f(draws[it].color)});
@@ -150,16 +144,17 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
         return;
     }
 
-    // todo: this should really be pre-sorted
+    // todo: now that meshes are pre-sorted for instancing, draws should be stored per-mesh as well
+
     quick_sort(draws, draw => draw.ref.index);
 
     mesh_instances := make_static_array(instance_type, draws.count,, temp);
     mesh_sections  := make_dynamic_array(Mesh_Section_Shader_Data, draws.count*8,, temp);
 
-    instances_begin_index: int = 0;
-    instances_count:       int = 1;
-    instances_ref_index:   int = draws[0].ref.index;
-    next_ref_index:        int = -1;
+    instances_begin_index := 0;
+    instances_count       := 1;
+    instances_ref         := draws[0].ref;
+    next_ref              := Mesh_Ref.{};
 
     instance_count_total:  s32;
 
@@ -192,16 +187,16 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
             flush_draws = true;
         } else {
             cur_draw := *draws[it];
-            if instances_ref_index != cur_draw.ref.index {
+            if instances_ref != cur_draw.ref {
                 flush_draws = true;
-                next_ref_index = cur_draw.ref.index;
+                next_ref = cur_draw.ref;
             }
         }
 
         if flush_draws {
             render_check(.LOW, instances_count > 0);
             
-            mesh := *meshes[instances_ref_index];
+            mesh := get_mesh(instances_ref);
 
             for section : mesh.sections {
                 array_add(*mesh_sections, Mesh_Section_Shader_Data.{
@@ -220,7 +215,7 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
 
             instance_count_total += cast(s32) instances_count;
 
-            instances_ref_index = next_ref_index;
+            instances_ref = next_ref;
             instances_begin_index = it;
             instances_count = 0;
             flush_draws = false;
@@ -258,6 +253,10 @@ draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, draws: []$
         gpu_draw_commands := *current_frame.opaque_mesh_draw_commands;
         pipeline := opaque_mesh_pipeline;
         vbo := get_vbo();
+    }
+
+    if vbo == null {
+        return;
     }
 
     if draws.count == 0 {

@@ -86,7 +86,7 @@ place_pair_in_group :: inline (body_color_group_flags: []u64, start_index: *int,
         // color group i=64 is for linearly-solved overflow
         if color_groups.count < 65 {
             array_resize(*color_groups, 65);
-        } else physics_check(.MEDIUM, color_groups.count == 65);
+        } else physics_check(.LOW, color_groups.count == 65);
         group_index = 64;
     } else {
         group_index += group_index_offset;
@@ -114,8 +114,8 @@ calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     min := world_to_grid(aabb_swept.center - aabb_swept.extent);
     max := world_to_grid(aabb_swept.center + aabb_swept.extent);
 
-    physics_check(.MEDIUM, min.x <= max.x);
-    physics_check(.MEDIUM, min.y <= max.y);
+    physics_check(.LOW, min.x <= max.x);
+    physics_check(.LOW, min.y <= max.y);
 
     return min, max;
 }
@@ -176,7 +176,7 @@ place_into_contact_grid :: (_body: *Physics_Body_Base) {
     // todo: make reset feature?
     grid_in_use = true;
 
-    physics_check(.MEDIUM, !has_flags(_body, .PLACED_INTO_CONTACT_GRID));
+    physics_check(.LOW, !has_flags(_body, .PLACED_INTO_CONTACT_GRID));
 
     body_index: u16 = xx get_index(_body);
 

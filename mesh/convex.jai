@@ -37,7 +37,7 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
         } else {
             vertices := section.vertices.static;
         }
-        engine_check(.MEDIUM, vertices.count == section.vertices.count);
+        engine_check(.LOW, vertices.count == section.vertices.count);
 
         if si != 0 {
             clear_all_bits(*triangle_searched);

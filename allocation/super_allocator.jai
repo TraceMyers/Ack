@@ -188,7 +188,7 @@ super_alloc :: (using allocator: *Super_Allocator, size: s64) -> *void {
     if ptr == null {
         add_chunk_list(allocator, max(allocation_size_with_header, default_reserve_size),, parent_allocator);
         ptr = try_super_alloc(allocator, allocation_size_with_header);
-        engine_check(.MEDIUM, ptr != null);
+        engine_check(.LOW, ptr != null);
     }
     return ptr.(*u8) + ALLOCATION_HEADER_SPACE;
 }
@@ -196,7 +196,7 @@ super_alloc :: (using allocator: *Super_Allocator, size: s64) -> *void {
 super_free :: (using allocator: *Super_Allocator, ptr: *void) {
     byte_ptr := ptr.(*u8);
     header := (byte_ptr - ALLOCATION_HEADER_SPACE).(*Allocation_Header);
-    engine_check(.MEDIUM, basic_validity_check(header.*));
+    engine_check(.HIGH, basic_validity_check(header.*));
 
     list := header.super.list;
     outer_chunk := header.super.outer_chunk;
@@ -205,11 +205,11 @@ super_free :: (using allocator: *Super_Allocator, ptr: *void) {
 
     if inner_chunk_count > 64 {
         outer_chunk_count := div_ceil(inner_chunk_count, 64);
-        engine_check(.MEDIUM, outer_chunk_count <= U16_MAX);
+        engine_check(.HIGH, outer_chunk_count <= U16_MAX);
         li := *chunk_lists[list];
         start_index := outer_chunk;
         end_index := start_index + outer_chunk_count - 1;
-        engine_check(.MEDIUM, end_index < li.count);
+        engine_check(.HIGH, end_index < li.count);
         for i : start_index..end_index-1 {
             flag_set := *books.flag_list_of_lists[list][i];
             engine_check(.HIGH, (flag_set.* & U64_MAX) == U64_MAX);
@@ -230,7 +230,7 @@ super_free :: (using allocator: *Super_Allocator, ptr: *void) {
     }
 
     flag_set := *books.flag_list_of_lists[list][outer_chunk];
-    engine_check(.MEDIUM, flag_set.* & mask == mask, "\nflag set: \n%, \nmask: \n%", FormatInt.{value=flag_set.*, base=2, minimum_digits=64}, FormatInt.{value=mask, base=2, minimum_digits=64});
+    engine_check(.HIGH, flag_set.* & mask == mask, "\nflag set: \n%, \nmask: \n%", FormatInt.{value=flag_set.*, base=2, minimum_digits=64}, FormatInt.{value=mask, base=2, minimum_digits=64});
     flag_set.* &= ~mask;
 
     gap := *books.gap_list_of_lists[list][outer_chunk];
@@ -308,7 +308,7 @@ try_super_alloc_small :: (using allocator: *Super_Allocator, alloc_inner_chunk_c
                     break;
                 }
             }
-            engine_check(.MEDIUM, out_header != null);
+            engine_check(.HIGH, out_header != null);
             largest_gap.* = max_gap;
             break;
         }
@@ -669,9 +669,9 @@ serial_writer_resize_if_needed :: (record: *[..]u8, new_head: s64) {
 
 serial_advance_head :: inline (record_head: *s64, by_count: s64, memory_size: s64) {
     new_head := record_head.* + by_count;
-    engine_check(.MEDIUM, by_count > 0);
-    engine_check(.MEDIUM, record_head.* >= 0 && record_head.* <= memory_size);
-    engine_check(.MEDIUM, new_head <= memory_size);
+    engine_check(.LOW, by_count > 0);
+    engine_check(.LOW, record_head.* >= 0 && record_head.* <= memory_size);
+    engine_check(.LOW, new_head <= memory_size);
     record_head.* = new_head;
 }
 
@@ -680,7 +680,7 @@ serial_align_head_up :: (record_head: *s64, align: s8, memory_size: s64) {
     diff := new_head - record_head.*;
     if diff > 0 {
         serial_advance_head(record_head, diff, memory_size);
-    } else engine_check(.MEDIUM, diff == 0);
+    } else engine_check(.LOW, diff == 0);
 }
 
 did_small_chunk_count_warning := false;

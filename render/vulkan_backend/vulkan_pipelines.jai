@@ -101,10 +101,10 @@ make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipel
     build_info.type = .VERTEX_FRAGMENT;
 
     vert := get_shader(vertex_shader_filename);
-    if !render_check(.LOW, vert != null, "failed to get vert shader %", vertex_shader_filename) then return false;
+    if !render_evaluate(.LOW, vert != null, "failed to get vert shader %", vertex_shader_filename) then return false;
 
     frag := get_shader(fragment_shader_filename);
-    if !render_check(.LOW, frag != null, "failed to get frag shader %", fragment_shader_filename) then return false;
+    if !render_evaluate(.LOW, frag != null, "failed to get frag shader %", fragment_shader_filename) then return false;
 
     build_info.shader_stages = make_static_array(VkPipelineShaderStageCreateInfo, 2,, temp);
     build_info.shader_stages[0] = {
@@ -159,7 +159,7 @@ build_pipeline :: (using build_info: *Graphics_Pipeline_Build_Info) -> VkPipelin
     };
 
     pipeline: VkPipeline;
-    if !render_check(.LOW, vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *pipeline), "failed to create graphics pipeline \"%\"", build_info.name) {
+    if !render_evaluate(.LOW, vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *pipeline), "failed to create graphics pipeline \"%\"", build_info.name) {
         return null;
     }
 

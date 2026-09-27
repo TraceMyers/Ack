@@ -98,7 +98,7 @@ gp_alloc :: (using allocator: *GP_Allocator, alloc_size: s64) -> *void {
         if bin.first_available == -1 {
             gp_allocator_add_list(allocator, bin_index);
         }
-        engine_check(.MEDIUM, bin.first_available != -1);
+        engine_check(.HIGH, bin.first_available != -1);
         item_size := MIN_BIN_ITEM_SIZE << bin_index;
         list_index := bin.first_available / ITEMS_PER_LIST;
         item_index := bin.first_available - list_index * ITEMS_PER_LIST;
@@ -132,7 +132,7 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
     // log("free header address: %", header.(u64));
     identifier := (header.bit_pattern & 0x0f).(Allocator_Identifier);
     if identifier >= .GP_ALLOCATOR_16 && identifier <= .GP_ALLOCATOR_2048 {
-        engine_check(.MEDIUM, (header.bit_pattern & 0xf0) == ALLOCATOR_VALIDATION_PATTERN, "bad validation bits %", (header.bit_pattern & 0xf0));
+        engine_check(.HIGH, (header.bit_pattern & 0xf0) == ALLOCATOR_VALIDATION_PATTERN, "bad validation bits %", (header.bit_pattern & 0xf0));
 
         bin_index        := (identifier - .GP_ALLOCATOR_16).(s64);
         item_size        := MIN_BIN_ITEM_SIZE << bin_index;
@@ -141,7 +141,7 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
         list_data_begin  := bin.lists[list_index].data;
         list_data_end    := list_data_begin + item_size * ITEMS_PER_LIST;
 
-        engine_check(.MEDIUM, header.(*u8) >= list_data_begin && header.(*u8) < list_data_end);
+        engine_check(.HIGH, header.(*u8) >= list_data_begin && header.(*u8) < list_data_end);
 
         item_index       := (header.(*u8) - list_data_begin) / item_size;
         block_index : s32 = xx (list_index * ITEMS_PER_LIST + item_index);

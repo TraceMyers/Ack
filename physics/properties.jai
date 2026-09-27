@@ -80,10 +80,10 @@ is_unique :: inline (properties: *Physics_Properties) -> unique: bool, unique_in
     using context.physical_world;
     unique_index := properties - unique_properties.items.data;
     if unique_index >= 0 && unique_index < unique_properties.items.count {
-        physics_check(.MEDIUM, is_pool_item_in_use(*unique_properties, unique_index));
+        physics_check(.LOW, is_pool_item_in_use(*unique_properties, unique_index));
         return true, xx unique_index;
     }
-    physics_check(.MEDIUM, is_data_from_template(xx properties));
+    physics_check(.LOW, is_data_from_template(xx properties));
     return false, -1;
 }
 

@@ -6,12 +6,12 @@ is_normalized :: (v: $V/VectorTypes, tolerance := 0.0001) -> bool {
 }
 
 project_vector_onto_plane :: inline (vector: Vector3, plane_normal: Vector3) -> Vector3 {
-    engine_check(.MEDIUM, is_normalized(plane_normal, SMALL_NUMBER));
+    engine_check(.HIGH, is_normalized(plane_normal, SMALL_NUMBER));
     return vector - dot(vector, plane_normal) * plane_normal;
 }
 
 project_point_onto_plane :: inline (point: Vector3, point_on_plane: Vector3, plane_normal: Vector3) -> pos: Vector3, signed_dist: float {
-    engine_check(.MEDIUM, is_normalized(plane_normal, SMALL_NUMBER));
+    engine_check(.HIGH, is_normalized(plane_normal, SMALL_NUMBER));
     diff := point - point_on_plane;
     // distance along the plane normal
     signed_dist_along_normal := dot_product(plane_normal, diff);

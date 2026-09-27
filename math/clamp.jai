@@ -68,7 +68,7 @@ decrement_wrap :: inline (val: $T, min: T, max: T) -> T {
 }
 
 add_wrap :: (val: $T, add_amt: T, min: T, max: T) -> T {
-    engine_check(.MEDIUM, val >= min && val <= max && max >= min);
+    engine_check(.HIGH, val >= min && val <= max && max >= min);
     sum := val + add_amt;
     min_max_diff := (max - min) + 1;
     if sum > max {

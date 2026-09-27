@@ -22,22 +22,22 @@ make_ring_buffer :: inline ($T: Type, size: int) -> Ring_Buffer(T) {
 }
 
 push_front :: (using buffer: *Ring_Buffer($T), item: T) {
-    engine_check(.MEDIUM, items.count > 0);
+    engine_check(.LOW, items.count > 0);
     push_impl(buffer, item, *front, *back, decrement_wrap);
 }
 
 push_back :: (using buffer: *Ring_Buffer($T), item: T) {
-    engine_check(.MEDIUM, items.count > 0);
+    engine_check(.LOW, items.count > 0);
     push_impl(buffer, item, *back, *front, increment_wrap);
 }
 
 pop_front :: (using buffer: *Ring_Buffer($T)) -> T {
-    engine_check(.MEDIUM, items.count > 0 && front != EMPTY);
+    engine_check(.LOW, items.count > 0 && front != EMPTY);
     return pop_impl(buffer, *front, increment_wrap);
 }
 
 pop_back :: (using buffer: *Ring_Buffer($T)) -> T {
-    engine_check(.MEDIUM, items.count > 0 && front != EMPTY);
+    engine_check(.LOW, items.count > 0 && front != EMPTY);
     return pop_impl(buffer, *back, decrement_wrap);
 }
 

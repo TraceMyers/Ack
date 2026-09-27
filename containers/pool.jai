@@ -157,7 +157,7 @@ operator *[] :: inline (using pool: *Pool($T), i: s64) -> *T {
 }
 
 pool_get :: inline (using pool: *Pool($T), i: s64) -> *T {
-    engine_check(.MEDIUM, in_use[i]);
+    engine_check(.LOW, in_use[i]);
     return *items[i];
 }
 

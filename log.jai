@@ -1,3 +1,5 @@
+// todo: make logging thread safe
+
 // have the logging system call this proc with the finalized text, if set
 term_log_passthrough_callback: (log_text: string);
 
@@ -17,37 +19,51 @@ Ack_Log_Location :: enum u8 {
     NO;
 }
 
+FORCE_LOG :: -1;
+
 ack_log :: (fmt: string, args: ..Any, $log_level := Ack_Log_Level.LOG, $log_location := Ack_Log_Location.AUTO, $verbosity := 1, add_newline := true, caller_loc := #caller_location, override_header := "") #expand {
-    #assert(verbosity >= 1);
-    #if verbosity >= USER_VERBOSITY_LEVEL {
+    // USER_VERBOSITY_LEVEL=0 is reserved to turning off logs
+    #assert(verbosity != 0);
+    #if verbosity == FORCE_LOG || verbosity <= USER_VERBOSITY_LEVEL {
         header: string;
-        do_log_location: bool;
         log_context := #procedure_name();
 
         #if log_level == {
         case .LOG;
             header = ifx override_header then override_header else "LOG";
             DEFAULT_LOG_LOCATION_BEHAVIOR :: false;
-            do_log_location = should_log_location();
         case .WARNING;
             header = ifx override_header then override_header else "WARNING";
             DEFAULT_LOG_LOCATION_BEHAVIOR :: true;
-            do_log_location = should_log_location();
         case .ERROR;
             header = ifx override_header then override_header else "ERROR";
             DEFAULT_LOG_LOCATION_BEHAVIOR :: true;
-            do_log_location = should_log_location();
         }
 
+        do_log_location := should_log_location();
         report_impl(fmt, ..args, log_context=log_context, do_log_location, caller_loc, header, add_newline);
     }
 }
 
-check :: (condition: bool, fmt := "", args: ..Any, $level := 1) {
-    #assert(level >= 1);
-    #if level <= USER_VALIDATION_LEVEL {
-        assert(condition, fmt, ..args);
+#if USER_VALIDATION_LEVEL > 0 {
+    check :: (condition: bool, fmt := "", args: ..Any, $level := 1, caller_loc := #caller_location) #expand #no_debug {
+        #assert(level > 0);
+        #if level <= USER_VALIDATION_LEVEL {
+            if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
+        }
     }
+} else {
+    check :: (#discard condition: bool, #discard fmt := "", #discard args: ..Any, $level := 1, #discard caller_loc := #caller_location) #expand {}
+}
+
+// like check, but always evaluates the condition, even if asserts are disabled. also returns
+// the evaluated condition, so it can be used in if statements.
+evaluate :: (condition: bool, fmt := "", args: ..Any, $level := 1, caller_loc := #caller_location) -> bool #expand #no_debug {
+    #assert(level > 0);
+    #if level <= USER_VALIDATION_LEVEL {
+        if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
+    }
+    return condition;
 }
 
 // formatting helpers

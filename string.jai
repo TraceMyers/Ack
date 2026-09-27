@@ -11,7 +11,7 @@ as_array :: inline (str: string, $T: Type) -> []T {
     t_array.count = str.count / size_of(T);
     t_array.data = xx str.data;
     // requiring that the number of bytes is a multiple of the item size; no bytes left out
-    engine_check(.MEDIUM, t_array.count * size_of(T) == str.count); 
+    engine_check(.LOW, t_array.count * size_of(T) == str.count); 
     return t_array;
 }
 
@@ -110,7 +110,7 @@ to_upper :: inline (str: string) -> string {
 }
 
 hex_text_to_bytes :: (hex_text: string) -> string, bool {
-    engine_check(.MEDIUM, hex_text.count % 2 == 0);
+    engine_check(.LOW, hex_text.count % 2 == 0);
 
     out_bytes := alloc_string(hex_text.count / 2);
 
@@ -308,7 +308,7 @@ push :: (stack: *String_Stack, fmt: string, args: ..Any) -> string {
 }
 
 pop :: (stack: *String_Stack) {
-    engine_check(.MEDIUM, stack.sizes.count > 0);
+    engine_check(.LOW, stack.sizes.count > 0);
     
     remove_count := stack.sizes[stack.sizes.count-1];
     stack.sizes.count -= 1;

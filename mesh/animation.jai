@@ -45,21 +45,16 @@ find_joint :: (skeleton: *Skeleton, name: string) -> int {
     return -1;
 }
 
-make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Animation_Blend) {
-    engine_check(.LOW, blends.count > 0);
-
+make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Animation_Blend = .[]) {
     blend_alpha_sum := 0.0;
-    for blends {
+    if blends.count > 0 then for blends {
         blend_alpha_sum += it.blend_alpha;
+        engine_check(.LOW, abs(blend_alpha_sum - 1.0) < 0.001);
     }
-
-    engine_check(.LOW, abs(blend_alpha_sum - 1.0) < 0.001);
 
     allocation_size := (size_of(Joint_Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
     joint_count     := skeleton.joints.count;
     
-    pose.skeleton = skeleton;
-
     if pose.allocation.count != allocation_size {
         pose.allocation.data  = realloc(pose.allocation.data, allocation_size, pose.allocation.count);
         pose.allocation.count = allocation_size;
@@ -81,7 +76,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
 
     for blend : blends {
         animation := *skeleton.animations[blend.animation_index];
-        engine_check(.MEDIUM, animation.timestamps.count >= 2);
+        engine_check(.HIGH, animation.timestamps.count >= 2);
 
         anim_data := *per_anim[it_index];
 
@@ -109,7 +104,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
             
         local_joint := *pose.local_joints[ji];
 
-        for blends {
+        if blends.count > 0 then for blends {
             anim := *per_anim[it_index];
 
             prev_frame := *anim.prev_frame_transforms[ji];
@@ -137,6 +132,8 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
                     local_joint.rotation += rotation * anim.blend_alpha;
                 }
             }
+        } else {
+            local_joint.* = joint.local_rest_pose;
         }
 
         if per_anim.count > 0 {

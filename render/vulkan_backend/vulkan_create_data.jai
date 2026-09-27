@@ -33,16 +33,16 @@ begin_command_buffer :: (frame: *Graphics_Frame) -> VkCommandBuffer, bool {
 }
 
 begin_command_buffer :: (cmd: VkCommandBuffer) -> bool {
-    if !render_check(.LOW, vkResetCommandBuffer(cmd, 0), "failed to reset a command buffer") then return false;
+    if !render_evaluate(.LOW, vkResetCommandBuffer(cmd, 0), "failed to reset a command buffer") then return false;
     command_buffer_begin := VkCommandBufferBeginInfo.{flags = .ONE_TIME_SUBMIT_BIT};
-    if !render_check(.LOW, vkBeginCommandBuffer(cmd, *command_buffer_begin), "failed to begin a command buffer") then return false;
+    if !render_evaluate(.LOW, vkBeginCommandBuffer(cmd, *command_buffer_begin), "failed to begin a command buffer") then return false;
     return true;
 }
 
 acquire_next_swapchain_image :: (current_frame: *Graphics_Frame) -> u32, bool {
     using context.renderer;
     image_index: u32;
-    if !render_check(.LOW, vkAcquireNextImageKHR(logical.obj, swapchain.obj, NANOSECONDS_PER_SECOND, current_frame.image_available_semaphore, null, *image_index), "failed to wait to get an image from the swapchain") then return 0xffff_ffff, false;
+    if !render_evaluate(.LOW, vkAcquireNextImageKHR(logical.obj, swapchain.obj, NANOSECONDS_PER_SECOND, current_frame.image_available_semaphore, null, *image_index), "failed to wait to get an image from the swapchain") then return 0xffff_ffff, false;
     return image_index, true;
 }
 
@@ -602,18 +602,27 @@ create_gpu_buffer :: (size: int, usage_flags: VkBufferUsageFlags, memory_flags: 
 
 get_vbo :: () -> VkBuffer {
     vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.VERTEX_BUFFER];
+    if vb_allocator.heaps.count == 0 {
+        return null;
+    }
     heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
     return heap.buffer;
 }
 
 get_skinned_vbo :: () -> VkBuffer {
     vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.SKINNED_VERTEX_BUFFER];
+    if vb_allocator.heaps.count == 0 {
+        return null;
+    }
     heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
     return heap.buffer;
 }
 
 get_ibo :: () -> VkBuffer {
     vb_allocator := *context.renderer.linear_allocators[GPU_Heap_Type.INDEX_BUFFER];
+    if vb_allocator.heaps.count == 0 {
+        return null;
+    }
     heap := *context.renderer.gpu_heap_pool[vb_allocator.heaps[0]];
     return heap.buffer;
 }
@@ -681,7 +690,7 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
 
     memory: VkDeviceMemory;
 
-    if !render_check(.LOW, vkAllocateMemory(logical.obj, *allocate_info, null, *memory), "failed to allocate a heap of type % from allocator % size %", type, allocator, size) {
+    if !render_evaluate(.LOW, vkAllocateMemory(logical.obj, *allocate_info, null, *memory), "failed to allocate a heap of type % from allocator % size %", type, allocator, size) {
         return -1;
     }
 
@@ -833,7 +842,7 @@ get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, h
     // not using because I don't have 3d uv maps
     create_info.addressModeW = create_info.addressModeW;
 
-    render_check(.LOW, vkCreateSampler(logical.obj, *create_info, null, sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
+    render_evaluate(.LOW, vkCreateSampler(logical.obj, *create_info, null, sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
 
     return sampler.*;
 }
@@ -883,16 +892,16 @@ find_index_of_memory_type :: (can_use_type_bits: u32, must_have_props: VkMemoryP
 submit_commands :: (cmd: VkCommandBuffer, fence: VkFence, queue: VkQueue, wait_semaphore: *VkSemaphoreSubmitInfo = null, signal_semaphore: *VkSemaphoreSubmitInfo = null) -> bool {
     using context.renderer;
 
-    if !render_check(.LOW, vkEndCommandBuffer(cmd), "failed to end a command buffer") then return false;
+    if !render_evaluate(.LOW, vkEndCommandBuffer(cmd), "failed to end a command buffer") then return false;
 
     cmd_submit_info := command_buffer_submit_info(cmd);
     submit_info     := roll_submit_info(*cmd_submit_info, wait_semaphore, signal_semaphore); 
 
-    if !render_check(.LOW, vkQueueSubmit2(queue, 1, *submit_info, fence), "failed to submit commands to a queue") then return false;
+    if !render_evaluate(.LOW, vkQueueSubmit2(queue, 1, *submit_info, fence), "failed to submit commands to a queue") then return false;
 
-    if !render_check(.LOW, vkWaitForFences(logical.obj, 1, *fence, VK_TRUE, NANOSECONDS_PER_SECOND), "failed to wait for a fence") then return false;
+    if !render_evaluate(.LOW, vkWaitForFences(logical.obj, 1, *fence, VK_TRUE, NANOSECONDS_PER_SECOND), "failed to wait for a fence") then return false;
 
-    if !render_check(.LOW, vkResetFences(logical.obj, 1, *fence), "failed to reset a fence") then return false;
+    if !render_evaluate(.LOW, vkResetFences(logical.obj, 1, *fence), "failed to reset a fence") then return false;
 
     return true;
 }
@@ -928,7 +937,7 @@ create_descriptor_pool :: (pool: *VkDescriptorPool, max_sets: u32, ratios: []Des
         pPoolSizes = sizes.data
     };
 
-    return render_check(.LOW, vkCreateDescriptorPool(logical.obj, *create_info, null, pool), "failed creating descriptor pool");
+    return render_evaluate(.LOW, vkCreateDescriptorPool(logical.obj, *create_info, null, pool), "failed creating descriptor pool");
 }
 
 // this is inflexible and probably not great going forward due to forcing the stages to be uniform
@@ -947,7 +956,7 @@ build_descriptor_set_layout :: (layout_builder: []VkDescriptorSetLayoutBinding, 
     };
 
     set: VkDescriptorSetLayout;
-    render_check(.LOW, vkCreateDescriptorSetLayout(logical.obj, *create_info, null, *set), "failed to create a descriptor set layout");
+    render_evaluate(.LOW, vkCreateDescriptorSetLayout(logical.obj, *create_info, null, *set), "failed to create a descriptor set layout");
 
     return set;
 }
@@ -960,7 +969,7 @@ allocate_descriptor_set :: (pool: VkDescriptorPool, layout: VkDescriptorSetLayou
         pNext = p_next
     };
     descriptor_set: VkDescriptorSet;
-    render_check(.LOW, vkAllocateDescriptorSets(context.renderer.logical.obj, *alloc_info, *descriptor_set), "failed to allocate a descriptor set");
+    render_evaluate(.LOW, vkAllocateDescriptorSets(context.renderer.logical.obj, *alloc_info, *descriptor_set), "failed to allocate a descriptor set");
     return descriptor_set;
 }
 
