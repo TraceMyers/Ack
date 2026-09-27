@@ -44,8 +44,17 @@ Gen_Ref :: struct {
     generation: u32;
 }
 
+Index_2D :: struct {
+    first:  s32;
+    second: s32;
+}
+
 operator == :: (a: Gen_Ref, b: Gen_Ref) -> bool {
     return a.index == b.index && a.generation == b.generation;
+}
+
+operator == :: (a: Index_2D, b: Index_2D) -> bool {
+    return a.first == b.first && a.second == b.second;
 }
 
 Ack_Validation_Level :: enum u8 {

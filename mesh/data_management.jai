@@ -299,10 +299,10 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
 
     if is_static_mesh(mesh) {
         instanced.instances.type = .STATIC;
-        engine_check(.LOW, instanced.instances.static.components.count == 0 && instanced.instances.static.components.data == null);
+        engine_check(.LOW, instanced.instances.static.chunks.count == 0 && instanced.instances.static.chunks.data == null);
     } else {
         instanced.instances.type = .SKELETAL;
-        engine_check(.LOW, instanced.instances.skeletal.components.count == 0 && instanced.instances.skeletal.components.data == null);
+        engine_check(.LOW, instanced.instances.skeletal.chunks.count == 0 && instanced.instances.skeletal.chunks.data == null);
     }
 
     upload_mesh_to_gpu(renderer, mesh);
