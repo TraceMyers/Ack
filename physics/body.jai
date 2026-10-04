@@ -8,8 +8,7 @@ Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
 
     properties: *properties_type;
     collider: *collider_type;
-
-    compressed_axes: [3]u64;
+    index: Index_2D;
 
     contact_grid_min_x: s16;
     contact_grid_min_y: s16;
@@ -57,42 +56,34 @@ Physics_Body_Flags :: enum_flags u32 {
     PLACED_INTO_CONTACT_GRID;
 }
 
-create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type) -> *Physics_Body {
+create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type, body_ptr: **Physics_Body) -> *Physics_Body {
     template := table_find_pointer(*context.physical_world.body_templates, template_name);
-    return create_physics_body(template, entity_id);
+    return create_physics_body(template, entity_id, body_ptr);
 }
 
-create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.entity_id_type) -> *Physics_Body {
+create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.entity_id_type, body_ptr: **Physics_Body) -> *Physics_Body {
     using context.physical_world;
 
-    soa_add(*body_data);
-    i := soa_count(*body_data) - 1;
+    body := create_component(*body_data, entity_id, cast(**Physics_Body_Internal) body_ptr);
+    i    := get_component_indexer(*body_data, body_data.component_count - 1);
+    body.index = i;
+
     // todo: making everything awake all the time for now, but that needs to change.
-    body_data.flags[i]              = template.flags | .AWAKE;
-    body_data.collision_channels[i] = template.collision_channels;
-    body_data.body[i].properties    = *template.properties;
-    body_data.body[i].collider      = *template.collider;
-    body_data.entity_id[i]          = entity_id;
+    body.properties                                             = *template.properties;
+    body.collider                                               = *template.collider;
+    body_data.get_flags_component(*body_data, i).*              = template.flags | .AWAKE;
+    body_data.get_collision_channels_component(*body_data, i).* = xx template.collision_channels;
 
     // todo: only if the template calls for it
-    place_into_contact_grid(*body_data.body[i]);
+    place_into_contact_grid(body);
 
-    return xx *body_data.body[i];
+    return xx body;
 }
 
-// if the body that was destroyed displaced another body, the entity pointers to
-// bodies (if you are doing things that way) will now be invalid. 
-destroy_physics_body :: (in_body: *Physics_Body_Base) -> need_repoint: bool, id_to_repoint: user_types.entity_id_type {
+destroy_physics_body :: (in_body: **Physics_Body_Base) {
     using context.physical_world;
 
-    body := cast(*Physics_Body_Internal) in_body;
-
-    need_repoint: bool;
-    id_to_repoint: user_types.entity_id_type;
-    
-    body_index := get_index(in_body);
-    body_count := soa_count(*body_data);
-    physics_check(.LOW, body_index >= 0 && body_index < body_count);
+    body := (cast(*Physics_Body_Internal) in_body.*);
 
     props_are_unique, unique_index := is_unique(body.properties);
     if props_are_unique {
@@ -104,14 +95,16 @@ destroy_physics_body :: (in_body: *Physics_Body_Base) -> need_repoint: bool, id_
         pool_return(*unique_colliders, unique_index);
     }
 
-    if body_index < body_count - 1 {
-        need_repoint  = true;
-        id_to_repoint = body_data.entity_id[body_count-1];
+    replacer_callback :: (replacer: *user_types.entity_type, body: *Physics_Body_Internal, new_body_index: Index_2D) {
+        body.index = new_body_index;
     }
 
-    soa_unordered_remove_by_index(*body_data, body_index);
-
-    return need_repoint, id_to_repoint;
+    destroy_component(
+        *body_data, 
+        body_data.chunks[body.index.first].ids[body.index.second],
+        xx in_body,
+        replacement_entity_callback = replacer_callback
+    );
 }
 
 create_physics_body_template :: (name: string, template: Physics_Body_Template) {
@@ -153,38 +146,40 @@ push :: inline (_body: *Physics_Body_Base, force: Vector3) {
 }
 
 get_flags :: inline (body: *Physics_Body_Base) -> Physics_Body_Flags {
-    return context.physical_world.body_data.flags[get_index(body)];
+    using context.physical_world;
+    return body_data.get_flags_component(*body_data, body.index).*;
 }
 
 set_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    context.physical_world.body_data.flags[get_index(body)] = flags;
+    using context.physical_world;
+    body_data.get_flags_component(*body_data, body.index).* = flags;
 }
 
 add_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    context.physical_world.body_data.flags[get_index(body)] |= flags;
+    using context.physical_world;
+    body_data.get_flags_component(*body_data, body.index).* |= flags;
 }
 
 has_any_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
-    return (context.physical_world.body_data.flags[get_index(body)] & flags) != 0;
+    using context.physical_world;
+    return (body_data.get_flags_component(*body_data, body.index).* & flags) != 0;
 }
 
 has_all_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
-    return (context.physical_world.body_data.flags[get_index(body)] & flags) == flags;
+    using context.physical_world;
+    return (body_data.get_flags_component(*body_data, body.index).* & flags) == flags;
 }
 
 has_flags :: has_all_flags;
 
 remove_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    context.physical_world.body_data.flags[get_index(body)] &= ~flags;
+    using context.physical_world;
+    body_data.get_flags_component(*body_data, body.index).* &= ~flags;
 }
 
 can_translate :: inline (body: *Physics_Body_Base) -> bool {
-    return (context.physical_world.body_data.flags[get_index(body)] & .LOCK_TRANSLATION) == 0;
-}
-
-can_rotate :: inline (body: *Physics_Body_Base) -> bool {
-    ALL_AXES_LOCKED : Physics_Body_Flags : .LOCK_YAW | .LOCK_PITCH | .LOCK_ROLL;
-    return (context.physical_world.body_data.flags[get_index(body)] & ALL_AXES_LOCKED) != ALL_AXES_LOCKED;
+    using context.physical_world;
+    return (body_data.get_flags_component(*body_data, body.index).* & .LOCK_TRANSLATION) == 0;
 }
 
 x_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
@@ -199,7 +194,7 @@ z_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
     return get_up_direction(body.next_orientation);
 }
 
-axes :: inline (body: *Physics_Body_Base) -> Vector3, Vector3, Vector3 {
+calc_axes :: inline (body: *Physics_Body_Base) -> Vector3, Vector3, Vector3 {
     x := x_axis(body);
     y := y_axis(body);
     z := cross(x, y);
@@ -228,11 +223,8 @@ get_position :: (_body: *Physics_Body_Base) -> Vector3 {
     return lerp(body.prev_position, body.next_position, alpha);
 }
 
-get_index :: inline (body: *Physics_Body_Base) -> int {
-    return cast(*Physics_Body_Internal) body - context.physical_world.body_data.body.data;
-}
-
 calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := false) -> AABB {
+
     body := cast(*Physics_Body_Internal) _body;
     using body.collider;
 
@@ -242,16 +234,17 @@ calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := fal
         aabb.extent = splat(shape_data.array[0], 3);
     } else {
         #if use_compressed_axes {
-            bi := get_index(body);
-            x := linear_decompress_vector3(context.physical_world.body_data.axes[bi][0], -1, 1);
-            y := linear_decompress_vector3(context.physical_world.body_data.axes[bi][1], -1, 1);
-            z := linear_decompress_vector3(context.physical_world.body_data.axes[bi][2], -1, 1);
+            using context.physical_world;
+            axes := body_data.get_axes_component(*body_data, body.index);
+            x := linear_decompress_vector3(axes.*[0], -1, 1);
+            y := linear_decompress_vector3(axes.*[1], -1, 1);
+            z := linear_decompress_vector3(axes.*[2], -1, 1);
             aabb.extent = 
                   abs(z * shape_data.array[0]) 
                 + abs(x * shape_data.array[1]) 
                 + abs(y * shape_data.array[2]);
         } else {
-            x, y, z := axes(body);
+            x, y, z := calc_axes(body);
             aabb.extent = 
                   abs(z * shape_data.array[0]) 
                 + abs(x * shape_data.array[1]) 

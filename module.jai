@@ -3,6 +3,7 @@
     ENCODE_TEXT_MAX_WRITE_SIZE := 8,
     ADD_TEXT_ENCODINGS: []string = string.[], // see 'how to add text encodings' section
     ADD_ENCODE_FAILURES: []string = string.[], // see 'how to add text encodings' section
+    ADD_CONTROL_MODES: []string = string.[],
     PHYSICS_DELTA_TIME := 1.0 / 100.0,
     MIN_PHYSICS_BODY_SPEED_ALONG_AXIS := 0.000001,
     FLIP_VECTOR_2D_Y_AXIS := false, // origin at upper left? flip it
@@ -30,31 +31,15 @@
     Entity_Type_Default :: struct { id: u64; };
 
     Type_Provider_Default :: struct {
+        entity_type         :: Entity_Type_Default;
         entity_id_type      :: Entity_ID_Default;
         extra_body_data     :: Extra_Body_Data_Default;
         collision_channels  :: Collision_Channels_Default;
         raycast_channels    :: Raycast_Channels_Default;
         entity_to_id_proc   :: (ent: *Entity_Type_Default) -> u64 { return 0; };
         id_to_entity_proc   :: (id: u64) -> *Entity_Type_Default { return null; };
+        null_entity_id      : u64 : 0;
     }
-}
-
-Gen_Ref :: struct {
-    index: s32;
-    generation: u32;
-}
-
-Index_2D :: struct {
-    first:  s32;
-    second: s32;
-}
-
-operator == :: (a: Gen_Ref, b: Gen_Ref) -> bool {
-    return a.index == b.index && a.generation == b.generation;
-}
-
-operator == :: (a: Index_2D, b: Index_2D) -> bool {
-    return a.first == b.first && a.second == b.second;
 }
 
 Ack_Validation_Level :: enum u8 {
@@ -113,6 +98,7 @@ ack_engine_path :: () -> string {
 #load "containers/containers.jai";
 #load "allocation/allocation.jai";
 #load "math/math.jai";
+#load "input/input.jai";
 
 // single-file loads
 #load "array.jai";
@@ -136,10 +122,14 @@ ack_engine_path :: () -> string {
 #load "string.jai";
 #load "system.jai";
 #load "testing.jai";
+#load "misc.jai";
 
 ImGui :: #import "Ack!/render/ImGui_VulkanWin32";
 
 #scope_module
+
+Collision_Channels :: #type,isa user_types.collision_channels;
+Raycast_Channels   :: #type,isa user_types.raycast_channels;
 
 // -----------------------------------------------------------------------------------------------
 
@@ -300,6 +290,7 @@ Program_Print :: #import "Program_Print";
 #import "stb_image";
 #import "Process";
 #import "Input";
+#import "Gamepad";
 
 #import "Ack!/render/vulkan-jai";
 

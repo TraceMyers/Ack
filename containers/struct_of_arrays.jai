@@ -43,6 +43,31 @@ SOA :: struct($item_type: Type) {
     }
 }
 
+// does not work with soa_... procedures, but can be used to convert members to statically-sized
+// arrays.
+Sized_SOA :: struct($item_type: Type, size: int) {
+    #insert -> string {
+        tinfo := cast(*Type_Info_Struct) type_info(item_type);
+        assert(tinfo.type == .STRUCT);
+
+        builder: String_Builder;
+
+        INVALID_MEMBER : Type_Info_Struct_Member.Flags = .CONSTANT | .OVERLAY;
+
+        for member, member_index : tinfo.members {
+            if member.flags & INVALID_MEMBER {
+                continue;
+            }
+            if member.type.runtime_size == 0 {
+                continue;
+            }
+            print(*builder, "\t%: [%]SOA_Member_Type(item_type, %).T;\n", member.name, size, member_index);
+        }
+
+        return builder_to_string(*builder);
+    }
+}
+
 soa_for_each_array :: (soa: *SOA, operation: string, $declare_item_field_var := false, only_front_array := false) #expand {
     #insert -> string {
         builder: String_Builder;

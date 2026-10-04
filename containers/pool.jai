@@ -197,7 +197,7 @@ for_expansion :: (pool: Pool($T), body: Code, flags: For_Flags) #expand {
             #if (flags & .POINTER) {
                 `it := *pool.items[item_index];
             } else {
-                `it := pool.items[item_index];
+                `it :=  pool.items[item_index];
             }
             #insert body;
         }

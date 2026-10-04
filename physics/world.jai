@@ -3,7 +3,7 @@ Physical_World :: struct {
     body_templates: Table(string, Physics_Body_Template);
     unique_properties: Pool(Physics_Properties);
     unique_colliders: Pool(Physics_Collider);
-    body_data: Physics_Body_SOA;
+    body_data: Physical_Entity_Components;
 
     step_state: Physics_Step_State;
     collision_iteration_count := 5;
@@ -65,20 +65,17 @@ set_physics_grid_width :: (width: s32) {
     physical_world.grid_width = width;
 }
 
-create_physical_world :: (bodies_max := 32768, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {
+create_physical_world :: (reserve_bodies := 1024, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {
     out_world: Physical_World;
 
-    physics_check(.LOW, bodies_max < U16_MAX); // using u16's as body indexes internally
+    physics_check(.LOW, reserve_bodies < U16_MAX); // using u16's as body indexes internally
 
     // ceil(max * 101/70) is to avoid the table reallocating.
     init(*out_world.body_templates, xx ceil(body_templates_max * (101.0 / 70.0)));
     pool_init(*out_world.unique_properties, unique_properties_max, true);
     pool_init(*out_world.unique_colliders, unique_colliders_max, true);
 
-    if bodies_max > 0 {
-        soa_reserve(*out_world.body_data, bodies_max);
-    }
-    soa_set_allocator(*out_world.body_data, no_allocator);
+    reserve(*out_world.body_data, reserve_bodies);
 
     // note: contact grid allocation is not locked, in case a bug comes of it
     init(*out_world.contact_grid, 65536);
@@ -101,8 +98,7 @@ destroy_physical_world :: (in_world: *Physical_World) {
     pool_set_allocator(*in_world.unique_properties, in_world.allocator);
     pool_reset(*in_world.unique_properties);
 
-    soa_set_allocator(*in_world.body_data, in_world.allocator);
-    soa_reset(*in_world.body_data);
+    reset(*in_world.body_data);
     
     in_world.* = {};
 }
@@ -118,27 +114,15 @@ Physics_Step_State :: enum {
     PAUSE_ON_COLLISION;
 }
 
-Physics_Body_Iteration :: struct {
-    body: *Physics_Body;
-    entity_id: user_types.entity_id_type;
-}
-
-Physics_Body_SOA :: SOA(struct{
-    flags:              Physics_Body_Flags;
-    collision_channels: user_types.collision_channels;
-    entity_id:          user_types.entity_id_type;
-    axes:               [3]u64;
-    using body:         Physics_Body_Internal;
-});
-
-for_expansion :: (physics_soa: *Physics_Body_SOA, body: Code, flags: For_Flags) #expand {
-    for i : 0..physics_soa.body.count - 1 {
-        `it := Physics_Body_Iteration.{xx *physics_soa.body[i], physics_soa.entity_id[i]};
-        `it_index := i;
-
-        #insert body;
-    }
-}
+Physical_Entity_Components :: Multi_Component_Storage(
+    struct {
+        bodies:              Physics_Body_Internal;
+        flags:               Physics_Body_Flags;
+        collision_channels:  Collision_Channels;
+        axes:                [3]u64;
+    },
+    components_per_chunk=256
+);
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

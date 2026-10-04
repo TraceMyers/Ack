@@ -95,7 +95,7 @@ get_mesh :: inline (ref: Mesh_Ref) -> mesh: *Mesh {
     return *get_instanced_mesh(ref).mesh;
 }
 
-get_instanced_mesh :: inline (ref: Mesh_Ref) -> mesh: *Instanced_Mesh {
+get_instanced_mesh :: (ref: Mesh_Ref) -> mesh: *Instanced_Mesh {
     instanced := *managed.instanced_meshes[ref.index];
     engine_check(.LOW, ref.generation == pool_get_item_generation(*managed.instanced_meshes, ref.index));
     return instanced;

@@ -1,4 +1,4 @@
-draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
+draw_particle :: (renderer: *Renderer, draw: Particle_Draw) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
     billboard_instance := array_add(*renderer.particle_draws);
     billboard_instance.position      = draw.position;
@@ -10,7 +10,7 @@ draw_particle :: inline (renderer: *Renderer, draw: Particle_Draw) {
     billboard_instance.layer         = draw.layer;
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
+draw_static_mesh :: (renderer: *Renderer, draw: Static_Mesh_Draw) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
     mesh := get_mesh(draw.ref);
     render_check(.LOW, is_static_mesh(mesh));
@@ -18,7 +18,7 @@ draw_static_mesh :: inline (renderer: *Renderer, draw: Static_Mesh_Draw) {
     renderer.last_mesh_draw_was_static = true;
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
+draw_static_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
     mesh := get_mesh(ref);
     render_check(.LOW, is_static_mesh(mesh));
@@ -26,7 +26,7 @@ draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector
     renderer.last_mesh_draw_was_static = true;
 }
 
-draw_static_mesh :: inline (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
+draw_static_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
     render_check(.HIGH, !renderer.in_the_middle_of_rendering);
     mesh := get_mesh(ref);
     render_check(.LOW, is_static_mesh(mesh));

@@ -67,8 +67,10 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
     using context.physical_world;
     // todo: warm starting
 
-    for *body, bi : body_data.body {
-        flags := body_data.flags[bi];
+    for body_data {
+
+        body := it.component;
+        flags := body_data.get_flags_component(*body_data, it.index).*;
 
         if (flags & .SKIP_UPDATE) != 0 {
             continue;
@@ -80,10 +82,11 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
         }
 
         if body.collider.shape != .SPHERE {
-            x, y, z := axes(body);
-            body_data.axes[bi][0] = linear_compress_vector3(x, -1, 1);
-            body_data.axes[bi][1] = linear_compress_vector3(y, -1, 1);
-            body_data.axes[bi][2] = linear_compress_vector3(z, -1, 1);
+            x, y, z := calc_axes(body);
+            axes := body_data.get_axes_component(*body_data, it.index);
+            axes.*[0] = linear_compress_vector3(x, -1, 1);
+            axes.*[1] = linear_compress_vector3(y, -1, 1);
+            axes.*[2] = linear_compress_vector3(z, -1, 1);
         }
 
         moved_or_accelerated: bool;
@@ -122,17 +125,18 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
 
     `physics_transform_alpha := get_physical_entity_transform_alpha();
 
-    for *b, bi : context.physical_world.body_data.body {
-        `flags := get_flags(cast(*Physics_Body) b);
+    for b_iter, bi : context.physical_world.body_data {
+        using context.physical_world;
+        `flags := body_data.get_flags_component(*body_data, b_iter.index).*;
         // if (`flags & .AWAKE) == 0 {
         //     continue;
         // }
         if (`flags & LOCK_TRANSLATE_AND_ROTATE) == LOCK_TRANSLATE_AND_ROTATE {
             continue;
         }
-        `body      := cast(*Physics_Body) b;
+        `body      := cast(*Physics_Body) b_iter.component;
         `it_index  := bi;
-        `entity_id := context.physical_world.body_data.entity_id[bi];
+        `entity_id := b_iter.entity_id;
 
         #insert loop_body;
     }

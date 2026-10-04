@@ -5,6 +5,15 @@
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------- Misc Metaprogramming
 
+minit :: inline (component: *$T) {
+    ini :: initializer_of(T);
+    #if ini {
+        inline ini(component);
+    } else {
+        memset(component, 0, size_of(T));
+    }
+}
+
 code_string :: ($code: Code) -> string #expand {
     builder: String_Builder;
     assert(Program_Print.print_expression(*builder, compiler_get_nodes(code)));
