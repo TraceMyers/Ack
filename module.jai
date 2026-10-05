@@ -99,6 +99,7 @@ ack_engine_path :: () -> string {
 #load "allocation/allocation.jai";
 #load "math/math.jai";
 #load "input/input.jai";
+#load "animation/animation.jai";
 
 // single-file loads
 #load "array.jai";

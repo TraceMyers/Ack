@@ -35,6 +35,7 @@ make_transform_matrix :: inline (joint_transform: Joint_Transform) -> Matrix4 {
     return make_transform_matrix(joint_transform.translation, joint_transform.rotation, joint_transform.scale);
 }
 
+// todo: hash table
 find_joint :: (skeleton: *Skeleton, name: string) -> int {
     hash := get_hash(name);
     for skeleton.joint_name_hashes {

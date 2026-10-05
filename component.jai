@@ -1,97 +1,145 @@
-// this is a relatively simple implementation of an "entity component system",
-// or at least the "component system" part. store all components of a type in a single
-// storage struct, then associate an entity ID with its component, which allows for automatic tight
-// packing of components + management of the component pointers on the entities when
-// component data moves around.
-//
-// when importing the engine, you need to pass one type and two procedures. (replace 'your' entries with your stuff)
-//
-// #import "Ack!"(
-//     user_types = struct {
-//         entity_id_type      :: Your_Entity_ID;       // your entity id data type
-//         entity_to_id_proc   :: your_entity_to_id;    // your procedure, type: (*entity) -> entity id
-//         id_to_entity_proc   :: your_id_to_entity;    // your procedure, type: (entity id) -> *entity
-//     }
-// );
-//
-// 'entity' in this case just means a struct that has a pointer to an instance of the relevant component type. 
-// the first pointer of the component's type on said entity struct is assumed to be the relevant component pointer, unless the pointer is explicitly provided.
-//
-// e.g. 
-// {
-//      entity_cheeks: Component_Storage(Entity_Cheek);
-//
-//      Entity :: struct {
-//          id: u64;
-//          left_cheek:  *Entity_Cheek; <----------- only the first pointer will be valid
-//          right_cheek: *Entity_Cheek;              after the first create_component() call
-//      }                                              |
-//                                                     |
-//      e := Entity.{id=1};                            |
-//                                                     |
-//      create_component(*entity_cheeks, e.id); o------+
-//      create_component(*entity_cheeks, e.id, *e.right_cheek); <-- turning the other cheek
-//
-//      Entity_Subtype :: struct {
-//          using base: Entity;
-//          freak_cheek: *Entity_Cheek;
-//      }
-//      
-//      es := Entity_Subtype.{id=2};
-//      
-//      // this only sets 'freak_cheek', since the component pointer search does not recurse into the base type
-//      create_component(*entity_cheeks, es.id);
-//
-//      // if we want to initialize 'left_cheek' and 'right_cheek', we must pass pointers.
-//      create_component(*entity_cheeks, es.id, *es.left_cheek);
-//      create_component(*entity_cheeks, es.id, *es.right_cheek);
-// }
-//
-// the consistency and simplicity of this approach makes it easier to manage than other implementations I have tried.
-//
-// the intended way to use this module:
-//  
-// Entity_Components :: struct {
-//      hair_components: Component_Storage(Hair);
-//      personality_components: Component_Storage(Personality);
-// }
-//
-// World :: struct {
-// ...
-//      using entity_components: Entity_Components;
-// ...
-// }
-//
-// spawn_entity :: () -> *Entity {
-// ...
-//      create_component(*world.hair_components, new_entity.id);
-//      create_component(*world.personality_components, new_entity.id);
-// ...
-// }
-//
-// style_entity_hairs :: () {
-// ...
-//      for world.hair_components {
-//          entity := your_id_to_entity(it.entity_id); // get associated entity if you need to
-//          style_hair(it.component);
-//      }
-// ...
-// }
-// 
-// destroy_entity :: (entity: *Entity) {
-// ...
-//      destroy_component(*world.hair_components, entity.id);
-//      destroy_component(*world.personality_components, entity.id);
-// ...
-// }
+/*
+this is an implementation of an "entity component system", or at least the "component system"
+part. the main idea is that the components of a type are stored together, tightly packed. the
+database-like behavior of a typical ecs is not present. the primary performance
+benefit of an ecs comes from iterating over and uniformly processing tightly packed data,
+which is the part that is made convenient here.
+
+destroy_component results in a swap-back within the component array, so the components are partially
+unordered. the entity that points to the final component would then be pointing to the wrong spot,
+but during destroy_component, that entity's pointer is corrected.
+
+components are stored in chunks, so calling create_component never causes pointer-corrupting
+allocations.
+
+if you want to use this feature as well as some others, when importing the engine, you need to pass
+information about how to interact with your entities.
+
+#import "Ack!"(
+    user_types = struct {
+        entity_type :: Your_Entity_Type;
+        // your entity id data type
+        entity_id_type :: Your_Entity_ID;       
+        // your procedure, type: (*Your_Entity_Type) -> Your_Entity_ID
+        entity_to_id_proc :: your_entity_to_id; 
+        // your procedure, type: (Your_Entity_ID) -> *Your_Entity_Type
+        id_to_entity_proc :: your_id_to_entity; 
+    }
+);
+
+'entity' in this case just means a struct that has a pointer to an instance of the relevant
+component type. the first pointer of the component's type on said entity struct is assumed to be
+the relevant component pointer, unless the pointer is explicitly provided. your entity type can 
+either be your base or only entity type. the component pointer may only exist on a 
+subtype of your entity type, but in that case you must provide a pointer to the component 
+field when when creating the component.
+
+e.g. 
+{
+     entity_cheeks: Component_Storage(Entity_Cheek);
+
+     Entity :: struct {
+         id: u64;
+         left_cheek:  *Entity_Cheek; <----------- only the first pointer will be valid
+         right_cheek: *Entity_Cheek;              after the first create_component() call
+     }                                              |
+                                                    |
+     e := Entity.{id=1};                            |
+                                                    |
+     create_component(*entity_cheeks, e.id); o------+
+     create_component(*entity_cheeks, e.id, *e.right_cheek); <-- turning the other cheek
+
+     Entity_Subtype :: struct {
+         using base: Entity;
+         freak_cheek: *Entity_Cheek;
+     }
+     
+     es := Entity_Subtype.{id=2};
+     
+     // this only sets 'left_cheek', since create_component is not aware of the subtype.
+     create_component(*entity_cheeks, es.id);
+
+     // if we want to initialize 'freak_cheek' and 'right_cheek', we must pass pointers.
+     create_component(*entity_cheeks, es.id, *es.freak_cheek);
+     create_component(*entity_cheeks, es.id, *es.right_cheek);
+}
+
+the intended way to use this module:
+ 
+Entity_Components :: struct {
+     hair_components: Component_Storage(Hair);
+     personality_components: Component_Storage(Personality);
+     thought_components: Component_Storage(Thought);
+}
+
+Entity :: struct {
+    hair: *Hair;
+    personality: *Personality;
+    thoughts: [..]Thought;
+}
+
+World :: struct {
+    using entity_components: Entity_Components;
+}
+
+spawn_entity :: (num_thoughts: int) -> *Entity {
+    new_entity := make_entity();
+    create_component(*world.hair_components, new_entity.id);
+    create_component(*world.personality_components, new_entity.id);
+    for 0..num_thoughts-1 {
+         create_component(*world.thought_components, new_entity.id, *new_entity.thoughts);
+    }
+}
+
+style_entity_hairs :: () {
+     for world.hair_components {
+         entity := your_id_to_entity(it.entity_id); // get associated entity if you want
+         style_hair(it.component);
+     }
+}
+
+destroy_entity :: (entity: *Entity) {
+     destroy_component(*world.hair_components, entity.id, *entity.hair);
+     destroy_component(*world.personality_components, entity.id, *entity.personality);
+
+     // each iteration of the loop both destroys the component and removes pointer from array.
+     // the last iteration also frees the array allocation by default.
+     for < *thought : entity.thoughts {
+         destroy_component(*world.thought_components, entity.id, thought);
+     }
+
+     // alternatively you can also just call destroy_component_array, which is a convenience
+     // procedure that does the above.
+}
+
+you can also store multiple components together in a single Multi_Component_Storage
+
+combined: Multi_Component_Storage(struct {
+     hair: Hair;
+     personality: Personality;
+     thoughts: Thoughts;
+});
+
+when you do this, only the first component ('hair') will set & manage the *Hair on an entity.
+the extra components are just along for the ride, and can be gotten with generated getters, like
+combined.get_personality_component(*combined, index). the components are stored in parallel
+arrays.
+
+if you go this route, it's recommended you store the entity's component index on either the
+entity or the primary (in this case, hair) component, because getting the index from the
+component is expensive. note that the index may go stale during a destroy_component call, unless
+you pass a procedure to re-set the index.
+
+e.g.
+    replacer_callback :: (entity: *Entity, hair: *Hair, new_index: Index_2D) {
+       entity.combined_component_index = new_index;
+   }
+*/
 
 Component_Storage :: struct($component_type: Type, $in_components_per_chunk := 64) {
     using #as multi: Multi_Component_Storage(struct{components: component_type;}, components_per_chunk=in_components_per_chunk);
 }
 
-// each component after the first will allocate an extra parallel component. for example, if the
-// first component type is Physics_Body and the second is Physics_Body_Flags, then for every 
-// Physics_Body, a Physics_Body_Flags will be allocated in parallel. However, extra components do not get automatic entity pointer management.
 Multi_Component_Storage :: struct($component_collection: Type, $components_per_chunk := 64) {
     Chunk :: struct {
         using soa: Sized_SOA(component_collection, components_per_chunk);
@@ -114,8 +162,8 @@ Multi_Component_Storage :: struct($component_collection: Type, $components_per_c
         return first_member.name, (cast(*Type) *first_member.type).*;
     };
 
-    // create component getters for storages that are housing multiple components
-    // otherwise just use get_component
+    // create component getters for storages that are housing multiple components.
+    // you can use get_component (farther down) to get the first (or only component)
     #if #run (cast(*Type_Info_Struct) type_info(component_collection)).members.count > 1 {
         #insert -> string {
             builder: String_Builder;
@@ -218,8 +266,25 @@ create_component_in_array :: (storage: *Multi_Component_Storage, id: user_types.
     return component_ptr.*;
 }
 
-// if the component ptr is in an array (added via create_component_in_array), it will
-// be removed by swapping with the last component in the array.
+// before calling:
+//
+// entity_a          entity_b
+//    |                 |
+//    v                 v
+// [  0  |  1  |  2  |  3  ]    <- array of components
+// 
+// after destroy_component called for the component owned by entity_a, component 3 is copied to 0:
+// 
+// entity_b
+//    |
+//    v
+// [  0  |  1  |  2  ]
+//
+// replacement_entity_callback is provided in order to allow you to make corrections game-side to 
+// data tracking the location of the component by pointer or index. for example, you may have copies 
+// of the component pointer that need to be corrected. in the params of replacement_entity_callback,
+// 'replacer' is entity_b, 'replacer_component' is the component entity_b now points to, 
+// and 'new_index' is the 2d index of the component, represented in this example by the 1d index, 0.
 destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component: **storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *user_types.entity_type, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
     removing_component := get_component_indexer(storage, component);
     engine_check(.LOW, removing_component.first >= 0);
@@ -263,10 +328,11 @@ destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_i
         replacement_id        := *replacement_chunk.ids[last_component.second];
         replacement_info      := *replacement_chunk.infos[last_component.second];
 
-        // swap back
-        stored_id.*        = replacement_id.*;
-        stored_info.*      = replacement_info.*;
+        // swap back id and component meta info
+        stored_id.*   = replacement_id.*;
+        stored_info.* = replacement_info.*;
 
+        // swap back component datas
         #insert -> string {
             builder: String_Builder;
 
@@ -298,6 +364,12 @@ destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_i
 
     storage.component_count -= 1;
     if auto_shrink then shrink(storage);
+}
+
+destroy_component_array :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component_array: [..]storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *user_types.entity_type, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
+    for < *storage {
+        destroy_component(storage, id, it, auto_shrink, reset_array_on_entity_if_empty, replacement_entity_callback);
+    }
 }
 
 for_expansion :: (storage: Multi_Component_Storage, body: Code, flags: For_Flags) #expand {
@@ -392,7 +464,7 @@ debug__validate_component_pointers :: (storage: *Multi_Component_Storage, compon
     }
 }
 
-#scope_module
+#scope_file
 
 get_component_pointer_and_offset :: (storage: *Multi_Component_Storage, entity: *$Entity_Type, component_ptr_override: **storage.first_component_type) -> **storage.first_component_type, int {
     first_component_ptr_offset :: #run get_first_component_pointer_offset(storage.first_component_type);

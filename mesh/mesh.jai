@@ -157,17 +157,6 @@ Skeleton :: struct {
     joint_name_hashes: []u32;
 }
 
-// todo: no frame rate encoded. 
-// todo: when/how is interpolate set in the exporter?
-// todo: this export method is just flattening it rather than keyframing. super inefficient.
-Skeletal_Animation :: struct {
-    name:              string;
-    timestamps:        []float32;
-    transforms:        []Joint_Transform; // joint_count * timestamps.count
-    interpolate:       bool;  // if true, translation and scale = lerp, rotation = slerp; otherwise, teleport
-    speed := 1.0;
-}
-
 Skeletal_Pose :: struct {
     allocation:      []u8;
     local_joints:    []Joint_Transform;
