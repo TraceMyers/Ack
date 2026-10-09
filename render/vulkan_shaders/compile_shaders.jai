@@ -27,14 +27,17 @@
     visitor :: (info: *File_Visit_Info, files: *Shader_Files) {
         if info.short_name == "header.glsl" {
             files.header = copy_string(info.full_name,, temp);
-        } else if ends_with(info.short_name, "vert") {
+        } else {
             input_path := copy_string(info.full_name,, temp);
             output_path := to_output_path(info.short_name,, temp);
-            array_add(*files.shaders, {input_path, output_path, "vert"});
-        } else if ends_with(info.short_name, "frag") {
-            input_path := copy_string(info.full_name,, temp);
-            output_path := to_output_path(info.short_name,, temp);
-            array_add(*files.shaders, {input_path, output_path, "frag"});
+
+            if ends_with(info.short_name, "vert") {
+                array_add(*files.shaders, {input_path, output_path, "vert"});
+            } else if ends_with(info.short_name, "frag") {
+                array_add(*files.shaders, {input_path, output_path, "frag"});
+            } else if ends_with(info.short_name, "compute") {
+                array_add(*files.shaders, {input_path, output_path, "compute"});
+            }
         }
     }
 

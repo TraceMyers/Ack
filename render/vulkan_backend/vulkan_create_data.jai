@@ -46,7 +46,7 @@ acquire_next_swapchain_image :: (current_frame: *Graphics_Frame) -> u32, bool {
     return image_index, true;
 }
 
-// todo: this image transitioning is a one-size-fits-all. look into how to do it otherwise.
+// todo: this image transitioning is a one-size-fits-all. look into how to do it with more params when optimization calls for it.
 transition_image :: (cmd: VkCommandBuffer, image: VkImage, old_layout: VkImageLayout, new_layout: VkImageLayout, force_aspect_mask: VkImageAspectFlags = 0) {
     image_barrier := VkImageMemoryBarrier2.{
         srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
@@ -56,7 +56,7 @@ transition_image :: (cmd: VkCommandBuffer, image: VkImage, old_layout: VkImageLa
         oldLayout = old_layout,
         newLayout = new_layout,
         subresourceRange = .{
-            aspectMask = ifx new_layout == .DEPTH_ATTACHMENT_OPTIMAL || new_layout == .DEPTH_STENCIL_ATTACHMENT_OPTIMAL then .DEPTH_BIT | .STENCIL_BIT else .COLOR_BIT,
+            aspectMask = ifx new_layout == .DEPTH_ATTACHMENT_OPTIMAL || new_layout == .DEPTH_STENCIL_ATTACHMENT_OPTIMAL || new_layout == .DEPTH_STENCIL_READ_ONLY_OPTIMAL then .DEPTH_BIT | .STENCIL_BIT else .COLOR_BIT,
             baseMipLevel = 0,
             levelCount = VK_REMAINING_MIP_LEVELS,
             baseArrayLayer = 0,
@@ -77,7 +77,7 @@ transition_image :: (cmd: VkCommandBuffer, image: VkImage, old_layout: VkImageLa
     vkCmdPipelineBarrier2(cmd, *dependency_info);
 }
 
-begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
+begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView, load_op:= VkAttachmentLoadOp.CLEAR) {
     using context.renderer;
     color_attachment := VkRenderingAttachmentInfo.{
         // sType:              VkStructureType = .RENDERING_ATTACHMENT_INFO;
@@ -87,7 +87,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
         // resolveMode:        VkResolveModeFlagBits;
         // resolveImageView:   VkImageView;
         // resolveImageLayout: VkImageLayout;
-        loadOp = .CLEAR,
+        loadOp = load_op,
         storeOp = .STORE,
         clearValue = {color={_float32=clear_color.array}}
     };
@@ -95,7 +95,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
     depth_attachment := VkRenderingAttachmentInfo.{
         imageView = depth_buffer.view,
         imageLayout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        loadOp = .CLEAR,
+        loadOp = load_op,
         storeOp = .STORE,
         clearValue.depthStencil = .{0, 0}
     };
@@ -103,7 +103,7 @@ begin_rendering :: (cmd: VkCommandBuffer, render_target_view: VkImageView) {
     stencil_attachment := VkRenderingAttachmentInfo.{
         imageView = depth_buffer.view,
         imageLayout = .DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-        loadOp = .CLEAR,
+        loadOp = load_op,
         storeOp = .STORE,
         clearValue.depthStencil = .{0, 0}
     };
@@ -556,6 +556,11 @@ internal_create_ubo_or_ssbo :: (pool: VkDescriptorPool, set: *VkDescriptorSet, b
     };
 
     vkUpdateDescriptorSets(logical.obj, 1, *write, 0, null);
+}
+
+bleh :: (set: *VkDescriptorSet, buffers: []*GPU_Buffer) {
+
+    // vkUpdateDescriptorSets(
 }
 
 create_gpu_vertex_buffer :: (buffer: *GPU_Buffer, vertices: []Static_Mesh_Vertex) {

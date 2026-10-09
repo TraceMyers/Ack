@@ -52,7 +52,7 @@ raycast_circle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, r
 }
 
 raycast_rectangle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, center: Vector3, half_width: float, half_length: float, width_direction: Vector3, length_direction: Vector3, plane_normal: Vector3) -> bool {
-    if raycast_plane_simple(result, ray_origin, ray_direction, center, plane_normal) {
+    if raycast_plane(result, ray_origin, ray_direction, center, plane_normal) {
         toward_hit_diff := result.hit_location - center;
         width_dist := dot(width_direction, toward_hit_diff);
         if abs(width_dist) > half_width {

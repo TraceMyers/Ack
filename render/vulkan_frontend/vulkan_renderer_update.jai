@@ -81,7 +81,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     per_frame_uniform: Per_Frame_Uniform_Buffer;
     {
         // todo: do math to make it so z buffer overlap doesn't happen or is easy to avoid
-        projection_matrix_game   := make_camera_projection_matrix(camera_info, viewport, 0.       , 0.5);
+        projection_matrix_game   := make_camera_projection_matrix(camera_info, viewport, 0.       , 1.);
         projection_matrix_layer5 := make_camera_projection_matrix(camera_info, viewport, 0.5000001, 0.6);
         projection_matrix_layer4 := make_camera_projection_matrix(camera_info, viewport, 0.6000001, 0.7);
         projection_matrix_layer3 := make_camera_projection_matrix(camera_info, viewport, 0.7000001, 0.8);
@@ -101,6 +101,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         per_frame_uniform.light_direction         = light_direction;
         per_frame_uniform.time                    = global_shader_time;
         per_frame_uniform.delta_time              = global_shader_delta_time;
+        per_frame_uniform.camera_near             = camera_info.near_plane;
+        per_frame_uniform.camera_far              = camera_info.far_plane;
 
         copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform, command_buffer=cmd);
     }
@@ -131,6 +133,39 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     draw_meshes(cmd, current_frame, skinned_mesh_draws);
     draw_billboard_particles(cmd, current_frame);
     draw_lines(cmd, current_frame);
+
+    if view_mode == .DEPTH {
+        vkCmdEndRendering(cmd);
+
+        transition_image(cmd, render_target, .COLOR_ATTACHMENT_OPTIMAL, .GENERAL);
+        transition_image(cmd, depth_buffer.obj, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+        vkCmdBindDescriptorSets(
+            cmd, .COMPUTE, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
+        );
+        vkCmdBindDescriptorSets(
+            cmd, .COMPUTE, billboard_pipeline_layout, 1, 1, *materials_storage_buffer_descriptor_set, 0, null
+        );
+        vkCmdBindDescriptorSets(
+            cmd, .COMPUTE, billboard_pipeline_layout, 2, 1, *current_frame.per_frame_uniform_descriptor_set, 0, null
+        );
+        vkCmdBindDescriptorSets(
+            cmd, .COMPUTE, depth_sampler_pipeline_layout, 3, 1, *frames[swapchain_image_index].depth_sampler_descriptor_set, 0, null
+        );
+        vkCmdBindPipeline(cmd, .COMPUTE, depth_sampler_pipeline);
+
+        GROUP :: 16;
+        vkCmdDispatch(cmd, 
+            (swapchain.extent.width  + GROUP - 1) / GROUP,
+            (swapchain.extent.height + GROUP - 1) / GROUP,
+            1
+        );
+
+        transition_image(cmd, render_target, .GENERAL, .COLOR_ATTACHMENT_OPTIMAL);
+        transition_image(cmd, depth_buffer.obj, .DEPTH_STENCIL_READ_ONLY_OPTIMAL, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+
+        begin_rendering(cmd, render_target_view, .LOAD);
+    }
+
     draw_dev_gui(cmd);
 
     vkCmdEndRendering(cmd);
@@ -138,6 +173,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // vkCmdDescriptorSets is for some reason designed s.t. you give it a pipeline layout it
     // must be compatible with.
     transition_image(cmd, render_target, .COLOR_ATTACHMENT_OPTIMAL, .PRESENT_SRC_KHR);
+    // transition_image(cmd, render_target, .GENERAL, .PRESENT_SRC_KHR);
 
     if !render_evaluate(.LOW, vkEndCommandBuffer(cmd), "failed to end the main command buffer") then return false;
 
@@ -147,7 +183,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         current_frame.image_available_semaphore
     );
     signal_info := semaphore_submit_info(
-        VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, 
+        // VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT, 
+        VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, 
         current_frame.image_rendered_semaphore
     );
     submit_info := roll_submit_info(*submit_command_info, *wait_info, *signal_info);

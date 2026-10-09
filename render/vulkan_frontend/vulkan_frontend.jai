@@ -41,6 +41,8 @@ Renderer :: struct {
         swapchain: Swapchain;
         frames: []Graphics_Frame;
 
+        view_mode: Renderer_View_Mode;
+
         transfer_command_pool: VkCommandPool;
         transfer_command_buffer: VkCommandBuffer;
         transfer_fence: VkFence;
@@ -57,7 +59,9 @@ Renderer :: struct {
 
         rendered_frame_count: s32;
 
+        // todo: putting a single view on an Image is proving probably not right?
         depth_buffer: *GPU_Image;
+        depth_buffer_visualize_view: VkImageView;
 
         init_success: bool;
 
@@ -72,6 +76,10 @@ Renderer :: struct {
         image_pool: Pool(GPU_Image);
 
         linear_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
+
+        depth_sampler_descriptor_set_layout: VkDescriptorSetLayout;
+        depth_sampler_pipeline_layout: VkPipelineLayout;
+        depth_sampler_pipeline: VkPipeline;
 
         textures_descriptor_set_layout: VkDescriptorSetLayout;
         textures_descriptor_set: VkDescriptorSet;
@@ -143,6 +151,11 @@ Renderer :: struct {
 
     sampler_table: Table(u32, VkSampler);
     shader_table: Table(string, VkShaderModule);
+}
+
+Renderer_View_Mode :: enum u8 {
+    LIT;
+    DEPTH;
 }
 
 MAX_MATERIALS :: 1024;
@@ -530,6 +543,8 @@ Graphics_Frame :: struct {
     opaque_skinned_mesh_draw_commands_descriptor_set: VkDescriptorSet;
     opaque_skinned_mesh_draw_commands: GPU_Buffer;
 
+    depth_sampler_descriptor_set: VkDescriptorSet;
+
     temp_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
 }
 
@@ -563,6 +578,8 @@ Per_Frame_Uniform_Buffer :: struct {
     light_direction:         Vector3; _pad4: float32;
     time:                    float32;
     delta_time:              float32;
+    camera_near:             float32;
+    camera_far:              float32;
 }
 
 Sprite_Rect :: struct {

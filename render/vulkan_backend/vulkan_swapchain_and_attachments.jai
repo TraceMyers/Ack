@@ -65,7 +65,7 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
         // layers per image
         imageArrayLayers = 1,
         // render directly to the image
-        imageUsage = .COLOR_ATTACHMENT_BIT /*| .TRANSFER_DST_BIT*/,
+        imageUsage = .COLOR_ATTACHMENT_BIT | .STORAGE_BIT /*| .TRANSFER_DST_BIT*/,
         // how to transform the image before... presenting?
         preTransform = support_info.capabilities.currentTransform,
         // whether the alpha channel should blend with other windows
@@ -211,6 +211,10 @@ create_depth_buffer :: () -> bool {
     view_info := image_view_create_info(depth_buffer.format, depth_buffer.obj, .DEPTH_BIT | .STENCIL_BIT);
 
     if !render_evaluate(.LOW, vkCreateImageView(logical.obj, *view_info, null, *depth_buffer.view), "failed to create the view of depth buffer") then return false;
+
+    viewmode_view_info := image_view_create_info(depth_buffer.format, depth_buffer.obj, .DEPTH_BIT);
+
+    if !render_evaluate(.LOW, vkCreateImageView(logical.obj, *viewmode_view_info, null, *depth_buffer_visualize_view), "failed to create depth visualization image view") then return false;
 
     render_log(.MEDIUM, "created the depth buffer");
     return true;

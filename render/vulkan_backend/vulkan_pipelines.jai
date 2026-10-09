@@ -97,6 +97,7 @@ Graphics_Pipeline_Build_Info :: struct {
     };
 }
 
+
 make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipeline_Build_Info, vertex_shader_filename: string = "", fragment_shader_filename: string = "", $Vertex_Type: Type) -> bool {
     build_info.type = .VERTEX_FRAGMENT;
 
@@ -164,6 +165,51 @@ build_pipeline :: (using build_info: *Graphics_Pipeline_Build_Info) -> VkPipelin
     }
 
     render_log(.MEDIUM, "created graphics pipeline \"%\"", build_info.name);
+    return pipeline;
+}
+
+    // sType:              VkStructureType = .COMPUTE_PIPELINE_CREATE_INFO;
+    // pNext:              *void;
+    // flags:              VkPipelineCreateFlags;
+    // stage:              VkPipelineShaderStageCreateInfo;
+    // layout:             VkPipelineLayout;
+
+    // basePipelineHandle: VkPipeline;
+    // basePipelineIndex:  s32;
+    // pipeline: VkPipeline;
+
+    // VkPipelineShaderStageCreateInfo :: struct {
+    //     sType:               VkStructureType = .PIPELINE_SHADER_STAGE_CREATE_INFO;
+    //     pNext:               *void;
+    //     flags:               VkPipelineShaderStageCreateFlags;
+    //     stage:               VkShaderStageFlagBits;
+    //     module:              VkShaderModule;
+    //     pName:               *u8;
+    //     pSpecializationInfo: *VkSpecializationInfo;
+    // }
+
+build_pipeline :: (compute_shader_filename: string, pipeline_name: string, layout: VkPipelineLayout, flags: VkPipelineCreateFlags = 0) -> VkPipeline {
+    using context.renderer;
+
+    shader := get_shader(compute_shader_filename);
+    if !render_evaluate(.LOW, shader != null, "failed to get compute shader %", compute_shader_filename) then return null;
+
+    create_info := VkComputePipelineCreateInfo.{
+        flags = flags,
+        stage = {
+            stage  = .COMPUTE_BIT,
+            module = shader,
+            pName  = "main"
+        },
+        layout = layout
+    };
+
+    pipeline: VkPipeline;
+    if !render_evaluate(.LOW, vkCreateComputePipelines(logical.obj, VK_NULL_HANDLE, 1, *create_info, null, *pipeline), "failed to create compute pipeline \"%\"", pipeline_name) {
+        return null;
+    }
+
+    render_log(.MEDIUM, "created compute pipeline \"%\"", pipeline_name);
     return pipeline;
 }
 

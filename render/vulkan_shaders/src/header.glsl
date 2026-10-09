@@ -2,12 +2,15 @@
 #extension GL_EXT_nonuniform_qualifier   : require
 #extension GL_EXT_scalar_block_layout    : require
 #extension GL_ARB_shader_draw_parameters : enable
+// for depth compute
+#extension GL_EXT_samplerless_texture_functions : require
 
 // -------------------------------------------------------- constants
 
 #define MAX_MATERIALS 1024
 
 // ------------------------------------------------------- procedures
+
 
 // ------------------------------------------------------------ types
 
@@ -87,4 +90,6 @@ layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     vec3  light_direction; float _pad4;
     float time;
     float delta_time;
+    float camera_near;
+    float camera_far;
 } frame;

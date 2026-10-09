@@ -451,7 +451,7 @@ create_frame_datas :: () -> bool {
     auto_release_temp();
 
     render_check(.LOW, frames.data == null);
-    frames = make_static_array(Graphics_Frame, min(swapchain.images.count, 2));
+    frames = make_static_array(Graphics_Frame, swapchain.images.count);
 
     command_pool_info := VkCommandPoolCreateInfo.{
         flags = .RESET_COMMAND_BUFFER_BIT,
@@ -593,6 +593,10 @@ create_default_pipelines :: () -> bool {
         build_info.depth_stencil.create.depthTestEnable = VK_TRUE;
         opaque_line_pipeline = build_pipeline(*build_info);
     }
+    {
+        
+        depth_sampler_pipeline = build_pipeline("depth_compute", "visualize_depth", depth_sampler_pipeline_layout);
+    }
     
     render_log(.MEDIUM, "created default pipelines");
     return true;
@@ -664,6 +668,28 @@ create_default_pipeline_layouts :: () -> bool {
         }
     }
 
+    // compute layouts
+
+    {
+        // 3 (0,1) = depth buffer as sampler, render target as write image
+        descriptor_set_layouts := VkDescriptorSetLayout.[
+            textures_descriptor_set_layout,
+            storage_buffer_descriptor_set_layout,
+            uniform_buffer_descriptor_set_layout,
+            depth_sampler_descriptor_set_layout
+        ];
+
+        create_pipeline_layout := VkPipelineLayoutCreateInfo.{
+            setLayoutCount = xx descriptor_set_layouts.count,
+            pSetLayouts    = descriptor_set_layouts.data
+        };
+
+        if !render_evaluate(.LOW, vkCreatePipelineLayout(logical.obj, *create_pipeline_layout, null, *depth_sampler_pipeline_layout), "failed to create depth_sampler pipeline layout") {
+            return false;
+        }
+
+    }
+
     return true;
 }
 
@@ -674,12 +700,13 @@ create_descriptors :: () -> bool {
     using context.renderer;
 
     ratios := Descriptor_Pool_Ratio.[
-        {.STORAGE_IMAGE, 0.25}, 
-        {.COMBINED_IMAGE_SAMPLER, 0.25}, 
-        {.UNIFORM_BUFFER, 0.25},
-        {.STORAGE_BUFFER, 0.25}
+        {.STORAGE_IMAGE, 1.},
+        {.SAMPLED_IMAGE, 1.},
+        {.COMBINED_IMAGE_SAMPLER, 1.},
+        {.UNIFORM_BUFFER, 1.},
+        {.STORAGE_BUFFER, 1.}
     ];
-    create_descriptor_pool(*descriptor_pool, xx (max_texture_count * 4), ratios);
+    create_descriptor_pool(*descriptor_pool, xx (max_texture_count * ratios.count), ratios);
 
     // Sets = granularity of when things change
     // Bindings = individual resources within that granularity
@@ -695,7 +722,7 @@ create_descriptors :: () -> bool {
 
     // any ssbo can use this layout
     storage_buffer_binding := VkDescriptorSetLayoutBinding.[
-        {binding=0, descriptorCount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT}
+        {binding=0, descriptorCount=1, descriptorType=.STORAGE_BUFFER, stageFlags=.VERTEX_BIT | .FRAGMENT_BIT | .COMPUTE_BIT}
     ];
     storage_buffer_descriptor_set_layout = build_descriptor_set_layout(storage_buffer_binding);
 
@@ -705,7 +732,7 @@ create_descriptors :: () -> bool {
             binding         = 0, 
             descriptorCount = xx max_texture_count, 
             descriptorType  = .COMBINED_IMAGE_SAMPLER, 
-            stageFlags      = .VERTEX_BIT | .FRAGMENT_BIT
+            stageFlags      = .VERTEX_BIT | .FRAGMENT_BIT | .COMPUTE_BIT
         }];
 
         // Mark it as partially bound and variable count
@@ -731,6 +758,16 @@ create_descriptors :: () -> bool {
             ref.local_buffer  = -1;
             ref.global_buffer = xx add_gpu_image_for_sampling(ref.path, sampler).pool_index;
         }
+    }
+    {
+        // combined because apparently the guaranteed minimum number of sets is 4
+        // todo: I think instead of just a depth sampler I could make one array of samplers
+        // note: if that happens, only the highest binding can be an array (wtf)
+        depth_sampler_binding := VkDescriptorSetLayoutBinding.[
+            {binding=0, descriptorCount=1, descriptorType=.SAMPLED_IMAGE, stageFlags=.COMPUTE_BIT},
+            {binding=1, descriptorCount=1, descriptorType=.STORAGE_IMAGE, stageFlags=.COMPUTE_BIT}
+        ];
+        depth_sampler_descriptor_set_layout = build_descriptor_set_layout(depth_sampler_binding);
     }
 
     create_gpu_storage_buffer(
@@ -807,6 +844,29 @@ create_descriptors :: () -> bool {
             *frame.opaque_skinned_mesh_draw_commands,
             size_of(VkDrawIndexedIndirectCommand) * max_draw_command_count
         );
+
+        {
+            frame.depth_sampler_descriptor_set = allocate_descriptor_set(descriptor_pool, depth_sampler_descriptor_set_layout);
+
+            sampler := get_or_add_sampler(.LINEAR, .LINEAR, .CLAMP_TO_EDGE, .CLAMP_TO_EDGE);
+            depth_info := VkDescriptorImageInfo.{
+                sampler     = sampler,
+                imageView   = depth_buffer_visualize_view,
+                imageLayout = .DEPTH_READ_ONLY_OPTIMAL
+            };
+            color_info := VkDescriptorImageInfo.{
+                sampler     = sampler,
+                imageView   = swapchain.image_views[it_index],
+                imageLayout = .GENERAL
+            };
+
+            writes := VkWriteDescriptorSet.[
+                {dstSet = frame.depth_sampler_descriptor_set, dstBinding = 0, descriptorCount = 1, descriptorType = .SAMPLED_IMAGE, pImageInfo=*depth_info}, 
+                {dstSet = frame.depth_sampler_descriptor_set, dstBinding = 1, descriptorCount = 1, descriptorType = .STORAGE_IMAGE, pImageInfo=*color_info}, 
+            ];
+
+            vkUpdateDescriptorSets(logical.obj, xx writes.count, writes.data, 0, null);
+        }
     }
 
     return true;

@@ -46,7 +46,6 @@ Skeletal_Animation_Edge_Side :: struct {
     handle_transition: (stage: Skeletal_Animation_Transition_Stage);
 }
 
-
 Skeletal_Animation_Edge :: struct {
     nodes: [2]s16 = .[-1, -1];
     sides: [2]Skeletal_Animation_Edge_Side;

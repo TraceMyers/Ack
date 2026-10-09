@@ -1,0 +1,22 @@
+layout(local_size_x=16, local_size_y=16) in;
+
+layout(set=3, binding=0) uniform texture2D depth_image;
+layout(set=3, binding=1, rgba8) uniform writeonly image2D color_image;
+
+float linearize_depth(float depth) {
+    return frame.camera_near * frame.camera_far / (frame.camera_near + depth * (frame.camera_far - frame.camera_near));
+}
+
+void main() {
+    ivec2 pixel_coord = ivec2(gl_GlobalInvocationID.xy);
+
+    ivec2 image_size = textureSize(depth_image, 0);
+    if (pixel_coord.x >= image_size.x || pixel_coord.y >= image_size.y) {
+        return;
+    }
+
+    float view_distance = linearize_depth(texelFetch(depth_image, pixel_coord, 0).r);
+    float depth = clamp(100 * (view_distance - frame.camera_near) / (frame.camera_far - frame.camera_near), 0.0, 1.0);
+
+    imageStore(color_image, pixel_coord, vec4(depth, depth, depth, 1.0));
+}
