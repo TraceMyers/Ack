@@ -5,6 +5,9 @@
 # optional arg: you can repeatedly use --include <node name> to include only those nodes
 #               (mutually exclusive with --exclude)
 # optional arg: --static skips joint/animation extraction entirely
+# optional arg: --png-level <0-9> zlib level for embedded PNGs (default 6)
+# optional arg: --max-tex <N> halve textures (2x2 box filter) until both dims <= N
+#               (file offsets are int32, so the whole .trm must stay under 2 GiB)
 # =====================================================================
 # leverage blender to convert other mesh file formats to the term mesh file format
 # for format specs / ai tool codegen instructions, see end of file
@@ -12,48 +15,25 @@
 # supported extensions of input files:
 # blend, gltf, glb, fbx, obj, dae, stl, ply, usd, usda, usdc, usdz, abc
 
+# Performance notes:
+# - All per-vertex / per-loop data is pulled with foreach_get into numpy arrays.
+#   Never index bpy collections (me.loops[i], layer.data[i], ...) per element.
+# - Image pixels are read with image.pixels.foreach_get, never image.pixels[:].
+# - PNGs are encoded with numpy + zlib (no pypng) on a thread pool; zlib
+#   releases the GIL, so encodes run in parallel with the rest of the export.
+
 import sys
-import importlib
-
-def ensure_deps():
-    """Install any missing packages into Blender's bundled Python."""
-    import site
-    # Blender excludes user site-packages from sys.path; add it so pip's
-    # --user installs (the default when the system dir isn't writable) work.
-    user_site = site.getusersitepackages()
-    if user_site not in sys.path:
-        sys.path.append(user_site)
-
-    required = [('numpy', 'numpy'), ('png', 'pypng')]
-    missing = []
-    for mod_name, pip_name in required:
-        try:
-            importlib.import_module(mod_name)
-        except ImportError:
-            missing.append(pip_name)
-    if not missing:
-        return
-
-    try:
-        subprocess.check_call(
-            [sys.executable, '-m', 'ensurepip', '--upgrade'],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except Exception:
-        pass
-    subprocess.check_call(
-        [sys.executable, '-m', 'pip', 'install', '--quiet'] + missing)
-    importlib.invalidate_caches()
-
-ensure_deps()
-
 import os
-import subprocess
-import bpy
+import io
+import time
+import zlib
 import struct
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+import bpy
 import bmesh
 import numpy as np
-import png
-import io
 
 
 def action_fcurves(action):
@@ -73,6 +53,21 @@ SECTION_FILE_SIZE = 168
 ANIM_FILE_SIZE = 16
 JOINT_FILE_SIZE = 112
 
+PNG_LEVEL = 6
+MAX_TEX = 0          # 0 = no limit
+INT32_MAX = 2**31 - 1
+_n_workers = max(1, os.cpu_count() or 1)
+_pool = ThreadPoolExecutor(max_workers=_n_workers)
+# Bound textures waiting to be encoded so a 4K-heavy scene doesn't hold
+# every decoded image in RAM at once.
+_inflight = threading.BoundedSemaphore(2 * _n_workers)
+
+_t0 = time.perf_counter()
+
+
+def log(msg):
+    print(f"  [{time.perf_counter() - _t0:7.2f}s] {msg}")
+
 
 def fatal(msg):
     print(f"ERROR: {msg}", file=sys.stderr)
@@ -89,14 +84,45 @@ def mat4_rows(m):
     return [m[r][c] for r in range(4) for c in range(4)]
 
 
+def mat_np(m):
+    return np.array([[m[r][c] for c in range(len(m[0]))] for r in range(len(m))],
+                    dtype=np.float64)
+
+
+# ---- PNG encoding (numpy + zlib, thread-safe, no bpy access) ----
+
+def _png_chunk(tag, data):
+    return (struct.pack('>I', len(data)) + tag + data
+            + struct.pack('>I', zlib.crc32(tag + data) & 0xffffffff))
+
+
+def encode_png_rgba8(w, h, rgba, level):
+    """rgba: uint8 array (h, w, 4), top-down. Uses the PNG 'Up' filter."""
+    rows = rgba.reshape(h, w * 4)
+    raw = np.empty((h, w * 4 + 1), dtype=np.uint8)
+    raw[:, 0] = 2                       # filter type: Up
+    raw[0, 1:] = rows[0]
+    np.subtract(rows[1:], rows[:-1], out=raw[1:, 1:])  # uint8 wraps mod 256
+    ihdr = struct.pack('>IIBBBBB', w, h, 8, 6, 0, 0, 0)
+    return (b'\x89PNG\r\n\x1a\n'
+            + _png_chunk(b'IHDR', ihdr)
+            + _png_chunk(b'IDAT', zlib.compress(raw.tobytes(), level))
+            + _png_chunk(b'IEND', b''))
+
+
 # ---- Buffer management ----
 
 class Bufs:
+    KIND = {0: 'strings', 1: 'indices', 2: 'indices', 3: 'anim data',
+            4: 'vertices', 5: 'vertices', 6: 'anim data', 'png': 'textures'}
+
     def __init__(self):
-        self._b = []
+        self._b = []   # bytes, or Future resolving to bytes
+        self._k = []
 
     def _add(self, t, n, sz, d):
         self._b.append(pad4(struct.pack('<iii', t, n, sz) + d))
+        self._k.append(t)
         return len(self._b) - 1
 
     def string(self, s):
@@ -104,38 +130,54 @@ class Bufs:
         return self._add(0, len(e), 1, e)
 
     def idx16(self, v):
-        return self._add(1, len(v), 2, struct.pack(f'<{len(v)}H', *v))
+        return self._add(1, len(v), 2, np.ascontiguousarray(v, '<u2').tobytes())
 
     def idx32(self, v):
-        return self._add(2, len(v), 4, struct.pack(f'<{len(v)}I', *v))
+        return self._add(2, len(v), 4, np.ascontiguousarray(v, '<u4').tobytes())
 
     def static_verts(self, vs):
-        return self._add(4, len(vs), 72,
-                         b''.join(struct.pack('<18f', *v) for v in vs))
+        """vs: float32 array (n, 18)."""
+        return self._add(4, len(vs), 72, np.ascontiguousarray(vs, '<f4').tobytes())
 
     def skinned_verts(self, vs):
-        return self._add(5, len(vs), 96, b''.join(
-            struct.pack('<18f4H4f', *v[:18],
-                        int(v[18]), int(v[19]), int(v[20]), int(v[21]),
-                        *v[22:26])
-            for v in vs))
+        """vs: structured array with SKIN_DTYPE (96 bytes / vertex)."""
+        assert vs.dtype.itemsize == 96
+        return self._add(5, len(vs), 96, vs.tobytes())
 
     def floats(self, fs):
-        return self._add(3, len(fs), 4, struct.pack(f'<{len(fs)}f', *fs))
+        return self._add(3, len(fs), 4, np.asarray(fs, '<f4').tobytes())
 
     def joint_transforms(self, ts):
-        return self._add(6, len(ts), 40,
-                         b''.join(struct.pack('<10f', *t) for t in ts))
+        a = np.asarray(ts, '<f4').reshape(-1, 10)
+        return self._add(6, len(a), 40, a.tobytes())
 
     def texture(self, w, h, rgba):
-        rows = [rgba[y * w * 4:(y + 1) * w * 4] for y in range(h)]
-        buf = io.BytesIO()
-        png.Writer(width=w, height=h, alpha=True, greyscale=False).write_packed(buf, rows)
-        png_data = buf.getvalue()
-        return self._add(0, len(png_data), 1, png_data)
+        """rgba: uint8 array (h, w, 4). Encoding happens on the thread pool."""
+        def job(rgba=rgba):
+            try:
+                png_data = encode_png_rgba8(w, h, rgba, PNG_LEVEL)
+                return pad4(struct.pack('<iii', 0, len(png_data), 1) + png_data)
+            finally:
+                _inflight.release()
+        _inflight.acquire()
+        self._b.append(_pool.submit(job))
+        self._k.append('png')
+        return len(self._b) - 1
+
+    def resolve(self):
+        self._b = [b.result() if not isinstance(b, (bytes, bytearray)) else b
+                   for b in self._b]
 
     def total(self):
         return sum(len(b) for b in self._b)
+
+    def breakdown(self):
+        out = {}
+        for b, k in zip(self._b, self._k):
+            name = self.KIND.get(k, str(k))
+            cnt, sz = out.get(name, (0, 0))
+            out[name] = (cnt + 1, sz + len(b))
+        return out
 
     def offsets(self, base):
         o, p = [], base
@@ -144,8 +186,8 @@ class Bufs:
             p += len(b)
         return o
 
-    def data(self):
-        return b''.join(self._b)
+    def chunks(self):
+        return self._b
 
 
 # ---- File import ----
@@ -234,21 +276,48 @@ def tex_settings(node):
     return f, f, w, w
 
 
-def img_rgba(image):
-    """Returns (width, height, bytes) with RGBA uint8 pixels, top-down."""
+def img_pixels(image):
+    """float32 (h, w, 4) RGBA, top-down. Uses foreach_get (fast path)."""
     w, h = image.size
     if w == 0 or h == 0:
         fatal(f"Image '{image.name}' has zero dimensions")
-    px = np.array(image.pixels[:], dtype=np.float32).reshape(h, w, 4)
-    px = np.flipud(px)
-    return w, h, (np.clip(px, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8).tobytes()
+    ch = image.channels or 4
+    px = np.empty(w * h * ch, dtype=np.float32)
+    image.pixels.foreach_get(px)
+    px = px.reshape(h, w, ch)[::-1]
+    if ch == 4:
+        return px
+    out = np.ones((h, w, 4), dtype=np.float32)
+    if ch >= 3:
+        out[:, :, :3] = px[:, :, :3]
+    else:                                   # grey / grey+alpha
+        out[:, :, :3] = px[:, :, :1]
+        if ch == 2:
+            out[:, :, 3] = px[:, :, 1]
+    return out
 
 
-def img_channel(image, ch):
-    """Single channel as float array (h, w), flipped to top-down."""
-    w, h = image.size
-    px = np.array(image.pixels[:], dtype=np.float32).reshape(h, w, 4)
-    return np.flipud(px[:, :, ch])
+def limit_size(px, name=''):
+    """Halve with a 2x2 box filter until both dims <= MAX_TEX. Filters the
+    stored values directly (sRGB-encoded for color maps, i.e. no linearize)."""
+    if not MAX_TEX:
+        return px
+    h0, w0 = px.shape[:2]
+    while max(px.shape[0], px.shape[1]) > MAX_TEX:
+        h, w = px.shape[:2]
+        if h % 2 or w % 2:   # replicate last row/col so dims are even
+            px = np.pad(px, ((0, h % 2), (0, w % 2), (0, 0)), mode='edge')
+        hh, ww = px.shape[0] // 2, px.shape[1] // 2
+        px = px.reshape(hh, 2, ww, 2, -1).mean(axis=(1, 3), dtype=np.float32)
+        if h == 1 or w == 1:
+            break
+    if px.shape[:2] != (h0, w0):
+        print(f"    tex {name}: {w0}x{h0} -> {px.shape[1]}x{px.shape[0]}")
+    return px
+
+
+def to_u8(f):
+    return (np.clip(f, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
 
 
 def uv_idx(node, layers):
@@ -269,8 +338,8 @@ def cached_tex(image, bufs):
     k = image.filepath or image.name
     if k in _tex_cache:
         return _tex_cache[k]
-    w, h, d = img_rgba(image)
-    idx = bufs.texture(w, h, d)
+    px = limit_size(img_pixels(image), image.name)
+    idx = bufs.texture(px.shape[1], px.shape[0], to_u8(px))
     _tex_cache[k] = idx
     return idx
 
@@ -281,21 +350,20 @@ def merge_orm(occ, rough, met, bufs):
     if not ref:
         return -1
     w, h = ref.size
-    out = np.zeros((h, w, 4), dtype=np.uint8)
-    out[:, :, 3] = 255
+    out = np.zeros((h, w, 4), dtype=np.float32)
+    out[:, :, 3] = 1.0
     for img, ch in [(occ, 0), (rough, 1), (met, 2)]:
         if not img:
             continue
-        data = img_channel(img, 0)
+        data = img_pixels(img)[:, :, 0]
         iw, ih = img.size
-        if ih != h or iw != w:
-            data = np.array(
-                [[data[min(int(row * ih / h), ih - 1)]
-                      [min(int(col * iw / w), iw - 1)]
-                  for col in range(w)] for row in range(h)],
-                dtype=np.float32)
-        out[:, :, ch] = (np.clip(data, 0.0, 1.0) * 255.0 + 0.5).astype(np.uint8)
-    return bufs.texture(w, h, out.tobytes())
+        if ih != h or iw != w:   # nearest-neighbour resample
+            ri = np.minimum((np.arange(h) * ih // h), ih - 1)
+            ci = np.minimum((np.arange(w) * iw // w), iw - 1)
+            data = data[ri[:, None], ci[None, :]]
+        out[:, :, ch] = data
+    out = limit_size(out, 'merged ORM')
+    return bufs.texture(out.shape[1], out.shape[0], to_u8(out))
 
 
 # ---- Material processing ----
@@ -309,7 +377,9 @@ def process_mat(mat, uv_layers, bufs):
         albedo_t=(-1, 0, 0, 2, 2), normal_t=(-1, 0, 0, 2, 2),
         emissive_t=(-1, 0, 0, 2, 2), orm_t=(-1, 0, 0, 2, 2),
     )
-    if not mat or not mat.use_nodes:
+    if not mat or not mat.node_tree:
+        return r
+    if bpy.app.version < (5, 0, 0) and not mat.use_nodes:
         return r
     bsdf = next((n for n in mat.node_tree.nodes
                  if n.type == 'BSDF_PRINCIPLED'), None)
@@ -392,37 +462,87 @@ def process_mat(mat, uv_layers, bufs):
     return r
 
 
-# ---- Vertex helpers ----
+# ---- Bulk mesh data (numpy) ----
 
-def joint_weights(vert, g2j):
-    inf = sorted(
-        [(g2j[g.group], g.weight)
-         for g in vert.groups if g.group in g2j],
-        key=lambda x: -x[1])[:4]
-    while len(inf) < 4:
-        inf.append((0, 0.0))
-    t = sum(w for _, w in inf)
-    if t > 0:
-        inf = [(j, w / t) for j, w in inf]
-    return [j for j, _ in inf], [w for _, w in inf]
+SKIN_DTYPE = np.dtype([('f', '<f4', (18,)), ('j', '<u2', (4,)), ('w', '<f4', (4,))])
 
 
-def loop_color(mesh, li):
-    try:
-        if hasattr(mesh, 'color_attributes') and mesh.color_attributes.active:
-            a = mesh.color_attributes.active
-            if a.domain == 'CORNER':
-                return tuple(a.data[li].color)[:4]
-            vi = mesh.loops[li].vertex_index
-            return tuple(a.data[vi].color)[:4]
-    except (IndexError, AttributeError):
-        pass
-    try:
-        if mesh.vertex_colors and mesh.vertex_colors.active:
-            return tuple(mesh.vertex_colors.active.data[li].color)[:4]
-    except (IndexError, AttributeError):
-        pass
-    return (1.0, 1.0, 1.0, 1.0)
+def fget(coll, attr, n, width, dtype=np.float32):
+    a = np.empty(n * width, dtype=dtype)
+    coll.foreach_get(attr, a)
+    return a.reshape(n, width) if width > 1 else a
+
+
+def active_color_attr(me):
+    """The mesh's active *color* attribute, or None. (In Blender 5.x
+    color_attributes.active can return a non-color attribute like 'position'.)"""
+    ca = getattr(me, 'color_attributes', None)
+    if ca is None:
+        return None
+    a = getattr(ca, 'active_color', None) or getattr(ca, 'active', None)
+    if a is None or getattr(a, 'data_type', '') not in ('FLOAT_COLOR', 'BYTE_COLOR'):
+        return None
+    if a.domain not in ('CORNER', 'POINT'):
+        return None
+    return a
+
+
+def loop_colors(me, n_loops, loop_vi):
+    a = active_color_attr(me)
+    if a is not None:
+        n = len(a.data)
+        c = fget(a.data, 'color', n, 4)
+        return c if a.domain == 'CORNER' else c[loop_vi]
+    vc = getattr(me, 'vertex_colors', None)          # pre-3.2 fallback
+    if vc and vc.active and len(vc.active.data) == n_loops:
+        return fget(vc.active.data, 'color', n_loops, 4)
+    return np.ones((n_loops, 4), dtype=np.float32)
+
+
+def loop_normals(me, n_loops):
+    cn = getattr(me, 'corner_normals', None)          # 4.1+
+    if cn is not None and len(cn) == n_loops:
+        return fget(cn, 'vector', n_loops, 3)
+    return fget(me.loops, 'normal', n_loops, 3)
+
+
+def vertex_skin(me, g2j):
+    """(nv,4) joint indices + (nv,4) normalized weights. Python per-vertex,
+    but only once per vertex (not per loop) and only for skinned meshes."""
+    nv = len(me.vertices)
+    J = np.zeros((nv, 4), dtype=np.uint16)
+    W = np.zeros((nv, 4), dtype=np.float64)
+    for vi, v in enumerate(me.vertices):
+        inf = sorted([(g2j[g.group], g.weight) for g in v.groups if g.group in g2j],
+                     key=lambda x: -x[1])[:4]
+        if not inf:
+            continue
+        t = sum(w for _, w in inf)
+        for k, (j, w) in enumerate(inf):
+            J[vi, k] = j
+            W[vi, k] = w / t if t > 0 else w
+    return J, W
+
+
+def normalize_rows(v):
+    l = np.linalg.norm(v, axis=1, keepdims=True)
+    np.divide(v, l, out=v, where=l > 0)
+    return v
+
+
+def dedup(rows):
+    """First-occurrence dedup of fixed-size records. Returns (unique, indices)
+    with unique in the order each record first appears (matches the old
+    dict-based behaviour; keeps index locality)."""
+    rows = np.ascontiguousarray(rows)
+    key = rows.view(np.dtype((np.void, rows.dtype.itemsize * (
+        rows.shape[1] if rows.ndim > 1 else 1))))
+    key = key.reshape(-1)
+    _, first, inv = np.unique(key, return_index=True, return_inverse=True)
+    order = np.argsort(first, kind='stable')
+    remap = np.empty_like(order)
+    remap[order] = np.arange(len(order))
+    return rows[first[order]], remap[inv.reshape(-1)]
 
 
 # ---- Mesh section extraction ----
@@ -439,15 +559,18 @@ def extract_sections(mesh_obj, arm_obj, bufs):
     eo = mesh_obj.evaluated_get(dg)
     me = eo.to_mesh()
 
-    # Triangulate
-    bm_temp = bmesh.new()
-    bm_temp.from_mesh(me)
-    bmesh.ops.triangulate(bm_temp, faces=bm_temp.faces)
-    bm_temp.to_mesh(me)
-    bm_temp.free()
-
-    if len(me.polygons) == 0:
+    # Triangulate only if needed (bmesh round-trip is not free on big meshes)
+    n_polys = len(me.polygons)
+    if n_polys == 0:
         fatal("Mesh has no faces")
+    totals = fget(me.polygons, 'loop_total', n_polys, 1, np.int32)
+    if (totals != 3).any():
+        bm_temp = bmesh.new()
+        bm_temp.from_mesh(me)
+        bmesh.ops.triangulate(bm_temp, faces=bm_temp.faces)
+        bm_temp.to_mesh(me)
+        bm_temp.free()
+        n_polys = len(me.polygons)
 
     if not me.uv_layers:
         me.uv_layers.new(name="UVMap")
@@ -455,59 +578,70 @@ def extract_sections(mesh_obj, arm_obj, bufs):
         me.calc_normals_split()
     me.calc_tangents()
 
-    # Object world transform — apply to positions, normals, tangents
-    world = mesh_obj.matrix_world
-    nmat = world.to_3x3().inverted_safe().transposed()
+    n_loops = len(me.loops)
+    nv = len(me.vertices)
+
+    # ---- bulk fetch ----
+    loop_vi = fget(me.loops, 'vertex_index', n_loops, 1, np.int32)
+    co = fget(me.vertices, 'co', nv, 3).astype(np.float64)
+    nrm = loop_normals(me, n_loops).astype(np.float64)
+    tan = fget(me.loops, 'tangent', n_loops, 3).astype(np.float64)
+    bsign = fget(me.loops, 'bitangent_sign', n_loops, 1)
+    uv0 = fget(me.uv_layers[0].data, 'uv', n_loops, 2)
+    uv1 = (fget(me.uv_layers[1].data, 'uv', n_loops, 2) if len(me.uv_layers) > 1
+           else np.zeros((n_loops, 2), np.float32))
+    col = loop_colors(me, n_loops, loop_vi)
+
+    loop_start = fget(me.polygons, 'loop_start', n_polys, 1, np.int32)
+    mat_idx = fget(me.polygons, 'material_index', n_polys, 1, np.int32)
+
+    # ---- transform to world ----
+    world = mat_np(mesh_obj.matrix_world)
+    m3 = world[:3, :3]
+    nmat = np.linalg.inv(m3).T if abs(np.linalg.det(m3)) > 1e-20 else m3
+    pos_w = co @ m3.T + world[:3, 3]
+    nrm_w = normalize_rows(nrm @ nmat.T)
+    # tangents are surface directions: transform by M, not inverse-transpose
+    tan_w = normalize_rows(tan @ m3.T)
+
+    # per-loop record (n_loops, 18) float32
+    rec = np.empty((n_loops, 18), dtype=np.float32)
+    rec[:, 0:3] = pos_w[loop_vi]
+    rec[:, 3:6] = nrm_w
+    rec[:, 6:9] = tan_w
+    rec[:, 9] = bsign
+    rec[:, 10] = uv0[:, 0]
+    rec[:, 11] = 1.0 - uv0[:, 1]
+    rec[:, 12] = uv1[:, 0]
+    rec[:, 13] = 1.0 - uv1[:, 1] if len(me.uv_layers) > 1 else 0.0
+    rec[:, 14:18] = col
+    rec += 0.0     # canonicalize -0.0 -> 0.0 so byte-wise dedup matches ==
 
     skinned = arm_obj is not None
-    g2j = {}
     if skinned:
         b2j = {b.name: i for i, b in enumerate(arm_obj.data.bones)}
-        for i, vg in enumerate(mesh_obj.vertex_groups):
-            if vg.name in b2j:
-                g2j[i] = b2j[vg.name]
+        g2j = {i: b2j[vg.name] for i, vg in enumerate(mesh_obj.vertex_groups)
+               if vg.name in b2j}
+        J, W = vertex_skin(me, g2j)
+        srec = np.empty(n_loops, dtype=SKIN_DTYPE)
+        srec['f'] = rec
+        srec['j'] = J[loop_vi]
+        srec['w'] = W[loop_vi].astype(np.float32) + np.float32(0.0)
+        rec = srec
+
+    # loop indices of each triangle, in polygon order
+    tri_loops = loop_start[:, None] + np.arange(3, dtype=np.int32)[None, :]
 
     sections = []
     n_mats = max(1, len(me.materials))
-
     for mi in range(n_mats):
-        vmap, verts, idxs = {}, [], []
-        for poly in me.polygons:
-            if poly.material_index != mi:
-                continue
-            for li in poly.loop_indices:
-                lp = me.loops[li]
-                vt = me.vertices[lp.vertex_index]
-                pos = tuple(world @ vt.co)
-                n = (nmat @ lp.normal).normalized()
-                nrm = tuple(n)
-                t = (nmat @ lp.tangent).normalized()
-                tan = tuple(t) + (lp.bitangent_sign,)
-                u0_raw = me.uv_layers[0].data[li].uv
-                u0 = (u0_raw[0], 1.0 - u0_raw[1])
-                if len(me.uv_layers) > 1:
-                    u1_raw = me.uv_layers[1].data[li].uv
-                    u1 = (u1_raw[0], 1.0 - u1_raw[1])
-                else:
-                    u1 = (0.0, 0.0)
-                col = loop_color(me, li)
-                key = pos + nrm + tan + u0 + u1 + col
-                if skinned:
-                    js, ws = joint_weights(vt, g2j)
-                    key += tuple(js) + tuple(ws)
-                if key in vmap:
-                    idxs.append(vmap[key])
-                else:
-                    vmap[key] = len(verts)
-                    idxs.append(len(verts))
-                    verts.append(key)
-        if not verts:
+        sel = tri_loops[mat_idx == mi].reshape(-1)
+        if sel.size == 0:
             continue
+        verts, idxs = dedup(rec[sel])
 
-        vb = (bufs.skinned_verts(verts) if skinned
-              else bufs.static_verts(verts))
-        ib = (bufs.idx16(idxs) if len(verts) <= 65535
-              else bufs.idx32(idxs))
+        vb = (bufs.skinned_verts(verts) if skinned else bufs.static_verts(verts))
+        ib = (bufs.idx16(idxs) if len(verts) <= 65535 else bufs.idx32(idxs))
         mat = me.materials[mi] if mi < len(me.materials) else None
         sections.append(dict(name_buf=bufs.string(mesh_obj.name), ib=ib, vb=vb,
                              mat=process_mat(mat, me.uv_layers, bufs)))
@@ -592,6 +726,7 @@ def extract_anims(arm, bufs):
     anims = []
 
     print(f"  [anim-order] final emit order: {[a.name for a in actions]}")
+    pbones = [arm.pose.bones[b.name] for b in bones]
     for action in actions:
         arm.animation_data.action = action
         frames = sorted({round(kf.co[0])
@@ -609,8 +744,7 @@ def extract_anims(arm, bufs):
         for fr in frames:
             bpy.context.scene.frame_set(int(fr))
             bpy.context.view_layer.update()
-            for bone in bones:
-                pb = arm.pose.bones[bone.name]
+            for pb in pbones:
                 lm = (pb.parent.matrix.inverted() @ pb.matrix
                        if pb.parent else world @ pb.matrix)
                 loc, rot, scl = lm.decompose()
@@ -630,10 +764,21 @@ def extract_anims(arm, bufs):
 # ---- Write TRM file ----
 
 def write_trm(path, sections, joints, anims, bufs):
+    bufs.resolve()   # wait for PNG encodes
     bo = bufs.offsets(HEADER_SIZE)
     s_off = HEADER_SIZE + bufs.total()
     a_off = s_off + len(sections) * SECTION_FILE_SIZE
     j_off = a_off + len(anims) * ANIM_FILE_SIZE
+    end = j_off + len(joints) * JOINT_FILE_SIZE
+    mb = lambda n: f"{n / 2**20:,.1f} MiB"
+    print("  buffer sizes:")
+    for k, (cnt, sz) in sorted(bufs.breakdown().items(), key=lambda kv: -kv[1][1]):
+        print(f"    {k:<10} {cnt:5d} buffers  {mb(sz)}")
+    print(f"    total file {mb(end)}")
+    if s_off > INT32_MAX:
+        fatal(f"Output would be {mb(end)}; TRM offsets are int32 (max 2 GiB). "
+              f"Re-run with --max-tex 2048 (or 1024) to downscale textures"
+              + (f" (currently --max-tex {MAX_TEX})" if MAX_TEX else "") + ".")
 
     with open(path, 'wb') as f:
         # Header
@@ -647,7 +792,8 @@ def write_trm(path, sections, joints, anims, bufs):
                             len(joints), JOINT_FILE_SIZE, j_off))
 
         # All buffers
-        f.write(bufs.data())
+        for chunk in bufs.chunks():
+            f.write(chunk)
 
         # Mesh sections
         for s in sections:
@@ -687,6 +833,7 @@ def write_trm(path, sections, joints, anims, bufs):
 # ---- Entry point ----
 
 def main():
+    global PNG_LEVEL, MAX_TEX
     try:
         args = sys.argv[sys.argv.index('--') + 1:]
     except ValueError:
@@ -695,7 +842,8 @@ def main():
               "-- <input> <output.trm>")
     if len(args) < 2:
         fatal("Expected at least 2 arguments: input_path output_path "
-              "[--exclude name ... | --include name ...] [--static]")
+              "[--exclude name ... | --include name ...] [--static] "
+              "[--png-level N] [--max-tex N]")
 
     inp, out = os.path.abspath(args[0]), os.path.abspath(args[1])
     excludes = set()
@@ -712,9 +860,14 @@ def main():
         elif args[i] == '--static':
             static = True
             i += 1
+        elif args[i] == '--png-level' and i + 1 < len(args):
+            PNG_LEVEL = max(0, min(9, int(args[i + 1])))
+            i += 2
+        elif args[i] == '--max-tex' and i + 1 < len(args):
+            MAX_TEX = max(1, int(args[i + 1]))
+            i += 2
         else:
             fatal(f"Unknown argument: {args[i]}")
-            i += 1
     if excludes and includes:
         fatal("--include and --exclude cannot be used together")
     if not os.path.isfile(inp):
@@ -748,6 +901,7 @@ def main():
                 break
     else:
         do_import(inp)
+    log("import done")
 
     mesh_objs, arm_obj = find_objects()
     if static:
@@ -788,13 +942,16 @@ def main():
         sections.extend(extract_sections(mesh_obj, arm_obj, bufs))
     if not sections:
         fatal("No geometry found")
+    log(f"geometry + materials done ({len(_tex_cache)} textures queued)")
     joints = [] if static else extract_joints(arm_obj, bufs)
     anims = [] if static else extract_anims(arm_obj, bufs)
+    if not static and arm_obj:
+        log("skeleton + animations done")
     write_trm(out, sections, joints, anims, bufs)
+    log("write done")
 
     print(f"OK: {len(sections)} sections, {len(joints)} joints, "
           f"{len(anims)} animations -> {out}")
-
 
 
 if __name__ == '__main__':

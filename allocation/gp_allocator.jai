@@ -47,7 +47,7 @@ gp_allocator_proc :: (mode: Allocator_Mode, size: s64, old_size: s64, old_memory
 }
 
 // last checked, defaults give ~70MB
-initialize_gp_allocator :: (using allocator: *GP_Allocator, add_medium_chunk_lists := 4, add_large_chunk_lists := 1) {
+initialize_gp_allocator :: (using allocator: *GP_Allocator, add_medium_chunk_lists := 8, add_large_chunk_lists := 4) {
     in_parent_allocator := context.allocator;
     allocator.* = .{parent_allocator=in_parent_allocator};
     base.data = allocator;
