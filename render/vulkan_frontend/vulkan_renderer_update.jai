@@ -103,6 +103,7 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
         per_frame_uniform.delta_time              = global_shader_delta_time;
         per_frame_uniform.camera_near             = camera_info.near_plane;
         per_frame_uniform.camera_far              = camera_info.far_plane;
+        per_frame_uniform.depth_view_mode_max_distance = depth_view_mode_max_distance;
 
         copy_to_gpu_buffer(*current_frame.per_frame_uniform_buffer, *per_frame_uniform, command_buffer=cmd);
     }
@@ -119,6 +120,8 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     // clear render target, among other things
     begin_rendering(cmd, render_target_view);
 
+    // pass 1: basically everything.
+
     vkCmdBindDescriptorSets(
         cmd, .GRAPHICS, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
     );
@@ -134,37 +137,18 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
     draw_billboard_particles(cmd, current_frame);
     draw_lines(cmd, current_frame);
 
-    if view_mode == .DEPTH {
-        vkCmdEndRendering(cmd);
+    vkCmdEndRendering(cmd);
 
-        transition_image(cmd, render_target, .COLOR_ATTACHMENT_OPTIMAL, .GENERAL);
-        transition_image(cmd, depth_buffer.obj, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .DEPTH_STENCIL_READ_ONLY_OPTIMAL);
-        vkCmdBindDescriptorSets(
-            cmd, .COMPUTE, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
-        );
-        vkCmdBindDescriptorSets(
-            cmd, .COMPUTE, billboard_pipeline_layout, 1, 1, *materials_storage_buffer_descriptor_set, 0, null
-        );
-        vkCmdBindDescriptorSets(
-            cmd, .COMPUTE, billboard_pipeline_layout, 2, 1, *current_frame.per_frame_uniform_descriptor_set, 0, null
-        );
-        vkCmdBindDescriptorSets(
-            cmd, .COMPUTE, depth_sampler_pipeline_layout, 3, 1, *frames[swapchain_image_index].depth_sampler_descriptor_set, 0, null
-        );
-        vkCmdBindPipeline(cmd, .COMPUTE, depth_sampler_pipeline);
+    // pass 2: special view modes (todo: maybe integrate with pass 1)
 
-        GROUP :: 16;
-        vkCmdDispatch(cmd, 
-            (swapchain.extent.width  + GROUP - 1) / GROUP,
-            (swapchain.extent.height + GROUP - 1) / GROUP,
-            1
-        );
-
-        transition_image(cmd, render_target, .GENERAL, .COLOR_ATTACHMENT_OPTIMAL);
-        transition_image(cmd, depth_buffer.obj, .DEPTH_STENCIL_READ_ONLY_OPTIMAL, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
-
-        begin_rendering(cmd, render_target_view, .LOAD);
+    if view_mode == {
+    case .DEPTH;
+        render_depth_view_mode(cmd, swapchain_image_index);
     }
+
+    // pass 3: dev gui
+
+    begin_rendering(cmd, render_target_view, .LOAD);
 
     draw_dev_gui(cmd);
 
@@ -209,6 +193,39 @@ update_renderer :: (thread_local_renderer: *Renderer) -> bool {
 
     rendered_frame_count += 1;
     return true;
+}
+
+render_depth_view_mode :: (cmd: VkCommandBuffer, swapchain_image_index: u32) {
+    using context.renderer;
+
+    current_frame := get_current_frame();
+    render_target := swapchain.images[swapchain_image_index];
+
+    transition_image(cmd, render_target, .COLOR_ATTACHMENT_OPTIMAL, .GENERAL);
+    transition_image(cmd, depth_buffer.obj, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL, .DEPTH_STENCIL_READ_ONLY_OPTIMAL);
+    vkCmdBindDescriptorSets(
+        cmd, .COMPUTE, billboard_pipeline_layout, 0, 1, *textures_descriptor_set, 0, null
+    );
+    vkCmdBindDescriptorSets(
+        cmd, .COMPUTE, billboard_pipeline_layout, 1, 1, *materials_storage_buffer_descriptor_set, 0, null
+    );
+    vkCmdBindDescriptorSets(
+        cmd, .COMPUTE, billboard_pipeline_layout, 2, 1, *current_frame.per_frame_uniform_descriptor_set, 0, null
+    );
+    vkCmdBindDescriptorSets(
+        cmd, .COMPUTE, depth_sampler_pipeline_layout, 3, 1, *frames[swapchain_image_index].depth_sampler_descriptor_set, 0, null
+    );
+    vkCmdBindPipeline(cmd, .COMPUTE, depth_sampler_pipeline);
+
+    GROUP :: 16;
+    vkCmdDispatch(cmd, 
+        (swapchain.extent.width  + GROUP - 1) / GROUP,
+        (swapchain.extent.height + GROUP - 1) / GROUP,
+        1
+    );
+
+    transition_image(cmd, render_target, .GENERAL, .COLOR_ATTACHMENT_OPTIMAL);
+    transition_image(cmd, depth_buffer.obj, .DEPTH_STENCIL_READ_ONLY_OPTIMAL, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 }
 
 // Copyright (c) 2026 Trace Myers

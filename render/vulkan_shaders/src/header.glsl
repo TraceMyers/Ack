@@ -92,4 +92,5 @@ layout(set=2, binding=0) uniform Per_Frame_Uniform_Buffer {
     float delta_time;
     float camera_near;
     float camera_far;
+    float depth_view_mode_max_distance;
 } frame;

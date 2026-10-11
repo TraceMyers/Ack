@@ -42,6 +42,7 @@ Renderer :: struct {
         frames: []Graphics_Frame;
 
         view_mode: Renderer_View_Mode;
+        depth_view_mode_max_distance := 200.0;
 
         transfer_command_pool: VkCommandPool;
         transfer_command_buffer: VkCommandBuffer;
@@ -580,6 +581,7 @@ Per_Frame_Uniform_Buffer :: struct {
     delta_time:              float32;
     camera_near:             float32;
     camera_far:              float32;
+    depth_view_mode_max_distance: float32;
 }
 
 Sprite_Rect :: struct {

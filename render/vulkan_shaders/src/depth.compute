@@ -16,7 +16,7 @@ void main() {
     }
 
     float view_distance = linearize_depth(texelFetch(depth_image, pixel_coord, 0).r);
-    float depth = clamp(100 * (view_distance - frame.camera_near) / (frame.camera_far - frame.camera_near), 0.0, 1.0);
+    float depth = view_distance / frame.depth_view_mode_max_distance;
 
     imageStore(color_image, pixel_coord, vec4(depth, depth, depth, 1.0));
 }
