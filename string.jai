@@ -11,7 +11,7 @@ as_array :: inline (str: string, $T: Type) -> []T {
     t_array.count = str.count / size_of(T);
     t_array.data = xx str.data;
     // requiring that the number of bytes is a multiple of the item size; no bytes left out
-    engine_check(.LOW, t_array.count * size_of(T) == str.count); 
+    engine_check(t_array.count * size_of(T) == str.count); 
     return t_array;
 }
 
@@ -51,7 +51,7 @@ concatenate :: (strings: ..string) -> string {
         memcpy(out_str.data + copy_loc, it.data, it.count);
         copy_loc += it.count;
     }
-    engine_check(.LOW, copy_loc == out_str.count);
+    engine_check(copy_loc == out_str.count);
 
     return out_str;
 }
@@ -110,7 +110,7 @@ to_upper :: inline (str: string) -> string {
 }
 
 hex_text_to_bytes :: (hex_text: string) -> string, bool {
-    engine_check(.LOW, hex_text.count % 2 == 0);
+    engine_check(hex_text.count % 2 == 0);
 
     out_bytes := alloc_string(hex_text.count / 2);
 
@@ -271,7 +271,7 @@ String_Stack :: struct {
 
 init :: inline (stack: *String_Stack) {
     if !stack.initialized {
-        engine_check(.LOW, context.allocator.proc != temp.proc, "string stack allocator can't be the temporary allocator as that would risk memory corruption");
+        engine_check(context.allocator.proc != temp.proc, "string stack allocator can't be the temporary allocator as that would risk memory corruption");
         array_reserve(*stack.bytes, 4096);
         array_reserve(*stack.sizes, 128);
         stack.initialized = true;
@@ -308,7 +308,7 @@ push :: (stack: *String_Stack, fmt: string, args: ..Any) -> string {
 }
 
 pop :: (stack: *String_Stack) {
-    engine_check(.LOW, stack.sizes.count > 0);
+    engine_check(stack.sizes.count > 0);
     
     remove_count := stack.sizes[stack.sizes.count-1];
     stack.sizes.count -= 1;

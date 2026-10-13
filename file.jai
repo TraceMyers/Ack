@@ -1,7 +1,7 @@
-scope_set_working_directory :: (dir: string) #expand {
+scope_set_working_directory :: (dir: string, condition := true) #expand {
     cwd := get_working_directory();
-    set_working_directory(dir);
-    `defer set_working_directory(cwd);   
+    if condition then set_working_directory(dir);
+    `defer set_working_directory(cwd);
 }
 
 convert_to_forward_slashes :: (path: string) {
@@ -31,7 +31,7 @@ move_down_directory :: (path: *Path, directory: string) {
 }
 
 move_up_directory :: (path: *Path) {
-    engine_check(.LOW, path.words.count > 0);
+    engine_check(path.words.count > 0);
     path.words.count -= 1;
 }
 
@@ -50,7 +50,7 @@ get_final_path :: (path: string) -> string {
         out_path: string;
         path_as_given := string.{out_path_len, path_buffer.data};
         index_of_drive_colon := find_index_from_left(path_as_given, #char ":");
-        engine_check(.LOW, index_of_drive_colon > 0);
+        engine_check(index_of_drive_colon > 0);
 
         // windows adds \\?\ before the drive letter sometimes/all the time (?) to indicate
         // that the path is final. I'm deleting it because it's a potentially unfamiliar

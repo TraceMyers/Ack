@@ -17,27 +17,27 @@ operator []= :: inline (using buffer: *Ring_Buffer($T), index: int, value: T) {
 }
 
 make_ring_buffer :: inline ($T: Type, size: int) -> Ring_Buffer(T) {
-    engine_check(.LOW, size >= 0);
+    engine_check(size >= 0);
     return ifx size == 0 then Ring_Buffer(T).{} else Ring_Buffer(T).{items=NewArray(size, T)};
 }
 
 push_front :: (using buffer: *Ring_Buffer($T), item: T) {
-    engine_check(.LOW, items.count > 0);
+    engine_check(items.count > 0);
     push_impl(buffer, item, *front, *back, decrement_wrap);
 }
 
 push_back :: (using buffer: *Ring_Buffer($T), item: T) {
-    engine_check(.LOW, items.count > 0);
+    engine_check(items.count > 0);
     push_impl(buffer, item, *back, *front, increment_wrap);
 }
 
 pop_front :: (using buffer: *Ring_Buffer($T)) -> T {
-    engine_check(.LOW, items.count > 0 && front != EMPTY);
+    engine_check(items.count > 0 && front != EMPTY);
     return pop_impl(buffer, *front, increment_wrap);
 }
 
 pop_back :: (using buffer: *Ring_Buffer($T)) -> T {
-    engine_check(.LOW, items.count > 0 && front != EMPTY);
+    engine_check(items.count > 0 && front != EMPTY);
     return pop_impl(buffer, *back, decrement_wrap);
 }
 

@@ -96,7 +96,7 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
         surface_tangent_x /= surface_speed;
         surface_tangent_y := cross(surface_normal, surface_tangent_x);
         
-        time_in_contact := context.physical_world.delta_time - contact.contact_time;
+        time_in_contact := engine.physical_world.delta_time - contact.contact_time;
 
         // NOTE: time in contact for friction is wrong
         // the normal force is implicit in whatever force was required to make
@@ -104,7 +104,7 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
 
         if surface_speed > 0 {
             // might be other forces at work...
-            normal_force := context.physical_world.gravity * dot(surface_normal, {z=1}) * moving_body.properties.mass;
+            normal_force := engine.physical_world.gravity * dot(surface_normal, {z=1}) * moving_body.properties.mass;
             
             friction := calculate_stribeck_friction(FRICTION_DEFAULT, normal_force, surface_speed);
             friction_accel := friction * moving_body.properties.inv_mass;
@@ -128,7 +128,7 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
                 moving_body.linear_velocity.z = 0;
             }
 
-            // physics_check(.LOW, moving_body.collider.shape == .SPHERE);
+            // physics_check(moving_body.collider.shape == .SPHERE);
             // moving_body.angular_velocity += axis_of_acceleration / moving_body.collider.sphere.radius * world.delta_time;
             // moving_body.linear_velocity = {};
         }
@@ -136,8 +136,8 @@ solve_contact :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal
 }
 
 solve_contact_sphere_sphere :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal, contact: *Physics_Contact) -> bool {
-    physics_check(.HIGH, body_a.collider.shape == .SPHERE && body_b.collider.shape == .SPHERE);
-    using context.physical_world;
+    physics_check(body_a.collider.shape == .SPHERE && body_b.collider.shape == .SPHERE, level=.HIGH);
+    using engine.physical_world;
 
     radius_sum        := body_a.collider.sphere.radius + body_b.collider.sphere.radius;
 
@@ -175,8 +175,8 @@ solve_contact_sphere_sphere :: (body_a: *Physics_Body_Internal, body_b: *Physics
 }
 
 solve_contact_sphere_plane :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal, contact: *Physics_Contact) -> bool {
-    physics_check(.HIGH, body_a.collider.shape == .SPHERE && body_b.collider.shape == .PLANE);
-    using context.physical_world;
+    physics_check(body_a.collider.shape == .SPHERE && body_b.collider.shape == .PLANE, level=.HIGH);
+    using engine.physical_world;
 
     contact.contact_normal = -y_axis(body_b);
     sphere_center_projection_onto_plane, distance_from_plane := project_point_onto_plane(body_a.next_position, body_b.next_position, y_axis(body_b));
@@ -212,7 +212,7 @@ solve_contact_sphere_plane :: (body_a: *Physics_Body_Internal, body_b: *Physics_
 }
 
 solve_contact_sphere_rectangle :: (body_a: *Physics_Body_Internal, body_b: *Physics_Body_Internal, contact: *Physics_Contact) -> bool {
-    physics_check(.HIGH, body_a.collider.shape == .SPHERE && body_b.collider.shape == .RECTANGLE);
+    physics_check(body_a.collider.shape == .SPHERE && body_b.collider.shape == .RECTANGLE, level=.HIGH);
     
     contact.contact_normal = -y_axis(body_b);
     sphere_center_projection_onto_plane, distance_from_plane := project_point_onto_plane(body_a.next_position, body_b.next_position, y_axis(body_b));
@@ -248,7 +248,7 @@ solve_contact_sphere_rectangle :: (body_a: *Physics_Body_Internal, body_b: *Phys
 
     plane_contact_point := body_a.next_position + body_a.linear_velocity * contact.contact_time + contact.contact_normal * body_a.collider.sphere.radius;
 
-    if contact.contact_time < 0 || contact.contact_time > context.physical_world.delta_time {
+    if contact.contact_time < 0 || contact.contact_time > engine.physical_world.delta_time {
         return false;
     }
 
@@ -287,7 +287,7 @@ calculate_contact_time :: (contact_normal: Vector3, a_position: Vector3, b_posit
 }
 
 return_is_contact :: () #expand {
-    `return `contact.contact_time >= 0 && `contact.contact_time < context.physical_world.delta_time;
+    `return `contact.contact_time >= 0 && `contact.contact_time < engine.physical_world.delta_time;
 }
 
 flip :: inline (using contact: *Physics_Contact) {

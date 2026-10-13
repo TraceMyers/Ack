@@ -40,7 +40,7 @@ set_property :: (in_body: *Physics_Body_Base, $property_name: string, new_value:
     property_ptr.* = new_value;
 
     #if property_name == "mass" {
-        physics_check(.HIGH, body.mass > 0);
+        physics_check(body.mass > 0, level=.HIGH);
         body.inv_mass = 1.0 / body.mass;
     }
 }
@@ -50,48 +50,48 @@ get_property :: inline (in_body: *Physics_Body_Base, $property_name: string) -> 
     return #insert #run tprint("body.properties.%;", property_name);
 }
 
-// if PHYSICS_VALIDATION_LEVEL > 0 (module param) is true, this can be called
+// if ENABLE_VALIDATION (module param) is true, this can be called
 // any time by the user to make a point in time they know the template properties
 // to be valid.
 debug__mark_template_properties_valid :: () {
-    #if PHYSICS_VALIDATION_LEVEL > 0 {
-        using context.physical_world;
-        physics_check(.LOW, body_templates.values.count == debug_template_properties.count);
+    #if ENABLE_VALIDATION {
+        using engine.physical_world;
+        physics_check(body_templates.values.count == debug_template_properties.count);
         for 0..body_templates.values.count-1 {
             debug_template_properties[it] = body_templates.values[it].properties;
         }
     }
 }
 
-// if PHYSICS_VALIDATION_LEVEL > 0 (module param) is true, this can be called
+// if ENABLE_VALIDATION (module param) is true, this can be called
 // any time by the user to make sure they aren't invalidating their own templates. it
 // will also be called automatically during the physics update.
 debug__validate_template_properties :: () {
-    #if PHYSICS_VALIDATION_LEVEL > 0 {
-        using context.physical_world;
-        physics_check(.LOW, body_templates.values.count == debug_template_properties.count);
+    #if ENABLE_VALIDATION {
+        using engine.physical_world;
+        physics_check(body_templates.values.count == debug_template_properties.count);
         for 0..body_templates.values.count-1 {
-            physics_check(.LOW, body_templates.values[it].properties == debug_template_properties[it]);
+            physics_check(body_templates.values[it].properties == debug_template_properties[it]);
         }
     }
 }
 
 is_unique :: inline (properties: *Physics_Properties) -> unique: bool, unique_index: s32 {
-    using context.physical_world;
+    using engine.physical_world;
     unique_index := properties - unique_properties.items.data;
     if unique_index >= 0 && unique_index < unique_properties.items.count {
-        physics_check(.LOW, is_pool_item_in_use(*unique_properties, unique_index));
+        physics_check(is_pool_item_in_use(*unique_properties, unique_index));
         return true, xx unique_index;
     }
-    physics_check(.LOW, is_data_from_template(xx properties));
+    physics_check(is_data_from_template(xx properties));
     return false, -1;
 }
 
 make_properties_unique :: inline (in_body: *Physics_Body_Base) {
     body := cast(*Physics_Body_Internal) in_body;
     if !is_unique(body.properties) {
-        new_properties_index := pool_borrow(*context.physical_world.unique_properties);
-        new_properties := *context.physical_world.unique_properties[new_properties_index];
+        new_properties_index := pool_borrow(*engine.physical_world.unique_properties);
+        new_properties := *engine.physical_world.unique_properties[new_properties_index];
         new_properties.* = body.properties.*;
         body.properties = new_properties;
     }

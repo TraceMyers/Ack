@@ -63,7 +63,7 @@ initialize_gp_allocator :: (using allocator: *GP_Allocator, add_medium_chunk_lis
 }
 
 gp_allocator_add_list :: (using allocator: *GP_Allocator, bin_index: s64) {
-    engine_check(.LOW, bin_index >= 0 && bin_index < bins.count);
+    engine_check(bin_index >= 0 && bin_index < bins.count);
     item_size := MIN_BIN_ITEM_SIZE << bin_index;
     list_size := item_size * ITEMS_PER_LIST;
     bin := *bins[bin_index];
@@ -98,7 +98,7 @@ gp_alloc :: (using allocator: *GP_Allocator, alloc_size: s64) -> *void {
         if bin.first_available == -1 {
             gp_allocator_add_list(allocator, bin_index);
         }
-        engine_check(.HIGH, bin.first_available != -1);
+        engine_check(bin.first_available != -1, level=.HIGH);
         item_size := MIN_BIN_ITEM_SIZE << bin_index;
         list_index := bin.first_available / ITEMS_PER_LIST;
         item_index := bin.first_available - list_index * ITEMS_PER_LIST;
@@ -132,7 +132,7 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
     // log("free header address: %", header.(u64));
     identifier := (header.bit_pattern & 0x0f).(Allocator_Identifier);
     if identifier >= .GP_ALLOCATOR_16 && identifier <= .GP_ALLOCATOR_2048 {
-        engine_check(.HIGH, (header.bit_pattern & 0xf0) == ALLOCATOR_VALIDATION_PATTERN, "bad validation bits %", (header.bit_pattern & 0xf0));
+        engine_check((header.bit_pattern & 0xf0) == ALLOCATOR_VALIDATION_PATTERN, "bad validation bits %", (header.bit_pattern & 0xf0), level=.HIGH);
 
         bin_index        := (identifier - .GP_ALLOCATOR_16).(s64);
         item_size        := MIN_BIN_ITEM_SIZE << bin_index;
@@ -141,7 +141,7 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
         list_data_begin  := bin.lists[list_index].data;
         list_data_end    := list_data_begin + item_size * ITEMS_PER_LIST;
 
-        engine_check(.HIGH, header.(*u8) >= list_data_begin && header.(*u8) < list_data_end);
+        engine_check(header.(*u8) >= list_data_begin && header.(*u8) < list_data_end, level=.HIGH);
 
         item_index       := (header.(*u8) - list_data_begin) / item_size;
         block_index : s32 = xx (list_index * ITEMS_PER_LIST + item_index);
@@ -167,7 +167,7 @@ gp_free :: (using allocator: *GP_Allocator, addr: *u8) {
         header.id = xx (Allocator_Identifier.SUPER_ALLOCATOR.(s32) | ALLOCATOR_VALIDATION_PATTERN);
         super_free(*lrg_allocator, addr);
     case;
-        engine_check(.LOW, false, "invalid id for allocation %", identifier);
+        engine_check(false, "invalid id for allocation %", identifier);
     }
 }
 

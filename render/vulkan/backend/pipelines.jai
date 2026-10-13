@@ -1,0 +1,15 @@
+Default_Pipeline :: struct {
+    BILLBOARD;
+    OPAQUE_STATIC_MESH;
+    OPAQUE_SKELETAL_MESH;
+    OPAQUE_LINE;
+    TRANSPARENT_LINE;
+    DEPTH_VISUALIZATION;
+}
+
+Default_Pipeline_Layout :: struct {
+    BILLBOARD;
+    OPAQUE_STATIC_MESH;
+    OPAQUE_SKELETAL_MESH;
+    DEPTH_VISUALIZATION;
+}

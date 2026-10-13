@@ -45,4 +45,6 @@ void main() {
     color.rgb *= light_value;
 
     color += add_color;
+
+    ## entity_click_selection
 }

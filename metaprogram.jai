@@ -25,7 +25,7 @@ align_of :: inline ($T: Type) -> int {
 }
 
 align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
-    engine_check(.HIGH, max_depth >= 1);
+    engine_check(max_depth >= 1, level=.HIGH);
 
     if max_align <= 1 {
         return 1;
@@ -95,7 +95,7 @@ align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
 get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
     field_offset : int : #run -> int {
         tinfo := cast(*Type_Info) struct_type;
-        engine_check(.HIGH, tinfo.type == .STRUCT);
+        engine_check(tinfo.type == .STRUCT, level=.HIGH);
         tinfo_struct := cast(*Type_Info_Struct) tinfo;
 
         for member : tinfo_struct.members {
@@ -158,7 +158,7 @@ struct_visit :: (struct_data: *$T, user_data: *void, visitor: Struct_Visitor, op
     array_reserve(*parent_stack, 16);
 
     cur_parent_tinfo := cast(*Type_Info_Struct) type_info(T);
-    engine_check(.LOW, cur_parent_tinfo.type == .STRUCT);
+    engine_check(cur_parent_tinfo.type == .STRUCT);
     array_add(*parent_stack, {xx struct_data, cur_parent_tinfo, null, 0, 0});
     
     struct_visit_impl(*parent_stack, user_data, visitor, options);
@@ -246,7 +246,7 @@ struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data:
             if path.sizes.count > 0 {
                 pop(*path);
             } else {
-                engine_check(.LOW, parent_stack.count == 0);
+                engine_check(parent_stack.count == 0);
             }
         }
     }

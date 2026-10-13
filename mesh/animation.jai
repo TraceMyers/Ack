@@ -50,7 +50,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     blend_alpha_sum := 0.0;
     if blends.count > 0 then for blends {
         blend_alpha_sum += it.blend_alpha;
-        engine_check(.LOW, abs(blend_alpha_sum - 1.0) < 0.001);
+        engine_check(abs(blend_alpha_sum - 1.0) < 0.001);
     }
 
     allocation_size := (size_of(Joint_Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
@@ -73,11 +73,11 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     next_frame_index: int;
 
     per_anim: [MAX_BLENDED_ANIMATIONS_PER_POSE]Per_Animation_Data;
-    engine_check(.LOW, blends.count <= per_anim.count);
+    engine_check(blends.count <= per_anim.count);
 
     for blend : blends {
         animation := *skeleton.animations[blend.animation_index];
-        engine_check(.HIGH, animation.timestamps.count >= 2);
+        engine_check(animation.timestamps.count >= 2, level=.HIGH);
 
         anim_data := *per_anim[it_index];
 

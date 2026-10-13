@@ -21,13 +21,13 @@ create_swapchain_and_attachments :: () -> bool {
     vkQueueWaitIdle(transfer_queue);
     vkQueueWaitIdle(graphics_queue);
 
-    if !render_evaluate(.LOW, create_swapchain(old_swapchain_obj), "failed creating swapchain") then return false;
-    if !render_evaluate(.LOW, create_render_target(), "failed creating render target") then return false;
-    if !render_evaluate(.LOW, create_depth_buffer(), "failed creating depth buffer") then return false;
+    if !render_evaluate(create_swapchain(old_swapchain_obj), "failed creating swapchain") then return false;
+    if !render_evaluate(create_render_target(), "failed creating render target") then return false;
+    if !render_evaluate(create_depth_buffer(), "failed creating depth buffer") then return false;
 
     should_recreate_swapchain = false;
 
-    render_log(.MEDIUM, "created swapchain and attachments");
+    render_log("created swapchain and attachments");
     return true;
 }
 
@@ -36,19 +36,19 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
 
     support_info: Swapchain_Support_Info;
 
-    if !render_evaluate(.LOW, get_swapchain_support_info(physical.obj, *support_info,, temp), "unable to get swapchain support info for the selected physical device") then return false;
+    if !render_evaluate(get_swapchain_support_info(physical.obj, *support_info,, temp), "unable to get swapchain support info for the selected physical device") then return false;
 
-    if !render_evaluate(.LOW, support_info.present_modes.count > 0 && support_info.formats.count > 0, "insufficient number or present modes or surface formats to create a swap chain") then return false;
+    if !render_evaluate(support_info.present_modes.count > 0 && support_info.formats.count > 0, "insufficient number or present modes or surface formats to create a swap chain") then return false;
 
     success: bool;
     swapchain.format, success       = choose_swapchain_surface_format(*support_info);
-    if !render_evaluate(.LOW, success, "failed to choose a swapchain surface format") then return false;
+    if !render_evaluate(success, "failed to choose a swapchain surface format") then return false;
 
     swapchain.present_mode, success = choose_swapchain_present_mode(*support_info);
-    if !render_evaluate(.LOW, success, "failed to choose a swapchain present mode") then return false;
+    if !render_evaluate(success, "failed to choose a swapchain present mode") then return false;
 
     swapchain.extent, success       = choose_swapchain_extent(*support_info);
-    if !render_evaluate(.LOW, success, "failed to choose an extent for the swapchain") then return false;
+    if !render_evaluate(success, "failed to choose an extent for the swapchain") then return false;
 
     max_image_count : u32 = ifx support_info.capabilities.maxImageCount == 0 
         then U32_MAX 
@@ -80,11 +80,11 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
         imageSharingMode = .EXCLUSIVE
     };
 
-    if !render_evaluate(.LOW, vkCreateSwapchainKHR(logical.obj, *create_info, null, *swapchain.obj), "failed creating the swapchain") then return false;
+    if !render_evaluate(vkCreateSwapchainKHR(logical.obj, *create_info, null, *swapchain.obj), "failed creating the swapchain") then return false;
 
     result: VkResult;
     swapchain.images, result = vkGetSwapchainImagesKHR(logical.obj, swapchain.obj);
-    if !render_evaluate(.LOW, success, "unable to get the array of swapchain images") then return false;
+    if !render_evaluate(success, "unable to get the array of swapchain images") then return false;
 
     if old_swapchain_obj != null {
         vkDestroySwapchainKHR(logical.obj, old_swapchain_obj, null);
@@ -105,10 +105,10 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
                 layerCount = 1
             }
         };
-        if !render_evaluate(.LOW, vkCreateImageView(logical.obj, *create_info, null, *swapchain.image_views[it_index]), "unable to create an image view for a swapchain image") then return false;
+        if !render_evaluate(vkCreateImageView(logical.obj, *create_info, null, *swapchain.image_views[it_index]), "unable to create an image view for a swapchain image") then return false;
     }
 
-    render_log(.MEDIUM, "created the swapchain. image count %", swapchain.images.count);
+    render_log("created the swapchain. image count %", swapchain.images.count);
     return true;
 }
 
@@ -122,19 +122,19 @@ reset_swapchain_images :: () {
 }
 
 get_swapchain_support_info :: (phys: VkPhysicalDevice, info: *Swapchain_Support_Info) -> bool {
-    if !render_evaluate(.LOW, vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, context.renderer.surface, *info.capabilities), "unable to get surface capabilities of a physical device") {
+    if !render_evaluate(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, context.renderer.surface, *info.capabilities), "unable to get surface capabilities of a physical device") {
         return false;
     }
     result: VkResult;
     {
         info.formats, result = vkGetPhysicalDeviceSurfaceFormatsKHR(phys, context.renderer.surface);
-        if !render_evaluate(.LOW, result, "unable to get phys device surface formats") || info.formats.count == 0 {
+        if !render_evaluate(result, "unable to get phys device surface formats") || info.formats.count == 0 {
             return false;
         }
     }
     {
         info.present_modes, result = vkGetPhysicalDeviceSurfacePresentModesKHR(phys, context.renderer.surface);
-        if !render_evaluate(.LOW, result, "unable to get surface present modes") || info.present_modes.count == 0 {
+        if !render_evaluate(result, "unable to get surface present modes") || info.present_modes.count == 0 {
             return false;
         }
     }
@@ -204,19 +204,19 @@ create_depth_buffer :: () -> bool {
         depth_buffer = null;
     }
 
-    render_check(.LOW, render_target_width > 0 && render_target_height > 0);
+    render_check(render_target_width > 0 && render_target_height > 0);
 
     depth_buffer = gpu_linear_allocate(.DEVICE_LOCAL_IMAGE, xx render_target_width, xx render_target_height, .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT, depth_buffer_format(physical.obj), create_color_view = false);
 
     view_info := image_view_create_info(depth_buffer.format, depth_buffer.obj, .DEPTH_BIT | .STENCIL_BIT);
 
-    if !render_evaluate(.LOW, vkCreateImageView(logical.obj, *view_info, null, *depth_buffer.view), "failed to create the view of depth buffer") then return false;
+    if !render_evaluate(vkCreateImageView(logical.obj, *view_info, null, *depth_buffer.view), "failed to create the view of depth buffer") then return false;
 
     viewmode_view_info := image_view_create_info(depth_buffer.format, depth_buffer.obj, .DEPTH_BIT);
 
-    if !render_evaluate(.LOW, vkCreateImageView(logical.obj, *viewmode_view_info, null, *depth_buffer_visualize_view), "failed to create depth visualization image view") then return false;
+    if !render_evaluate(vkCreateImageView(logical.obj, *viewmode_view_info, null, *depth_buffer_visualize_view), "failed to create depth visualization image view") then return false;
 
-    render_log(.MEDIUM, "created the depth buffer");
+    render_log("created the depth buffer");
     return true;
 }
 

@@ -74,21 +74,21 @@ set_collider_data_for_fast_aabb_calculation :: (using collider: *Physics_Collide
 }
 
 is_unique :: inline (collider: *Physics_Collider) -> unique: bool, unique_index: s32 {
-    using context.physical_world;
+    using engine.physical_world;
     unique_index := collider - unique_colliders.items.data;
     if unique_index >= 0 && unique_index < unique_colliders.items.count {
-        physics_check(.HIGH, is_pool_item_in_use(*unique_colliders, unique_index));
+        physics_check(is_pool_item_in_use(*unique_colliders, unique_index), level=.HIGH);
         return true, xx unique_index;
     }
-    physics_check(.HIGH, is_data_from_template(xx collider));
+    physics_check(is_data_from_template(xx collider), level=.HIGH);
     return false, -1;
 }
 
 make_collider_unique :: inline (in_body: *Physics_Body_Base) {
     body := cast(*Physics_Body_Internal) in_body;
     if !is_unique(body.collider) {
-        new_collider_index := pool_acquire(*context.physical_world.unique_colliders);
-        new_collider := *context.physical_world.unique_colliders[new_collider_index];
+        new_collider_index := pool_acquire(*engine.physical_world.unique_colliders);
+        new_collider := *engine.physical_world.unique_colliders[new_collider_index];
         new_collider.* = body.collider.*;
         body.collider = new_collider;
     }

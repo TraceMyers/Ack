@@ -323,7 +323,6 @@ Texture_Ref :: struct {
     using texture: Texture;
 }
 
-
 Render_Init_Options :: struct {
     populate_shader_data_in_working_directory := true;
     initialize_dev_gui := true;

@@ -223,7 +223,7 @@ set_orientation :: (out_orientation: *Quaternion, forward: Vector3, up: Vector3)
 
 rotate :: (in_out_orientation: *Quaternion, axis: Vector3, angle: float32) {
     if angle == 0 then return;
-    engine_check(.HIGH, is_normalized(axis));
+    engine_check(is_normalized(axis), level=.HIGH);
     ht := angle * 0.5;
     sin_ht, cos_ht := sin_cos(ht);
     rot_quat := Quaternion.{xyz=axis*sin_ht, w=cos_ht};
@@ -233,7 +233,7 @@ rotate :: (in_out_orientation: *Quaternion, axis: Vector3, angle: float32) {
 
 rotate :: inline (v: Vector3, axis: Vector3, angle: float32, $do_normalize := true) -> Vector3 {
     if angle == 0 then return v;
-    engine_check(.HIGH, is_normalized(axis));
+    engine_check(is_normalized(axis), level=.HIGH);
     ht := angle * 0.5;
     sin_ht, cos_ht := sin_cos(ht);
     rot_quat := Quaternion.{xyz=axis*sin_ht, w=cos_ht};
@@ -246,7 +246,7 @@ rotate :: inline (v: Vector3, axis: Vector3, angle: float32, $do_normalize := tr
 }
 
 interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: float32) -> Quaternion {
-    engine_check(.HIGH, alpha >= 0.0 && alpha <= 1.0, "alpha: %", alpha);
+    engine_check(alpha >= 0.0 && alpha <= 1.0, "alpha: %", alpha, level=.HIGH);
     cos_theta := dot(origin, target);
 
     // put target in the same hemisphere as the origin, so that the interpolation takes the shortest path
@@ -265,7 +265,7 @@ interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: floa
 // slow because of acos at the top
 // instead of calling this a bunch, for a fixed rotation, just use quat multiply
 interp_rotate_with_time :: (origin: Quaternion, target: Quaternion, speed: float32, delta_time: float32) -> Quaternion {
-    engine_check(.HIGH, speed >= 0);
+    engine_check(speed >= 0, level=.HIGH);
     rot_dist := speed * delta_time;
     cos_ht := abs(dot(origin, target));
     t := 2.0 * acos_approx(cos_ht);

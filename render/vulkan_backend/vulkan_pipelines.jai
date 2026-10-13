@@ -102,10 +102,10 @@ make_default_vertex_fragment_pipeline_build_info :: (build_info: *Graphics_Pipel
     build_info.type = .VERTEX_FRAGMENT;
 
     vert := get_shader(vertex_shader_filename);
-    if !render_evaluate(.LOW, vert != null, "failed to get vert shader %", vertex_shader_filename) then return false;
+    if !render_evaluate(vert != null, "failed to get vert shader %", vertex_shader_filename) then return false;
 
     frag := get_shader(fragment_shader_filename);
-    if !render_evaluate(.LOW, frag != null, "failed to get frag shader %", fragment_shader_filename) then return false;
+    if !render_evaluate(frag != null, "failed to get frag shader %", fragment_shader_filename) then return false;
 
     build_info.shader_stages = make_static_array(VkPipelineShaderStageCreateInfo, 2,, temp);
     build_info.shader_stages[0] = {
@@ -160,11 +160,11 @@ build_pipeline :: (using build_info: *Graphics_Pipeline_Build_Info) -> VkPipelin
     };
 
     pipeline: VkPipeline;
-    if !render_evaluate(.LOW, vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *pipeline), "failed to create graphics pipeline \"%\"", build_info.name) {
+    if !render_evaluate(vkCreateGraphicsPipelines(logical.obj, VK_NULL_HANDLE, 1, *pipeline_create, null, *pipeline), "failed to create graphics pipeline \"%\"", build_info.name) {
         return null;
     }
 
-    render_log(.MEDIUM, "created graphics pipeline \"%\"", build_info.name);
+    render_log("created graphics pipeline \"%\"", build_info.name);
     return pipeline;
 }
 
@@ -192,7 +192,7 @@ build_pipeline :: (compute_shader_filename: string, pipeline_name: string, layou
     using context.renderer;
 
     shader := get_shader(compute_shader_filename);
-    if !render_evaluate(.LOW, shader != null, "failed to get compute shader %", compute_shader_filename) then return null;
+    if !render_evaluate(shader != null, "failed to get compute shader %", compute_shader_filename) then return null;
 
     create_info := VkComputePipelineCreateInfo.{
         flags = flags,
@@ -205,11 +205,11 @@ build_pipeline :: (compute_shader_filename: string, pipeline_name: string, layou
     };
 
     pipeline: VkPipeline;
-    if !render_evaluate(.LOW, vkCreateComputePipelines(logical.obj, VK_NULL_HANDLE, 1, *create_info, null, *pipeline), "failed to create compute pipeline \"%\"", pipeline_name) {
+    if !render_evaluate(vkCreateComputePipelines(logical.obj, VK_NULL_HANDLE, 1, *create_info, null, *pipeline), "failed to create compute pipeline \"%\"", pipeline_name) {
         return null;
     }
 
-    render_log(.MEDIUM, "created compute pipeline \"%\"", pipeline_name);
+    render_log("created compute pipeline \"%\"", pipeline_name);
     return pipeline;
 }
 

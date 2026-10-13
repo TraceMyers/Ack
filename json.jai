@@ -95,12 +95,12 @@ for_each_element :: (result: *JSON_Load_Result, proc: for_each_json_element_proc
     // ----------------------------
 
     if result.elements.count == 0 {
-        engine_log(.MEDIUM, "can't search a json result that doesn't have any elements");
+        engine_log("can't search a json result that doesn't have any elements");
         return;
     }
 
     if result.elements[0].type != .ARRAY && result.elements[0].type != .OBJECT {
-        engine_log(.MEDIUM, "can't search a json result that doesn't have a collection (array, object) at the top level");
+        engine_log("can't search a json result that doesn't have a collection (array, object) at the top level");
         return;
     }
 
@@ -248,7 +248,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
                 }
             }
         } else {
-            engine_check(.LOW, type == .OBJECT, "json element is an %, but is being used as a %", type, T);
+            engine_check(type == .OBJECT, "json element is an %, but is being used as a %", type, T);
         }
     case *JSON_Array;
         #if incorrect_type_response == .RETURN_ERROR_VALUE {
@@ -259,7 +259,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
                 }
             }
         } else {
-            engine_check(.LOW, type == .ARRAY, "json element is an %, but is being used as a %", type, T);
+            engine_check(type == .ARRAY, "json element is an %, but is being used as a %", type, T);
         }
     case *string;
         #if incorrect_type_response == .RETURN_ERROR_VALUE {
@@ -270,7 +270,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
                 }
             }
         } else {
-            engine_check(.LOW, type == .STRING, "json element is a %, but is being used as a %", type, T);
+            engine_check(type == .STRING, "json element is a %, but is being used as a %", type, T);
         }
     case *s64;
         #if incorrect_type_response == .RETURN_ERROR_VALUE {
@@ -281,7 +281,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
                 }
             }
         } else {
-            engine_check(.LOW, type == .INT, "json element is an %, but is being used as a %", type, T);
+            engine_check(type == .INT, "json element is an %, but is being used as a %", type, T);
         }
     case *float64;
         #if incorrect_type_response == .RETURN_ERROR_VALUE {
@@ -292,7 +292,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
                 }
             }
         } else {
-            engine_check(.LOW, type == .FLOAT, "json element is a %, but is being used as a %", type, T);
+            engine_check(type == .FLOAT, "json element is a %, but is being used as a %", type, T);
         }
     case *NBool;
         #if incorrect_type_response == .RETURN_ERROR_VALUE {
@@ -303,7 +303,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
                 }
             }
         } else {
-            engine_check(.LOW, type == .NBOOL, "json element is a %, but is being used as a %", type, T);
+            engine_check(type == .NBOOL, "json element is a %, but is being used as a %", type, T);
         }
     }
 
@@ -971,7 +971,7 @@ parse_string :: (parser: *JSON_Parser) -> bool {
         } else if input_string[pos] == #char "\"" {
             // the string within the json stream was pre-parsed above the loop. it should be
             // bookended by quotes. if not, that's an engine bug.
-            engine_check(.LOW, pos + passthrough_byte_count + 1 == input_string.count);
+            engine_check(pos + passthrough_byte_count + 1 == input_string.count);
             break;
         } else {
             passthrough_byte_count += 1;
@@ -1238,7 +1238,7 @@ push_collection_child :: inline (parser: *JSON_Parser, file_pos: int) -> *JSON_E
         using parser.building_collection;
         // child_elements_count was pre-counted. if 'counter' goes over 'count', then either the pre-count was wrong,
         // or we're adding more children than exist.
-        engine_check(.LOW, child_elements_counter < child_elements_count);
+        engine_check(child_elements_counter < child_elements_count);
         element_index := child_elements_offset + child_elements_counter;
         new_element := *parser.elements[element_index];
         parser.file_positions[element_index] = xx file_pos;
@@ -1486,7 +1486,7 @@ HERE,
                         // caret points at the problem location
                         print(*error_string_builder,         "                 %^\n", spaces);
 
-                        engine_log(.MEDIUM, builder_to_string(*error_string_builder));
+                        engine_log(builder_to_string(*error_string_builder));
                     }
 
                     processed_error_count += 1;

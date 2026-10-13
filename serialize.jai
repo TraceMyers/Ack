@@ -56,7 +56,7 @@ initialize :: (using buffer: *Serializer, init_rw_mode: Rw_Mode, static_memory :
     pad_for_checksum = use_checksum;
     reverse_byte_order = reverse_primitive_byte_order;
     if static_memory != "" {
-        engine_check(.LOW, alloc_mode == .STATIC);
+        engine_check(alloc_mode == .STATIC);
         memory = static_memory;
     }
     reset_head_with_mode(buffer, init_rw_mode);
@@ -302,7 +302,7 @@ serialize :: (using buffer: *Serializer, str: *string) -> bool {
 }
 
 serialize_string :: (using buffer: *Serializer, str: *string, $mode: Rw_Mode) -> bool {
-    engine_check(.LOW, rw_mode == mode);
+    engine_check(rw_mode == mode);
     array: []u8;
     #if mode == .WRITE {
         array.data = str.data;
@@ -350,8 +350,8 @@ view_bytes_before_head :: (using buffer: *Serializer) -> string {
 }
 
 validate_checksum :: no_inline (using buffer: *Serializer) -> bool {
-    engine_check(.LOW, pad_for_checksum);
-    engine_check(.LOW, memory.count > SERIALIZER_CHECKSUM_SIZE);
+    engine_check(pad_for_checksum);
+    engine_check(memory.count > SERIALIZER_CHECKSUM_SIZE);
     calculated: [CHECKSUM_UINT32_COUNT]u32;
     calculate_checksum(buffer, calculated.data);
     have : *[CHECKSUM_UINT32_COUNT]u32 = xx memory.data;
@@ -362,8 +362,8 @@ validate_checksum :: no_inline (using buffer: *Serializer) -> bool {
 }
 
 imprint_checksum :: (using buffer: *Serializer) {
-    engine_check(.LOW, pad_for_checksum);
-    engine_check(.LOW, memory.count > SERIALIZER_CHECKSUM_SIZE);
+    engine_check(pad_for_checksum);
+    engine_check(memory.count > SERIALIZER_CHECKSUM_SIZE);
     calculate_checksum(buffer, xx memory.data);
 }
 
@@ -376,15 +376,15 @@ calculate_checksum :: (using buffer: *Serializer, out: *u32) {
         array: []u32;
         array.data = xx str.data;
         array.count = str.count / 4;
-        engine_check(.LOW, array.count == CHECKSUM_UINT32_COUNT);
+        engine_check(array.count == CHECKSUM_UINT32_COUNT);
         memcpy(out, array.data, size_of(u32) * CHECKSUM_UINT32_COUNT);
     }
 
     // --- 
 
-    engine_check(.LOW, pad_for_checksum);
-    engine_check(.LOW, memory.count > SERIALIZER_CHECKSUM_SIZE);
-    engine_check(.LOW, head >= SERIALIZER_CHECKSUM_SIZE);
+    engine_check(pad_for_checksum);
+    engine_check(memory.count > SERIALIZER_CHECKSUM_SIZE);
+    engine_check(head >= SERIALIZER_CHECKSUM_SIZE);
     bufstr := string.{memory.count - SERIALIZER_CHECKSUM_SIZE, memory.data + SERIALIZER_CHECKSUM_SIZE};
 
     auto_release_temp();
@@ -412,7 +412,7 @@ check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
 
     // ---
 
-    engine_check(.LOW, new_head >= 0);
+    engine_check(new_head >= 0);
     #if alloc_mode == .STATIC {
         return new_head <= memory.count;
     } else { // DYNAMIC
@@ -428,7 +428,7 @@ check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
 }
 
 advance_head :: inline (using buffer: *Serializer, by_count: s64) -> bool {
-    engine_check(.HIGH, by_count >= 0);
+    engine_check(by_count >= 0, level=.HIGH);
     new_head := head + by_count;
     if new_head <= memory.count {
         head = new_head;
@@ -488,7 +488,7 @@ reverse_bytes :: inline (in: $T) -> T
 }
 
 reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, size: s64) {
-    engine_check(.LOW, size > 0);
+    engine_check(size > 0);
     if size == {
     case 1;
         bytes_out.* = bytes_in.*;
@@ -524,7 +524,7 @@ reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, size: s64) {
                         bytes_in[1],
                         bytes_in[0];
     case;
-        engine_check(.LOW, bytes_out != bytes_in, "can't do byte swaps in a for loop (not sure why), so pointers should not alias");
+        engine_check(bytes_out != bytes_in, "can't do byte swaps in a for loop (not sure why), so pointers should not alias");
         for 0..size-1 {
             bytes_out[it] = bytes_in[(size-1)-it];
         }
@@ -601,9 +601,9 @@ is_serial_primitive :: (T: Type) -> bool {
 }
 
 validate_read_write :: () #expand {
-    engine_check(.LOW, `rw_mode == `mode, "expected mode %, have mode %", `mode, `rw_mode);
+    engine_check(`rw_mode == `mode, "expected mode %, have mode %", `mode, `rw_mode);
     if `pad_for_checksum {
-        engine_check(.LOW, `head >= SERIALIZER_CHECKSUM_SIZE);
+        engine_check(`head >= SERIALIZER_CHECKSUM_SIZE);
     }
 }
 

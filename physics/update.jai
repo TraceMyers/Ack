@@ -1,6 +1,6 @@
 // example physics update:
 // my_physics_update :: () {
-    // update_physics(game_config.time_scale);
+    // update_physics(); // uses engine.settings.time_scale
     // physical_entity_transform_update(#code {
     //     e := get_entity(entity_id);
     //     e.orientation = interp_rotate_with_alpha(body.prev_orientation, body.next_orientation, physics_transform_alpha);
@@ -10,12 +10,12 @@
 // }
 
 physics_delta_time :: () -> float #expand {
-    return PHYSICS_DELTA_TIME * context.physical_world.time_scale;
+    return PHYSICS_DELTA_TIME * engine.physical_world.time_scale;
 }
 
 // returns how many steps ran
-update_physics :: (in_time_scale: float) -> int {
-    using context.physical_world;
+update_physics :: () -> int {
+    using engine.physical_world;
 
     if start_time == 0 {
         start_time = seconds_since_init();
@@ -35,7 +35,7 @@ update_physics :: (in_time_scale: float) -> int {
     }
 
     // only updating time scale right before stepping, because this is exactly when it is used.
-    time_scale = in_time_scale;
+    time_scale = xx engine.settings.time_scale;
     step_count = total_simulation_steps;
 
     if step_state == .PAUSED {
@@ -52,7 +52,7 @@ update_physics :: (in_time_scale: float) -> int {
 // if consecutive_step_index is 0, some extra initialization is done, as well
 // as (todo) warm starting
 run_physics_step :: (consecutive_step_index: int) {
-    using context.physical_world;
+    using engine.physical_world;
 
     auto_release_temp();
 
@@ -64,7 +64,7 @@ run_physics_step :: (consecutive_step_index: int) {
 }
 
 run_physics_step_pre_contact :: (consecutive_step_index: int) {
-    using context.physical_world;
+    using engine.physical_world;
     // todo: warm starting
 
     for body_data {
@@ -125,8 +125,8 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
 
     `physics_transform_alpha := get_physical_entity_transform_alpha();
 
-    for b_iter, bi : context.physical_world.body_data {
-        using context.physical_world;
+    for b_iter, bi : engine.physical_world.body_data {
+        using engine.physical_world;
         `flags := body_data.get_flags_component(*body_data, b_iter.index).*;
         // if (`flags & .AWAKE) == 0 {
         //     continue;
@@ -143,9 +143,9 @@ physical_entity_transform_update :: (loop_body: Code) #expand {
 }
 
 get_physical_entity_transform_alpha :: () -> float32 {
-    using context.physical_world;
+    using engine.physical_world;
     total_simulation_time  := start_time - update_timestamp;
-    simulated_time         := context.physical_world.step_count * PHYSICS_DELTA_TIME;
+    simulated_time         := engine.physical_world.step_count * PHYSICS_DELTA_TIME;
     remainder              := total_simulation_time - simulated_time;
     return xx clamp(remainder * INV_PHYSICS_DELTA_TIME, 0, 1);
 }

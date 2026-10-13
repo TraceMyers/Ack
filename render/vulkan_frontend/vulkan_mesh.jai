@@ -30,7 +30,7 @@ upload_mesh_to_gpu :: (renderer: *Renderer, mesh: *Mesh) {
             using section.indices;
             if type == .U16 {
                 auto_release_temp();
-                render_check(.LOW, cpu_allocation._u16.count == count);
+                render_check(cpu_allocation._u16.count == count);
                 // all indices are converted to u32 so the can all go in a single buffer.
                 temp_u32_buffer := make_static_array(u32, count,, temp);
                 for 0..cpu_allocation._u16.count-1 {
@@ -38,22 +38,22 @@ upload_mesh_to_gpu :: (renderer: *Renderer, mesh: *Mesh) {
                 }
                 create_gpu_index_buffer(*gpu_allocation, temp_u32_buffer);
             } else {
-                render_check(.LOW, cpu_allocation._u32.count == count);
+                render_check(cpu_allocation._u32.count == count);
                 create_gpu_index_buffer(*gpu_allocation, cpu_allocation._u32);
             }
         }
         {
             using section.vertices;
             if type == .STATIC {
-                render_check(.LOW, cpu_allocation.static.count == count);
+                render_check(cpu_allocation.static.count == count);
                 // all sections must be either static or skinned, for simplicity. renderer requires it.
-                render_check(.LOW, !found_skinned_mesh_section); 
+                render_check(!found_skinned_mesh_section); 
                 create_gpu_vertex_buffer(*gpu_allocation, cpu_allocation.static);
                 found_static_mesh_section = true;
             } else {
-                render_check(.LOW, cpu_allocation.skinned.count == count);
+                render_check(cpu_allocation.skinned.count == count);
                 // all sections must be either static or skinned, for simplicity. renderer requires it.
-                render_check(.LOW, !found_static_mesh_section);
+                render_check(!found_static_mesh_section);
 
                 // forcing normalization of skinning weights
                 for *vertex : cpu_allocation.skinned {
@@ -104,7 +104,7 @@ upload_texture :: (using tex: *Texture, mesh: *Mesh, counter: *int) {
         sampler := get_or_add_sampler(min_filter, mag_filter, horizontal_wrap, vertical_wrap);
 
         // assuming all textures are unique -> adding one buffer per texture
-        // render_check(.LOW, buffer.gpu_allocation == -1);
+        // render_check(buffer.gpu_allocation == -1);
 
         buffer.index = add_gpu_image_for_sampling(buffer.cpu_allocation.data, buffer.width, buffer.height, sampler).pool_index;
         global_buffer = buffer.index;

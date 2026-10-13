@@ -17,7 +17,7 @@ acos_approx :: inline (x: float) -> float {
 // don't use this procedure if the input value is too large! makes large error.
 // recommended max ~4000
 mod_two_pi :: inline (x: float) -> float {
-    engine_check(.HIGH, x >= 0);
+    engine_check(x >= 0, level=.HIGH);
 
     // fixed point division, from before cpus could divide. conveniently gives the remainder as a byproduct.
 

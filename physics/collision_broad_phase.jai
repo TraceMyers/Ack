@@ -6,7 +6,7 @@ Contact_Island :: Hybrid_Storage_Array([2]u16);
 Color_Group    :: Contact_Island;
 
 run_contacts_broad_phase :: () {
-    using context.physical_world;
+    using engine.physical_world;
 
     for *color_groups {
         array_reset(it);
@@ -67,7 +67,7 @@ run_contacts_broad_phase :: () {
 }
 
 place_pair_in_group :: inline (body_color_group_flags: []u64, start_index: *int, contact: [2]u16) {
-    using context.physical_world;
+    using engine.physical_world;
 
     flags_a := *body_color_group_flags[contact[0]];
     flags_b := *body_color_group_flags[contact[1]];
@@ -89,7 +89,7 @@ place_pair_in_group :: inline (body_color_group_flags: []u64, start_index: *int,
         // color group i=64 is for linearly-solved overflow
         if color_groups.count < 65 {
             array_resize(*color_groups, 65);
-        } else physics_check(.LOW, color_groups.count == 65);
+        } else physics_check(color_groups.count == 65);
         group_index = 64;
     } else {
         group_index += group_index_offset;
@@ -111,23 +111,23 @@ place_pair_in_group :: inline (body_color_group_flags: []u64, start_index: *int,
 calculate_grid_overlap :: (_body: *Physics_Body_Base) -> Vector2i, Vector2i {
     body       := cast(*Physics_Body_Internal) _body;
     aabb       := calculate_aabb(body, true);
-    aabb_swept := sweep_aabb(aabb, body.linear_velocity * context.physical_world.delta_time);
+    aabb_swept := sweep_aabb(aabb, body.linear_velocity * engine.physical_world.delta_time);
     aabb_swept.extent *= 1.25;
 
     min := world_to_grid(aabb_swept.center - aabb_swept.extent);
     max := world_to_grid(aabb_swept.center + aabb_swept.extent);
 
-    physics_check(.LOW, min.x <= max.x);
-    physics_check(.LOW, min.y <= max.y);
+    physics_check(min.x <= max.x);
+    physics_check(min.y <= max.y);
 
     return min, max;
 }
 
 world_to_grid :: inline (v: Vector3) -> Vector2i {
     transformed := v.xy;
-    transformed -= context.physical_world.grid_origin;
-    transformed *= context.physical_world.grid_scale;
-    transformed = clamp(transformed, {0, 0}, {xx (context.physical_world.grid_width - 1), xx (context.physical_world.grid_width - 1)});
+    transformed -= engine.physical_world.grid_origin;
+    transformed *= engine.physical_world.grid_scale;
+    transformed = clamp(transformed, {0, 0}, {xx (engine.physical_world.grid_width - 1), xx (engine.physical_world.grid_width - 1)});
     return to_vector2i(transformed);
 }
 
@@ -135,16 +135,16 @@ Grid_To_World_Placement :: enum { UPPER_LEFT; CENTER; LOWER_RIGHT; }
 
 grid_to_world :: inline (v: Vector2i, $placement := Grid_To_World_Placement.UPPER_LEFT) -> Vector3 {
     transformed := Vector2.{xx v.x, xx v.y};
-    inv_grid_scale := splat(1 / context.physical_world.grid_scale, 2);
+    inv_grid_scale := splat(1 / engine.physical_world.grid_scale, 2);
     transformed *= inv_grid_scale;
 
     #if placement == {
     case .UPPER_LEFT;
-        transformed += context.physical_world.grid_origin;
+        transformed += engine.physical_world.grid_origin;
     case .CENTER;
-        transformed += context.physical_world.grid_origin + inv_grid_scale * 0.5;
+        transformed += engine.physical_world.grid_origin + inv_grid_scale * 0.5;
     case .LOWER_RIGHT;
-        transformed += context.physical_world.grid_origin + inv_grid_scale;
+        transformed += engine.physical_world.grid_origin + inv_grid_scale;
     }
 
     return Vector3.{xy=transformed};
@@ -173,13 +173,13 @@ for_cells_in_overlap :: (_body: *Physics_Body_Base, $allocate_cell_if_empty: boo
 }
 
 place_into_contact_grid :: (_body: *Physics_Body_Base) {
-    using context.physical_world;
+    using engine.physical_world;
 
     // modification of grid is only allowed until the first body is placed into it.
     // todo: make reset feature?
     grid_in_use = true;
 
-    physics_check(.LOW, !has_flags(_body, .PLACED_INTO_CONTACT_GRID));
+    physics_check(!has_flags(_body, .PLACED_INTO_CONTACT_GRID));
 
     body_index: u16 = xx index_2d_to_1d(_body.index, body_data.components_per_chunk);
 
@@ -196,7 +196,7 @@ place_into_contact_grid :: (_body: *Physics_Body_Base) {
 }
 
 remove_from_contact_grid :: (_body: *Physics_Body_Base) {
-    using context.physical_world;
+    using engine.physical_world;
 
     if !has_flags(_body, .PLACED_INTO_CONTACT_GRID) {
         return;
@@ -216,7 +216,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
 }
 
 diff_place_into_contact_grid :: (_body: *Physics_Body_Base) {
-    using context.physical_world;
+    using engine.physical_world;
 
     body := cast(*Physics_Body_Internal) _body;
 
@@ -269,10 +269,10 @@ get_contact_cell :: inline (coords: Vector2i) -> *Contact_Cell {
 }
 
 get_contact_cell :: inline (key: num32, allocate_if_empty := false) -> *Contact_Cell {
-    cell := table_find_pointer(*context.physical_world.contact_grid, key._u32);
+    cell := table_find_pointer(*engine.physical_world.contact_grid, key._u32);
     if cell == null && allocate_if_empty {
-        table_set(*context.physical_world.contact_grid, key._u32, {external.allocator = context.physical_world.contact_grid_cell_allocator});
-        cell = table_find_pointer(*context.physical_world.contact_grid, key._u32);
+        table_set(*engine.physical_world.contact_grid, key._u32, {external.allocator = engine.physical_world.contact_grid_cell_allocator});
+        cell = table_find_pointer(*engine.physical_world.contact_grid, key._u32);
     }
     return cell;
 }

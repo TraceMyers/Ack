@@ -162,7 +162,7 @@ wake_front :: inline (mutex: *RW_Mutex, do_lock := true) {
 
 move_front :: (mutex: *RW_Mutex) {
     scope_lock(*mutex.wait_events_mutex);
-    engine_check(.HIGH, mutex.wait_events.count > 0);
+    engine_check(mutex.wait_events.count > 0, level=.HIGH);
     front_event := mutex.wait_events[0];
     array_ordered_remove_by_index(*mutex.wait_events, 0);
     return_thread_wait_event(front_event);
@@ -188,7 +188,7 @@ init_thread_wait_events :: () {
 borrow_thread_wait_event :: () -> Thread_Wait_Event {
     using context.thread_wait_events;
 
-    engine_check(.HIGH, items.count < U16_MAX);
+    engine_check(items.count < U16_MAX, level=.HIGH);
 
     if queue.count == 0 {
         old_count := items.count;
@@ -207,7 +207,7 @@ borrow_thread_wait_event :: () -> Thread_Wait_Event {
 
     if handle.* == null {
         handle.* = CreateEventA(null, Win32.BOOL.TRUE, Win32.BOOL.FALSE, tprint("thread wait event %", event.pool_id));
-        engine_check(.HIGH, handle.* != null);
+        engine_check(handle.* != null, level=.HIGH);
     }
     event.handle = handle.*;
 
@@ -236,7 +236,7 @@ return_thread_wait_event :: (event: Thread_Wait_Event) {
     wait_for_event :: (event: Event_Handle) {
         result := Win32.WaitForSingleObject(event, Win32.INFINITE);
         // ideally this would be a continuable break
-        engine_check(.LOW, result == Win32.WAIT_OBJECT_0);
+        engine_check(result == Win32.WAIT_OBJECT_0);
     }
 }
 

@@ -16,10 +16,10 @@ Camera_Info :: struct {
 
 get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which := enum { X_OVER_Y; Y_OVER_X; }.X_OVER_Y) -> float {
     if which == .X_OVER_Y {
-        engine_check(.LOW, viewport.y > 0);
+        engine_check(viewport.y > 0);
         return ifx aspect_ratio == 0.0 then viewport.x / viewport.y else aspect_ratio;
     } else {
-        engine_check(.LOW, viewport.x > 0);
+        engine_check(viewport.x > 0);
         return ifx aspect_ratio == 0.0 then viewport.y / viewport.x else 1.0 / aspect_ratio;
     }
 }
@@ -116,7 +116,7 @@ transform_to_clip_coordinates :: (using camera: Camera_Info, camera_center: Vect
 // mouse cursor. origin is camera center if projection is perspective. if orthographic, the origin
 // is the point on the camera plane at the mouse cursor location.
 get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window: Window_Type) -> origin: Vector3, direction: Vector3, success: bool {
-    cursor_pos_x, cursor_pos_y, success := get_mouse_pointer_position(window, false);
+    cursor_pos_x, cursor_pos_y, success := Window_Creation.get_mouse_pointer_position(window, false);
     if success {
         origin, direction := get_camera_ray_passing_through_window_position(camera, camera_center, camera_orientation, viewport, {xx cursor_pos_x, xx cursor_pos_y});
         return origin, direction, true;
@@ -129,9 +129,9 @@ get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_I
 // origin is camera center if projection is perspective. if orthographic, the origin
 // is the point on the camera plane at the given window position.
 get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2) -> origin: Vector3, direction: Vector3 {
-    engine_check(.LOW, viewport.x > 0);
-    engine_check(.LOW, viewport.y > 0);
-    engine_check(.HIGH, is_normalized(camera_orientation));
+    engine_check(viewport.x > 0);
+    engine_check(viewport.y > 0);
+    engine_check(is_normalized(camera_orientation), level=.HIGH);
 
     norm_position := window_pos / viewport;
     norm_clip_rect_center := Vector2.{0.5,0.5};
@@ -168,7 +168,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 
 // ray doesn't have to be normalized (?)
 get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
-    engine_check(.HIGH, is_normalized(camera_orientation));
+    engine_check(is_normalized(camera_orientation), level=.HIGH);
 
     camera_axis_fore  := rotate(WORLD_AXIS_FORE, camera_orientation);
     camera_axis_right := rotate(WORLD_AXIS_RIGHT, camera_orientation);
@@ -222,8 +222,8 @@ Draw_Plane :: struct {
 }
 
 make_draw_plane :: (camera: Camera_Info, viewport: Vector2, distance: float) -> Draw_Plane {
-    engine_check(.LOW, viewport.x > 0);
-    engine_check(.LOW, viewport.y > 0);
+    engine_check(viewport.x > 0);
+    engine_check(viewport.y > 0);
 
     draw_plane := Draw_Plane.{centerline_distance=distance}; 
     vt_fov := camera.perspective_vertical_fov;
@@ -235,9 +235,9 @@ make_draw_plane :: (camera: Camera_Info, viewport: Vector2, distance: float) -> 
 
 // 0,0 -> bottom left
 get_point_on_draw_plane :: (draw_plane: Draw_Plane, camera: Camera_Info, camera_center: Vector3, camera_fore: Vector3, camera_up: Vector3, norm_point: Vector2) -> Vector3 {
-    engine_check(.HIGH, is_normalized(camera_fore));
-    engine_check(.HIGH, is_normalized(camera_up));
-    engine_check(.HIGH, is_normalized(norm_point));
+    engine_check(is_normalized(camera_fore), level=.HIGH);
+    engine_check(is_normalized(camera_up), level=.HIGH);
+    engine_check(is_normalized(norm_point), level=.HIGH);
 
     camera_right := cross(camera_up, camera_fore);
     return camera_center + camera_fore * draw_plane.centerline_distance - camera_right * ((norm_point.x-0.5) * 2 * draw_plane.half_plane_width) + camera_up * ((norm_point.y-0.5) * 2 * draw_plane.half_plane_height);

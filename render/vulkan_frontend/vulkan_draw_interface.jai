@@ -1,5 +1,5 @@
 draw_particle :: (renderer: *Renderer, draw: Particle_Draw) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     billboard_instance := array_add(*renderer.particle_draws);
     billboard_instance.position      = draw.position;
     billboard_instance.scale         = {draw.scale, draw.scale};
@@ -11,42 +11,42 @@ draw_particle :: (renderer: *Renderer, draw: Particle_Draw) {
 }
 
 draw_static_mesh :: (renderer: *Renderer, draw: Static_Mesh_Draw) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     mesh := get_mesh(draw.ref);
-    render_check(.LOW, is_static_mesh(mesh));
+    render_check(is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, draw);
     renderer.last_mesh_draw_was_static = true;
 }
 
 draw_static_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     mesh := get_mesh(ref);
-    render_check(.LOW, is_static_mesh(mesh));
+    render_check(is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, {ref, position, orientation, {scale,scale,scale}, layer, -1});
     renderer.last_mesh_draw_was_static = true;
 }
 
 draw_static_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     mesh := get_mesh(ref);
-    render_check(.LOW, is_static_mesh(mesh));
+    render_check(is_static_mesh(mesh));
     array_add(*renderer.static_mesh_draws, {ref, position, orientation, scale, layer, -1});
     renderer.last_mesh_draw_was_static = true;
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, draw: Skinned_Mesh_Draw) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     mesh := get_mesh(ref);
-    render_check(.LOW, !is_static_mesh(mesh));
+    render_check(!is_static_mesh(mesh));
     add_skinning_joints(renderer, *draw);
     array_add(*renderer.skinned_mesh_draws, draw);
     renderer.last_mesh_draw_was_static = false;
 }
 
 draw_skinned_mesh :: (renderer: *Renderer, ref: Mesh_Ref, position: Vector3, pose: *Skeletal_Pose = null, scale := Vector3.{1,1,1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     mesh := get_mesh(ref);
-    render_check(.LOW, !is_static_mesh(mesh));
+    render_check(!is_static_mesh(mesh));
     new_draw := array_add(*renderer.skinned_mesh_draws);
     new_draw.* = {static_draw={ref, position, orientation, scale, layer, -1}, joint_data._interface.pose=pose};
     add_skinning_joints(renderer, new_draw);
@@ -96,12 +96,12 @@ add_flagged_draw_specializations :: (renderer: *Renderer, params: *Mesh_Speciali
 
 // todo: make lines use layer system. halves number of draw paths
 draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: Color4b, width := 1.0, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     draw := Line_Draw.{begin, end, color, width};
     if draw_in_front {
         if color.a < 255 {
             array_add(*renderer.transparent_in_front_line_draws, draw);
-            render_check(.LOW, time == 0, "don't support timed transparent line draws yet");
+            render_check(time == 0, "don't support timed transparent line draws yet");
         } else {
             array_add(*renderer.in_front_line_draws, draw);
             if time > 0 {
@@ -117,8 +117,8 @@ draw_line :: inline (renderer: *Renderer, begin: Vector3, end: Vector3, color: C
 }
 
 draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    render_check(.LOW, segment_count >= 3);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
+    render_check(segment_count >= 3);
 
     inv_segment_count := 1.0 / cast(float) segment_count;
     radius_position := center + right * radius;
@@ -137,21 +137,21 @@ draw_circle :: (renderer: *Renderer, center: Vector3, radius: float32, up: Vecto
 }
 
 draw_circle :: inline (renderer: *Renderer, center: Vector3, radius: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     up    := get_up_direction(*orientation);
     right := get_right_direction(*orientation);
     draw_circle(renderer, center, radius, up, right, color, line_width, segment_count, draw_in_front, time);
 }
 
 draw_triangle :: (renderer: *Renderer, a: Vector3, b: Vector3, c: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     draw_line(renderer, a, b, color, line_width, draw_in_front, time);
     draw_line(renderer, b, c, color, line_width, draw_in_front, time);
     draw_line(renderer, c, a, color, line_width, draw_in_front, time);
 }
 
 draw_rectangle :: (renderer: *Renderer, center: Vector3, half_width: float, half_height: float, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     ul := center + up * half_height - right * half_width;
     ur := center + up * half_height + right * half_width;
     ll := center - up * half_height - right * half_width;
@@ -163,7 +163,7 @@ draw_rectangle :: (renderer: *Renderer, center: Vector3, half_width: float, half
 }
 
 draw_box :: (renderer: *Renderer, center: Vector3, extent: Vector3, up: Vector3, right: Vector3, forward: Vector3, color: Color4b, line_width := 1.0, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     top_center := center + up * extent.z;
     bot_center := center - up * extent.z;
 
@@ -195,9 +195,9 @@ draw_box :: (renderer: *Renderer, center: Vector3, extent: Vector3, up: Vector3,
 
 // draw_portion < 1 means only draw that portion of the cylinder.
 draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    render_check(.LOW, segment_count >= 3);
-    render_check(.LOW, draw_portion >= 0 && draw_portion <= 1);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
+    render_check(segment_count >= 3);
+    render_check(draw_portion >= 0 && draw_portion <= 1);
 
     fore := cross(up, right);
 
@@ -236,7 +236,7 @@ draw_cylinder :: (renderer: *Renderer, center: Vector3, radius: float32, height:
 }
 
 draw_cylinder :: inline (renderer: *Renderer, center: Vector3, radius: float32, height: float32, orientation: Quaternion, color: Color4b, line_width := 1.0, segment_count := 16, draw_in_front := false, time := 0.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     up    := get_up_direction(*orientation);
     right := get_right_direction(*orientation);
     draw_cylinder(renderer, center, radius, height, up, right, color, line_width, segment_count, draw_in_front, time);
@@ -248,9 +248,9 @@ draw_sphere :: (renderer: *Renderer, center: Vector3, radius: float32, color: Co
 
 draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, half_height: float32, up: Vector3, right: Vector3, color: Color4b, line_width := 1.0, segment_count := 8, draw_in_front := false, time := 0.0, draw_portion := 1.0) {
     MAX_SEGMENTS :: 64;
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
-    render_check(.LOW, segment_count >= 3 && segment_count <= MAX_SEGMENTS);
-    render_check(.LOW, draw_portion >= 0 && draw_portion <= 1);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
+    render_check(segment_count >= 3 && segment_count <= MAX_SEGMENTS);
+    render_check(draw_portion >= 0 && draw_portion <= 1);
 
     fore := cross(up, right);
 
@@ -325,7 +325,7 @@ draw_capsule :: (renderer: *Renderer, center: Vector3, radius: float32, half_hei
 }
 
 draw_raycast :: (renderer: *Renderer, result: Raycast_Result, origin_color := COLOR4F_MAGENTA, miss_ray_color := COLOR4F_BLUE, hit_ray_color := COLOR4F_RED, hit_marker_radius := 0.02, line_width := 4.0, draw_in_front := false, time := 10.0) {
-    render_check(.HIGH, !renderer.in_the_middle_of_rendering);
+    render_check(!renderer.in_the_middle_of_rendering, level=.HIGH);
     ray_normal: Vector3;
 
     if is_normalized(result.hit_normal) {
@@ -371,7 +371,7 @@ add_specialization_to_last_draw_if_needed :: (renderer: *Renderer) -> *Static_Me
 }
 
 add_skinning_joints :: (renderer: *Renderer, draw: *Skinned_Mesh_Draw) {
-    render_check(.LOW, draw.pose != null);
+    render_check(draw.pose != null);
     joint_offset := renderer.skinning_joints.count;
     array_append(*renderer.skinning_joints, draw.pose.skinning_joints);
     draw.pose = null;

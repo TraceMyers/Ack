@@ -57,12 +57,12 @@ Physics_Body_Flags :: enum_flags u32 {
 }
 
 create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type, body_ptr: **Physics_Body) -> *Physics_Body {
-    template := table_find_pointer(*context.physical_world.body_templates, template_name);
+    template := table_find_pointer(*engine.physical_world.body_templates, template_name);
     return create_physics_body(template, entity_id, body_ptr);
 }
 
 create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.entity_id_type, body_ptr: **Physics_Body) -> *Physics_Body {
-    using context.physical_world;
+    using engine.physical_world;
 
     body := create_component(*body_data, entity_id, cast(**Physics_Body_Internal) body_ptr);
     i    := get_component_indexer(*body_data, body_data.component_count - 1);
@@ -81,7 +81,7 @@ create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.
 }
 
 destroy_physics_body :: (in_body: **Physics_Body_Base) {
-    using context.physical_world;
+    using engine.physical_world;
 
     body := (cast(*Physics_Body_Internal) in_body.*);
 
@@ -108,30 +108,30 @@ destroy_physics_body :: (in_body: **Physics_Body_Base) {
 }
 
 create_physics_body_template :: (name: string, template: Physics_Body_Template) {
-    using context.physical_world;
+    using engine.physical_world;
 
     template_copy := template;
-    physics_check(.LOW, template_copy.properties.mass > 0);
+    physics_check(template_copy.properties.mass > 0);
     template_copy.properties.inv_mass = 1.0 / template_copy.properties.mass;
 
     set_collider_data_for_fast_aabb_calculation(*template_copy.collider);
 
-    physics_check(.LOW, !table_contains(*body_templates, name), "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
+    physics_check(!table_contains(*body_templates, name), "table failed to add template % either because of a hash collision or because a template has already been added under that name", name);
 
     table_add(*body_templates, name, template_copy);
 
     // todo: probably should make it so the tables have hash collision resolution...
-    #if PHYSICS_VALIDATION_LEVEL > 0 {
+    #if ENABLE_VALIDATION {
         array_add(*debug_template_properties, template_copy.properties);
     }
 }
 
 get_physics_body_template :: (name: string) -> *Physics_Body_Template {
-    return table_find_pointer(*context.physical_world.body_templates, name);
+    return table_find_pointer(*engine.physical_world.body_templates, name);
 }
 
 accelerate :: inline (body: *Physics_Body_Base, accel: Vector3) {
-    if context.physical_world.step_state != .PAUSED {
+    if engine.physical_world.step_state != .PAUSED {
         body.linear_velocity += accel * PHYSICS_DELTA_TIME;
     }
 }
@@ -139,46 +139,46 @@ accelerate :: inline (body: *Physics_Body_Base, accel: Vector3) {
 push :: inline (_body: *Physics_Body_Base, force: Vector3) {
     // todo: inv mass and probably that matrix thing I can't remember
     body := cast(*Physics_Body_Internal) _body;
-    if context.physical_world.step_state != .PAUSED {
+    if engine.physical_world.step_state != .PAUSED {
         accel := force * body.properties.inv_mass;
         body.linear_velocity += accel * PHYSICS_DELTA_TIME;
     }
 }
 
 get_flags :: inline (body: *Physics_Body_Base) -> Physics_Body_Flags {
-    using context.physical_world;
+    using engine.physical_world;
     return body_data.get_flags_component(*body_data, body.index).*;
 }
 
 set_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    using context.physical_world;
+    using engine.physical_world;
     body_data.get_flags_component(*body_data, body.index).* = flags;
 }
 
 add_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    using context.physical_world;
+    using engine.physical_world;
     body_data.get_flags_component(*body_data, body.index).* |= flags;
 }
 
 has_any_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
-    using context.physical_world;
+    using engine.physical_world;
     return (body_data.get_flags_component(*body_data, body.index).* & flags) != 0;
 }
 
 has_all_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
-    using context.physical_world;
+    using engine.physical_world;
     return (body_data.get_flags_component(*body_data, body.index).* & flags) == flags;
 }
 
 has_flags :: has_all_flags;
 
 remove_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    using context.physical_world;
+    using engine.physical_world;
     body_data.get_flags_component(*body_data, body.index).* &= ~flags;
 }
 
 can_translate :: inline (body: *Physics_Body_Base) -> bool {
-    using context.physical_world;
+    using engine.physical_world;
     return (body_data.get_flags_component(*body_data, body.index).* & .LOCK_TRANSLATION) == 0;
 }
 
@@ -234,7 +234,7 @@ calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := fal
         aabb.extent = splat(shape_data.array[0], 3);
     } else {
         #if use_compressed_axes {
-            using context.physical_world;
+            using engine.physical_world;
             axes := body_data.get_axes_component(*body_data, body.index);
             x := linear_decompress_vector3(axes.*[0], -1, 1);
             y := linear_decompress_vector3(axes.*[1], -1, 1);
@@ -263,7 +263,7 @@ on_move_or_accelerate :: (_body: *Physics_Body_Base) {
 #scope_module
 
 is_data_from_template :: (data: *u8) -> bool {
-    using context.physical_world;
+    using engine.physical_world;
     shared_byte_diff := data - cast(*u8) body_templates.entries.data;
     shared_byte_end  := size_of(type_of(body_templates.entries[0])) * body_templates.entries.count;
     return shared_byte_diff >= 0 && shared_byte_diff < shared_byte_end;

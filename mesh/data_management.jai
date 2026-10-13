@@ -34,14 +34,14 @@ create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_ty
     inst: *Skeletal_Mesh_Instance;
 
     instanced := get_instanced_mesh(mesh_ref);
-    engine_check(.LOW, is_skeletal_mesh(*instanced.mesh));
-    engine_check(.LOW, instanced.instances.type == .SKELETAL);
+    engine_check(is_skeletal_mesh(*instanced.mesh));
+    engine_check(instanced.instances.type == .SKELETAL);
 
     #if T == {
     case *Skeletal_Mesh_Instance;
         inst = create_component(*instanced.instances.skeletal, entity_ref, component_or_array);
     case [..]*Skeletal_Mesh_Instance;
-        engine_check(.LOW, component_or_array != null);
+        engine_check(component_or_array != null);
         inst = create_component_in_array(*instanced.instances.skeletal, entity_ref, component_or_array);
     }
 
@@ -56,14 +56,14 @@ create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_ty
     inst: *Static_Mesh_Instance;
 
     instanced := get_instanced_mesh(mesh_ref);
-    engine_check(.LOW, is_static_mesh(*instanced.mesh));
-    engine_check(.LOW, instanced.instances.type == .STATIC);
+    engine_check(is_static_mesh(*instanced.mesh));
+    engine_check(instanced.instances.type == .STATIC);
 
     #if T == {
     case *Static_Mesh_Instance;
         inst = create_component(*instanced.instances.static, entity_ref, component_or_array);
     case [..]*Static_Mesh_Instance;
-        engine_check(.LOW, component_or_array != null);
+        engine_check(component_or_array != null);
         inst = create_component_in_array(*instanced.instances.static, entity_ref, component_or_array);
     }
 
@@ -79,10 +79,10 @@ destroy_mesh_instance :: (entity_ref: user_types.entity_id_type, inst: **$T/Mesh
     }
 
     if instanced.instances.type == .STATIC {
-        engine_check(.LOW, is_static_mesh(*instanced.mesh));
+        engine_check(is_static_mesh(*instanced.mesh));
         destroy_component(*instanced.instances.static, entity_ref, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
     } else { // .SKELETAL
-        engine_check(.LOW, is_skeletal_mesh(*instanced.mesh));
+        engine_check(is_skeletal_mesh(*instanced.mesh));
         destroy_component(*instanced.instances.skeletal, entity_ref, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
     }
 }
@@ -97,23 +97,23 @@ get_mesh :: inline (ref: Mesh_Ref) -> mesh: *Mesh {
 
 get_instanced_mesh :: (ref: Mesh_Ref) -> mesh: *Instanced_Mesh {
     instanced := *managed.instanced_meshes[ref.index];
-    engine_check(.LOW, ref.generation == pool_get_item_generation(*managed.instanced_meshes, ref.index));
+    engine_check(ref.generation == pool_get_item_generation(*managed.instanced_meshes, ref.index));
     return instanced;
 }
 
 // load .trm mesh from file
 load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) -> Mesh_Ref {
-    engine_check(.LOW, path.count > 0);
+    engine_check(path.count > 0);
 
     ref, newly_added := find_or_add(*managed.path_lookup_table, path);
-    engine_check(.LOW, (ref.generation == 0) == newly_added);
+    engine_check((ref.generation == 0) == newly_added);
 
     if !newly_added {
         return ref;
     }
 
     // doesn't seem like the option to temp allocate on-struct data is valuable
-    engine_check(.LOW, context.allocator.proc != temp.proc);
+    engine_check(context.allocator.proc != temp.proc);
     auto_release_temp();
 
     inst_index := pool_borrow(*managed.instanced_meshes);
@@ -128,10 +128,10 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
     file := read_entire_file(path,, temp);
     pos: int;
     header := read_string(file, *pos, 16);
-    engine_check(.LOW, header == TeRM_Mesh_Header);
+    engine_check(header == TeRM_Mesh_Header);
 
     version := read_s32(file, *pos);
-    engine_check(.LOW, version == 1);
+    engine_check(version == 1);
  
     array_reset(*context.ack_mesh_buffer_table);
     array_reserve(*context.ack_mesh_buffer_table, 256,, temp);
@@ -151,7 +151,7 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
         for *section : mesh.sections {
             section_name_pos := read_s32(file, *pos);
             section_name, section_name_type := alloc_or_look_up_buffer(file, section_name_pos, true);
-            engine_check(.LOW, section_name_type == .BYTE, "incorrect section type: %", section_name_type);
+            engine_check(section_name_type == .BYTE, "incorrect section type: %", section_name_type);
             section.name = string.{section_name.count, section_name.data};
 
             ibuf_pos := read_s32(file, *pos);
@@ -168,7 +168,7 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
             case .U32;
                 section.indices.type = .U32;
             case;
-                engine_check(.LOW, false, "invalid index buffer type %", index_buffer_type);
+                engine_check(false, "invalid index buffer type %", index_buffer_type);
             }
             
             vbuf_pos := read_s32(file, *pos);
@@ -185,12 +185,12 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
             case .SKELETAL_VERTEX;
                 section.vertices.type = .SKELETAL;
             case;
-                engine_check(.LOW, false, "invalid vertex buffer type %", vertex_buffer_type);
+                engine_check(false, "invalid vertex buffer type %", vertex_buffer_type);
             }
 
             matbuf_name_pos := read_s32(file, *pos);
             matbuf_name, matbuf_name_type := alloc_or_look_up_buffer(file, matbuf_name_pos, true);
-            engine_check(.LOW, matbuf_name_type == .BYTE);
+            engine_check(matbuf_name_type == .BYTE);
 
             using section.material;
             name = string.{matbuf_name.count, matbuf_name.data};
@@ -234,22 +234,22 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
         for *animation : mesh.skeleton.animations {
             name_pos := read_s32(file, *pos);
             anim_name, anim_name_type := alloc_or_look_up_buffer(file, name_pos, true);
-            engine_check(.LOW, anim_name_type == .BYTE);
+            engine_check(anim_name_type == .BYTE);
 
             animation.name = string.{anim_name.count, anim_name.data};
             animation.interpolate = cast(bool) read_s32(file, *pos);
             
             timestamps_pos := read_s32(file, *pos);
             timestamps, timestamps_type := alloc_or_look_up_buffer(file, timestamps_pos, true);
-            engine_check(.LOW, timestamps_type == .FLOAT);
+            engine_check(timestamps_type == .FLOAT);
             animation.timestamps = cast,force([]float) timestamps;
 
             transforms_pos := read_s32(file, *pos);
             transforms, transforms_type := alloc_or_look_up_buffer(file, transforms_pos, true);
-            engine_check(.LOW, transforms_type == .JOINT_TRANSFORM);
+            engine_check(transforms_type == .JOINT_TRANSFORM);
             animation.transforms = cast,force([]Joint_Transform) transforms;
 
-            engine_check(.LOW, animation.transforms.count == animation.timestamps.count * mesh.skeleton.joints.count);
+            engine_check(animation.transforms.count == animation.timestamps.count * mesh.skeleton.joints.count);
         }
     }
 
@@ -299,15 +299,15 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
 
     if is_static_mesh(mesh) {
         instanced.instances.type = .STATIC;
-        engine_check(.LOW, instanced.instances.static.chunks.count == 0 && instanced.instances.static.chunks.data == null);
+        engine_check(instanced.instances.static.chunks.count == 0 && instanced.instances.static.chunks.data == null);
     } else {
         instanced.instances.type = .SKELETAL;
-        engine_check(.LOW, instanced.instances.skeletal.chunks.count == 0 && instanced.instances.skeletal.chunks.data == null);
+        engine_check(instanced.instances.skeletal.chunks.count == 0 && instanced.instances.skeletal.chunks.data == null);
     }
 
     upload_mesh_to_gpu(renderer, mesh);
 
-    engine_log(.MEDIUM, "mesh % loaded", path);
+    engine_log("mesh % loaded", path);
 
     return ref;
 }

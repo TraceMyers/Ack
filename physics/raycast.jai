@@ -32,7 +32,7 @@ make_raycast_request :: inline (ray_begin: Vector3, ray_end: Vector3) -> Raycast
 
 // if you already have direction & length, saves a little calculation time.
 make_raycast_request :: inline (ray_origin: Vector3, ray_direction: Vector3, ray_length: float) -> Raycast_Request {
-    physics_check(.HIGH, is_normalized(ray_direction));
+    physics_check(is_normalized(ray_direction), level=.HIGH);
     return Raycast_Request.{
         ray_origin = ray_origin, 
         ray_destination = ray_origin + ray_direction * ray_length, 
@@ -65,7 +65,7 @@ raycast :: (request: *Raycast_Request, result: *Raycast_Result, center: Vector3,
     case .TRIANGLE_U16;
         #through;
     case .TRIANGLE_U32;
-        physics_check(.LOW, false, "triangles aren't stored on physics colliders, so this request can't be handled.");
+        physics_check(false, "triangles aren't stored on physics colliders, so this request can't be handled.");
         return false;
     }
 }

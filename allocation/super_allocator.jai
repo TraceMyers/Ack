@@ -88,7 +88,7 @@ HERE,
         print(*builder,
 #string HERE
         case;
-            engine_check(.LOW, false, "invalid super allocator min alloc size: % (must be >= % and <= %)", dummy_super_allocator.min_alloc_size, MIN_SIZE, MAX_SIZE);
+            engine_check(false, "invalid super allocator min alloc size: % (must be >= % and <= %)", dummy_super_allocator.min_alloc_size, MIN_SIZE, MAX_SIZE);
         }
 HERE,
             size, MIN_SIZE, MAX_SIZE
@@ -125,7 +125,7 @@ super_allocator_proc_impl :: inline (mode: Allocator_Mode, size: s64, old_size: 
 
 initialize_super_allocator :: (using allocator: *Super_Allocator, in_default_chunk_list_size := 0, add_chunk_lists := 1) {
     in_parent_allocator := context.allocator;
-    engine_check(.LOW, chunk_lists.count == 0 && chunk_lists.data == null);
+    engine_check(chunk_lists.count == 0 && chunk_lists.data == null);
 
     allocator.* = .{};
     allocator.super_base.data = allocator;
@@ -159,8 +159,8 @@ add_chunk_list :: (using allocator: *Super_Allocator, min_bytes: s64, remake_boo
     alloc_chunk_count := max(div_ceil(min_bytes, CHUNK_SIZE), 2);
 
     // Super_Allocation_Header requirements
-    engine_check(.LOW, chunk_lists.count <= S16_MAX);
-    engine_check(.LOW, alloc_chunk_count <= U16_MAX);
+    engine_check(chunk_lists.count <= S16_MAX);
+    engine_check(alloc_chunk_count <= U16_MAX);
 
     if alloc_chunk_count < 8 && !did_small_chunk_count_warning {
         log("[Super_Allocator::add_chunk_list()] min bytes % leads to only % chunks being allocated per super allocator heap. the number of chunks per heap should probably be somewhere between 8 and 128", min_bytes, alloc_chunk_count);
@@ -188,7 +188,7 @@ super_alloc :: (using allocator: *Super_Allocator, size: s64) -> *void {
     if ptr == null {
         add_chunk_list(allocator, max(allocation_size_with_header, default_reserve_size),, parent_allocator);
         ptr = try_super_alloc(allocator, allocation_size_with_header);
-        engine_check(.LOW, ptr != null);
+        engine_check(ptr != null);
     }
     return ptr.(*u8) + ALLOCATION_HEADER_SPACE;
 }
@@ -196,7 +196,7 @@ super_alloc :: (using allocator: *Super_Allocator, size: s64) -> *void {
 super_free :: (using allocator: *Super_Allocator, ptr: *void) {
     byte_ptr := ptr.(*u8);
     header := (byte_ptr - ALLOCATION_HEADER_SPACE).(*Allocation_Header);
-    engine_check(.HIGH, basic_validity_check(header.*));
+    engine_check(basic_validity_check(header.*), level=.HIGH);
 
     list := header.super.list;
     outer_chunk := header.super.outer_chunk;
@@ -205,14 +205,14 @@ super_free :: (using allocator: *Super_Allocator, ptr: *void) {
 
     if inner_chunk_count > 64 {
         outer_chunk_count := div_ceil(inner_chunk_count, 64);
-        engine_check(.HIGH, outer_chunk_count <= U16_MAX);
+        engine_check(outer_chunk_count <= U16_MAX, level=.HIGH);
         li := *chunk_lists[list];
         start_index := outer_chunk;
         end_index := start_index + outer_chunk_count - 1;
-        engine_check(.HIGH, end_index < li.count);
+        engine_check(end_index < li.count, level=.HIGH);
         for i : start_index..end_index-1 {
             flag_set := *books.flag_list_of_lists[list][i];
-            engine_check(.HIGH, (flag_set.* & U64_MAX) == U64_MAX);
+            engine_check((flag_set.* & U64_MAX) == U64_MAX, level=.HIGH);
             flag_set.* = 0;
             gap := *books.gap_list_of_lists[list][i];
             gap.* = 64;
@@ -230,7 +230,7 @@ super_free :: (using allocator: *Super_Allocator, ptr: *void) {
     }
 
     flag_set := *books.flag_list_of_lists[list][outer_chunk];
-    engine_check(.HIGH, flag_set.* & mask == mask, "\nflag set: \n%, \nmask: \n%", FormatInt.{value=flag_set.*, base=2, minimum_digits=64}, FormatInt.{value=mask, base=2, minimum_digits=64});
+    engine_check(flag_set.* & mask == mask, "\nflag set: \n%, \nmask: \n%", FormatInt.{value=flag_set.*, base=2, minimum_digits=64}, FormatInt.{value=mask, base=2, minimum_digits=64}, level=.HIGH);
     flag_set.* &= ~mask;
 
     gap := *books.gap_list_of_lists[list][outer_chunk];
@@ -308,7 +308,7 @@ try_super_alloc_small :: (using allocator: *Super_Allocator, alloc_inner_chunk_c
                     break;
                 }
             }
-            engine_check(.HIGH, out_header != null);
+            engine_check(out_header != null, level=.HIGH);
             largest_gap.* = max_gap;
             break;
         }
@@ -318,9 +318,9 @@ try_super_alloc_small :: (using allocator: *Super_Allocator, alloc_inner_chunk_c
 }
 
 try_super_alloc_large :: (using allocator: *Super_Allocator, alloc_inner_chunk_count: s64) -> *Allocation_Header {
-    engine_check(.LOW, alloc_inner_chunk_count > 64);
+    engine_check(alloc_inner_chunk_count > 64);
     alloc_outer_chunk_count := div_ceil(alloc_inner_chunk_count, 64);
-    engine_check(.LOW, alloc_outer_chunk_count <= U16_MAX);
+    engine_check(alloc_outer_chunk_count <= U16_MAX);
 
     out_header: *Allocation_Header;
 
@@ -382,7 +382,7 @@ grow_super_allocator_books :: (using allocator: *Super_Allocator) {
     // ---
 
     auto_release_temp();
-    engine_check(.LOW, chunk_lists.count > 0);
+    engine_check(chunk_lists.count > 0);
 
     reader: []u8;
     reader.data = books.largest_gap_per_list;
@@ -396,7 +396,7 @@ grow_super_allocator_books :: (using allocator: *Super_Allocator) {
 
     do_copy := old_list_count > 0;
     if do_copy {
-        engine_check(.LOW, books.largest_gap_per_list != null);
+        engine_check(books.largest_gap_per_list != null);
     }
 
     // ----- gap super list -----
@@ -654,7 +654,7 @@ write_and_read_bytes :: (writer: *[..]u8, reader: []u8, writer_head: *s64, reade
     new_writer_head := writer_head.* + byte_count;
 
     serial_writer_resize_if_needed(writer, new_writer_head);
-    engine_check(.LOW, reader_head.* <= reader.count);
+    engine_check(reader_head.* <= reader.count);
     memcpy(writer.data + writer_head.*, reader.data + reader_head.*, byte_count);
 
     reader_head.* = new_reader_head;
@@ -669,9 +669,9 @@ serial_writer_resize_if_needed :: (record: *[..]u8, new_head: s64) {
 
 serial_advance_head :: inline (record_head: *s64, by_count: s64, memory_size: s64) {
     new_head := record_head.* + by_count;
-    engine_check(.LOW, by_count > 0);
-    engine_check(.LOW, record_head.* >= 0 && record_head.* <= memory_size);
-    engine_check(.LOW, new_head <= memory_size);
+    engine_check(by_count > 0);
+    engine_check(record_head.* >= 0 && record_head.* <= memory_size);
+    engine_check(new_head <= memory_size);
     record_head.* = new_head;
 }
 
@@ -680,7 +680,7 @@ serial_align_head_up :: (record_head: *s64, align: s8, memory_size: s64) {
     diff := new_head - record_head.*;
     if diff > 0 {
         serial_advance_head(record_head, diff, memory_size);
-    } else engine_check(.LOW, diff == 0);
+    } else engine_check(diff == 0);
 }
 
 did_small_chunk_count_warning := false;

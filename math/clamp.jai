@@ -1,4 +1,5 @@
 clamp :: inline (v: $T/Vector2Types, min: T, max: T) -> T {
+    engine_check(min.x <= max.x && min.y <= max.y, level=.HIGH); 
     return .{
         clamp(v.x, min.x, max.x),
         clamp(v.y, min.y, max.y),
@@ -6,6 +7,7 @@ clamp :: inline (v: $T/Vector2Types, min: T, max: T) -> T {
 }
 
 clamp :: inline (v: $T/Vector3Types, min: T, max: T) -> T {
+    engine_check(min.x <= max.x && min.y <= max.y && min.z <= max.z, level=.HIGH); 
     return .{
         clamp(v.x, min.x, max.x),
         clamp(v.y, min.y, max.y),
@@ -54,6 +56,7 @@ max :: inline (a: $T, b: T, $a_less_than_b: (T, T) -> bool) -> min: T {
 }
 
 increment_wrap :: inline (val: $T, min: T, max: T) -> T {
+    engine_check(min <= max, level=.HIGH);
     if val >= max {
         val = min;
     } else val += 1;
@@ -61,6 +64,7 @@ increment_wrap :: inline (val: $T, min: T, max: T) -> T {
 }
 
 decrement_wrap :: inline (val: $T, min: T, max: T) -> T {
+    engine_check(min <= max, level=.HIGH);
     if val <= min {
         val = max;
     } else val -= 1;
@@ -68,7 +72,7 @@ decrement_wrap :: inline (val: $T, min: T, max: T) -> T {
 }
 
 add_wrap :: (val: $T, add_amt: T, min: T, max: T) -> T {
-    engine_check(.HIGH, val >= min && val <= max && max >= min);
+    engine_check(val >= min && val <= max && max >= min, level=.HIGH);
     sum := val + add_amt;
     min_max_diff := (max - min) + 1;
     if sum > max {

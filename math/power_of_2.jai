@@ -3,13 +3,13 @@ is_power_of_two :: inline (val: $T) -> bool {
 }
 
 ceil_to_power_of_two_multiple :: inline (n: $T, power_of_two_size: T) -> T {
-    engine_check(.HIGH, is_power_of_two(power_of_two_size));
+    engine_check(is_power_of_two(power_of_two_size), level=.HIGH);
     return (n + power_of_two_size-1) & ~(power_of_two_size-1);
 }
 
 // floor to a multiple of a power of 2
 floor_to_power_of_two_multiple :: inline (n: $T, power_of_two_size: T) -> T {
-    engine_check(.HIGH, is_power_of_two(power_of_two_size));
+    engine_check(is_power_of_two(power_of_two_size), level=.HIGH);
     return n & ~(power_of_two_size-1);
 }
 
@@ -22,7 +22,7 @@ ceil_to_power_of_two :: inline (n: $T) -> T {
 }
 
 shift_for_power_of_two_mul_or_div :: inline (divide_by: int) -> u8 {
-    engine_check(.HIGH, is_power_of_two(divide_by), "non power of two: %", divide_by);
+    engine_check(is_power_of_two(divide_by), "non power of two: %", divide_by, level=.HIGH);
     return xx (bit_scan_forward(divide_by) - 1);
 }
 

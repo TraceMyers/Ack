@@ -74,7 +74,7 @@ pool_borrow :: (using pool: *Pool($T), init_item_proc: (*T) = null, grow_behavio
         set_bit(*in_use, index);
         if index > top then top = index;
         if top >= items.count {
-            engine_check(.LOW, top < items.allocated);
+            engine_check(top < items.allocated);
             items.count = top + 1;
         }
 
@@ -157,7 +157,7 @@ operator *[] :: inline (using pool: *Pool($T), i: s64) -> *T {
 }
 
 pool_get :: inline (using pool: *Pool($T), i: s64) -> *T {
-    engine_check(.LOW, in_use[i]);
+    engine_check(in_use[i]);
     return *items[i];
 }
 

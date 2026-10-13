@@ -29,3 +29,8 @@ operator == :: (a: Index_2D, b: Index_2D) -> bool {
     return a.first == b.first && a.second == b.second;
 }
 
+Version :: struct {
+    major: u32;    
+    minor: u32;
+    patch: u32;
+};

@@ -285,14 +285,14 @@ read_block_header :: (file: string, location: *int) -> Block_Header {
 }
 
 read_string :: inline (file: string, location: *int, length: int) -> string {
-    engine_check(.LOW, location.* + length <= file.count);
+    engine_check(location.* + length <= file.count);
     str := string.{length, file.data + location.*};
     location.* += length;
     return str;
 }
 
 read_primitive :: inline (file: string, location: *int, $T: Type) -> T {
-    engine_check(.LOW, location.* + size_of(T) <= file.count);
+    engine_check(location.* + size_of(T) <= file.count);
     val := (cast(*T) (file.data + location.*)).*;
     location.* += size_of(T);
     return val;
@@ -342,7 +342,7 @@ read_texture :: (tex: *Texture, file: string, pos: *int) {
 allocate_self_array :: ($T: Type, count: int) -> []T {
     buf_pos := align_up(context.ack_mesh_self_allocation.count, #run align_of(T));
     buf_end := buf_pos + size_of(T) * count;
-    engine_check(.LOW, context.ack_mesh_self_allocation.allocated >= buf_end);
+    engine_check(context.ack_mesh_self_allocation.allocated >= buf_end);
     array_resize(*context.ack_mesh_self_allocation, buf_end);
     array: []T = ---;
     array.data = xx (context.ack_mesh_self_allocation.data + buf_pos);
@@ -379,7 +379,7 @@ alloc_or_look_up_texture_buffer :: (file: string, start_pos: int) -> s32 {
     channels: s32;
     buf := *new_item.texture_buffer;
     buf.cpu_allocation.data = xx stbi_load_from_memory(file.data + pos, count, *buf.width, *buf.height, *channels, 4);
-    engine_check(.LOW, channels == 4);
+    engine_check(channels == 4);
     buf.cpu_allocation.count = count / 4;
 
     return xx (context.ack_mesh_texture_buffer_table.count-1);
@@ -408,45 +408,45 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
     
     if type == {
     case .BYTE;
-        engine_check(.LOW, size_of_one_item == 1);
+        engine_check(size_of_one_item == 1);
         bytes = ifx self_allocation 
             then allocate_self_array(u8, count) 
             else make_static_array(u8, count);
         read_array(bytes, file, *pos, count);
     case .U16;
-        engine_check(.LOW, size_of_one_item == 2);
+        engine_check(size_of_one_item == 2);
         bytes = cast,force([]u8) ifx self_allocation 
             then allocate_self_array(u16, count) 
             else make_static_array(u16, count);
         read_array(cast,force([]u16) bytes, file, *pos, count);
     case .U32;
-        engine_check(.LOW, size_of_one_item == 4);
+        engine_check(size_of_one_item == 4);
         bytes = cast,force([]u8) ifx self_allocation 
             then allocate_self_array(u32, count) 
             else make_static_array(u32, count);
         read_array(cast,force([]u32) bytes, file, *pos, count);
     case .FLOAT;
-        engine_check(.LOW, size_of_one_item == 4);
+        engine_check(size_of_one_item == 4);
         bytes = cast,force([]u8) ifx self_allocation 
             then allocate_self_array(float, count)
             else make_static_array(float, count);
         read_array(cast,force([]float32) bytes, file, *pos, count);
     case .STATIC_VERTEX;
-        engine_check(.LOW, size_of_one_item == size_of(Static_Mesh_Vertex));
+        engine_check(size_of_one_item == size_of(Static_Mesh_Vertex));
         bytes = xx,force make_static_array(Static_Mesh_Vertex, count);
         vertices := cast,force([]Static_Mesh_Vertex) bytes;
         for *v : vertices {
             v.* = read_mesh_static_vertex(file, *pos);
         }
     case .SKELETAL_VERTEX;
-        engine_check(.LOW, size_of_one_item == size_of(Skeletal_Mesh_Vertex));
+        engine_check(size_of_one_item == size_of(Skeletal_Mesh_Vertex));
         bytes = xx,force make_static_array(Skeletal_Mesh_Vertex, count);
         vertices := cast,force([]Skeletal_Mesh_Vertex) bytes;
         for *v : vertices {
             read_mesh_skinned_vertex(v, file, *pos);
         }
     case .JOINT_TRANSFORM;
-        engine_check(.LOW, size_of_one_item == size_of(Joint_Transform));
+        engine_check(size_of_one_item == size_of(Joint_Transform));
         bytes = xx,force ifx self_allocation
             then allocate_self_array(Joint_Transform, count)
             else make_static_array(Joint_Transform, count);
@@ -455,7 +455,7 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
             read_joint_transform(t, file, *pos);
         }
     case;
-        engine_check(.LOW, false, "invalid buffer type % read from ack mesh file", type);
+        engine_check(false, "invalid buffer type % read from ack mesh file", type);
     }
 
     return bytes, type;

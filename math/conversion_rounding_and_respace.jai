@@ -2,7 +2,7 @@ div_ceil :: inline (a: $Int_Type, b: Int_Type) -> Int_Type
 #modify {
     return Int_Type.(*Type_Info).type == .INTEGER;
 } {
-    engine_check(.HIGH, a >= 0 && b > 0);
+    engine_check(a >= 0 && b > 0, level=.HIGH);
     return ((a - 1) / b) + 1;
 }
 
@@ -10,7 +10,7 @@ ceil_to_multiple :: inline (a: $Int_Type, b: Int_Type) -> Int_Type
 #modify {
     return Int_Type.(*Type_Info).type == .INTEGER;
 } {
-    engine_checkl(.HIGH, a >= 0 && b > 0);
+    engine_check(a >= 0 && b > 0, level=.HIGH);
     return div_ceil(a, b) * b;
 }
 
@@ -18,7 +18,7 @@ floor_to_multiple :: inline (a: $Int_Type, b: Int_Type) -> Int_Type
 #modify {
     return Int_Type.(*Type_Info).type == .INTEGER;
 } {
-    engine_check(.HIGH, a >= 0 && b > 0);
+    engine_check(a >= 0 && b > 0, level=.HIGH);
     return (a / b) * b;
 }
 

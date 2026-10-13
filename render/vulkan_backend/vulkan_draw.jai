@@ -52,7 +52,7 @@ prepare_draw_lines :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, in_
                 if in_front {
                     draw_batch = array_add(*prepared_transparent_in_front_line_draw_batches);
                 } else {
-                    render_check(.LOW, false, "don't support non-front transparent lines");
+                    render_check(false, "don't support non-front transparent lines");
                 }
             } else {
                 if in_front {
@@ -194,7 +194,7 @@ prepare_draw_meshes :: (cmd: VkCommandBuffer, current_frame: *Graphics_Frame, dr
         }
 
         if flush_draws {
-            render_check(.LOW, instances_count > 0);
+            render_check(instances_count > 0);
             
             mesh := get_mesh(instances_ref);
 

@@ -15,7 +15,7 @@ Physical_World :: struct {
 
     delta_time: float32;
 
-    #if PHYSICS_VALIDATION_LEVEL > 0 {
+    #if ENABLE_VALIDATION {
         debug_template_properties: [..]Physics_Properties;
     }
 
@@ -36,75 +36,85 @@ Physical_World :: struct {
     grid_in_use: bool;
 }
 
+Physical_World_Creation_Settings :: struct {
+    reserve_bodies := 1024;
+    body_templates_max := 512;
+    unique_properties_max := 4096;
+    unique_colliders_max := 32768;
+}
+
 // optional params can be left 0 if you want them to stay the same
 set_physics_grid_origin:: (origin: Vector2) {
-    using context;
-    physics_check(.LOW, !physical_world.grid_in_use);
+    using engine;
+    physics_check(!physical_world.grid_in_use);
     physical_world.grid_origin = origin;
 }
 
 // optional params can be left 0 if you want them to stay the same
 set_physics_grid_center :: (center: Vector2) {
-    using context;
-    physics_check(.LOW, !physical_world.grid_in_use);
+    using engine;
+    physics_check(!physical_world.grid_in_use);
     half_world_width := (physical_world.grid_width / physical_world.grid_scale) * 0.5;
     physical_world.grid_origin = center - splat(half_world_width, 2);
 }
 
 set_physics_grid_scale :: (scale: float, recenter := true) {
-    using context;
-    physics_check(.LOW, !physical_world.grid_in_use);
-    physics_check(.LOW, scale > 0);
+    using engine;
+    physics_check(!physical_world.grid_in_use);
+    physics_check(scale > 0);
     physical_world.grid_scale = scale;
 }
 
 set_physics_grid_width :: (width: s32) {
-    using context;
-    physics_check(.LOW, !physical_world.grid_in_use);
-    physics_check(.LOW, width > 0);
+    using engine;
+    physics_check(!physical_world.grid_in_use);
+    physics_check(width > 0);
     physical_world.grid_width = width;
 }
 
-create_physical_world :: (reserve_bodies := 1024, body_templates_max := 128, unique_properties_max := 4096, unique_colliders_max := 32768) -> Physical_World {
-    out_world: Physical_World;
+create_physical_world :: (using settings := Physical_World_Creation_Settings.{}) -> bool {
+    engine_check(engine.physical_world == null);
+    physics_check(reserve_bodies < U16_MAX); // using u16's as body indexes internally
 
-    physics_check(.LOW, reserve_bodies < U16_MAX); // using u16's as body indexes internally
+    engine.physical_world = New(Physical_World);
 
     // ceil(max * 101/70) is to avoid the table reallocating.
-    init(*out_world.body_templates, xx ceil(body_templates_max * (101.0 / 70.0)));
-    pool_init(*out_world.unique_properties, unique_properties_max, true);
-    pool_init(*out_world.unique_colliders, unique_colliders_max, true);
+    init(*engine.physical_world.body_templates, xx ceil(body_templates_max * (101.0 / 70.0)));
+    pool_init(*engine.physical_world.unique_properties, unique_properties_max, true);
+    pool_init(*engine.physical_world.unique_colliders, unique_colliders_max, true);
 
-    reserve(*out_world.body_data, reserve_bodies);
+    reserve(*engine.physical_world.body_data, reserve_bodies);
 
     // note: contact grid allocation is not locked, in case a bug comes of it
-    init(*out_world.contact_grid, 65536);
-    initialize_super_allocator(*out_world.contact_grid_cell_allocator, add_chunk_lists=16);
+    init(*engine.physical_world.contact_grid, 65536);
+    initialize_super_allocator(*engine.physical_world.contact_grid_cell_allocator, add_chunk_lists=16);
 
-    out_world.allocator = context.allocator;
-    return out_world;
+    engine.physical_world.allocator = context.allocator;
+
+    return true;
 }
 
-destroy_physical_world :: (in_world: *Physical_World) {
+destroy_physical_world :: () {
     // does not destroy shared properties. that allocation (probably static) is managed by the user.
     save_allocator := context.allocator;
-    context.allocator = in_world.allocator;
+    context.allocator = engine.physical_world.allocator;
     defer context.allocator = save_allocator;
 
-    in_world.body_templates.allocator = in_world.allocator;
-    table_reset(*in_world.body_templates);
-    deinit(*in_world.body_templates);
+    engine.physical_world.body_templates.allocator = engine.physical_world.allocator;
+    table_reset(*engine.physical_world.body_templates);
+    deinit(*engine.physical_world.body_templates);
 
-    pool_set_allocator(*in_world.unique_properties, in_world.allocator);
-    pool_reset(*in_world.unique_properties);
+    pool_set_allocator(*engine.physical_world.unique_properties, engine.physical_world.allocator);
+    pool_reset(*engine.physical_world.unique_properties);
 
-    reset(*in_world.body_data);
+    reset(*engine.physical_world.body_data);
     
-    in_world.* = {};
+    free(engine.physical_world,, engine.physical_world.allocator);
+    engine.physical_world = null;
 }
 
 set_physical_world :: (in_world: *Physical_World) {
-    context.physical_world = in_world;
+    engine.physical_world = in_world;
 }
 
 Physics_Step_State :: enum {

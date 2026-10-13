@@ -2,7 +2,7 @@ create_convex_mesh :: (in_mesh: *Mesh, make_indices := true) -> Mesh {
     convex: Mesh;
     // for now, only static meshes
     for in_mesh.sections {
-        engine_check(.LOW, it.vertices.type == .STATIC);
+        engine_check(it.vertices.type == .STATIC);
     }
     create_convex_mesh_impl(in_mesh, *convex, Static_Mesh_Vertex, make_indices);
     return convex;
@@ -37,7 +37,7 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
         } else {
             vertices := section.vertices.static;
         }
-        engine_check(.LOW, vertices.count == section.vertices.count);
+        engine_check(vertices.count == section.vertices.count);
 
         if si != 0 {
             clear_all_bits(*triangle_searched);
@@ -105,7 +105,7 @@ create_convex_mesh_impl :: (in_mesh: *Mesh, convex: *Mesh, $vertex_type: Type, m
             } else if tri_neighbors[neighbor_index][2] == search_origin {
                 neighbor_edge = 2;
             } else {
-                engine_check(.LOW, false, "invalid neighbor");
+                engine_check(false, "invalid neighbor");
             }
 
             bridge_vert          := decrement_wrap(edge, 0, 2);

@@ -1,67 +1,116 @@
 // todo: make logging thread safe
 
-// have the logging system call this proc with the finalized text, if set
-term_log_passthrough_callback: (log_text: string);
+Log_Options :: struct {
+    // have the logging system call this proc with the finalized text, if you set it.
+    callback: (log_text: string);
 
-// if true, don't log to stdout - only send contextualized log text to the passthrough callback
-call_term_log_passthrough_only := false;
+    // the path (not including filename) where logs will be stored. can either be relative
+    // to the working directory at init or it can be an absolute path.
+    file_location := "logs";
+    file_time_zone := Time_Zone.LOCAL;
+    disable_file_write := false;
+};
 
-// log api
-Ack_Log_Level :: enum u8 {
-    LOG;
-    WARNING;
-    ERROR;
+global_log_options: Log_Options;
+
+// read Ack_Log_Flags body below
+#assert(USER_VERBOSITY_LEVELS.count <= xx Ack_Log_Flags.NO_NEWLINE);
+
+// pass as user flags to log()
+Ack_Log_Flags :: enum_flags u32 {
+    // user verbosity reserves the lowest half byte (0xf). indexes 0 to 15. 
+    // if your program wants separate verbosities for animation, entity update, etc.
+    // then give animation an index (say, 1), and entity update an index (say, 2)
+    //
+    // animation_log     :: #bake_arguments log(user_flags=1);
+    // entity_update_log :: #bake_arguments log(user_flags=2);
+    //
+    // during import, set their respective verbosity levels
+    //
+    // #import "Ack!"()(USER_VERBOSITY_LEVELS=u8.[0, 1, 2]; 
+    // ('default' set to normal, 'animation' set to verbose, 'entity update' set to very verbose)
+    //
+    // pair with log-level verbosity ratings...
+    //
+    // animation_log("yadda yadda", flags=.VERBOSE_ONLY);
+
+    // don't add a newline if there isn't one already in the message.
+    NO_NEWLINE             :: 0x10;
+    // don't print the procedure name
+    NO_PROCEDURE_NAME;
+    // log the location of the caller even if it's not an error
+    FORCE_LOG_LOCATION;
+    // only call the passthrough, don't write to stdout/stderror/file.
+    CALLBACK_ONLY;
 }
 
-Ack_Log_Location :: enum u8 {
-    AUTO;
-    YES;
-    NO;
+// used to identify log source for engine only
+Ack_Log_Source_ID :: enum u64 {
+    ENGINE :: 1;
+    PHYSICS;
+    RENDER;
 }
 
-FORCE_LOG :: -1;
+#if ENABLE_LOGGING {
+    ack_log :: (message: string, data: *void, in_info: Log_Info) {
+        info := cast(*Ack_Log_Info) *in_info;
 
-ack_log :: (fmt: string, args: ..Any, $log_level := Ack_Log_Level.LOG, $log_location := Ack_Log_Location.AUTO, $verbosity := 1, add_newline := true, caller_loc := #caller_location, override_header := "") #expand {
-    // USER_VERBOSITY_LEVEL=0 is reserved to turning off logs
-    #assert(verbosity != 0);
-    #if verbosity == FORCE_LOG || verbosity <= USER_VERBOSITY_LEVEL {
+        verbosity: Log_Level;
+
+        if cast(Ack_Log_Source_ID) info.source_identifier == {
+        case .ENGINE;
+            verbosity = xx GENERAL_VERBOSITY_LEVEL;
+        case .RENDER;
+            verbosity = xx RENDER_VERBOSITY_LEVEL;
+        case .PHYSICS;
+            verbosity = xx PHYSICS_VERBOSITY_LEVEL;
+        case;
+            user_verbosity_id := (info.user_flags & 0xf);
+            engine_check(xx user_verbosity_id < USER_VERBOSITY_LEVELS.count, "indexing to user verbosity level %, but USER_VERBOSITY_LEVELS (in ack module params) has length %. log() being called from %.", user_verbosity_id, USER_VERBOSITY_LEVELS.count, info.location);
+            verbosity = xx USER_VERBOSITY_LEVELS[user_verbosity_id];
+        }
+
+        if (info.common_flags & .VERBOSE_ONLY) != 0 {
+            if verbosity < .VERBOSE {
+                return;
+            }
+        } else if (info.common_flags & .VERY_VERBOSE_ONLY) != 0 {
+            if verbosity < .VERY_VERBOSE {
+                return;
+            }
+        }
+
+        procedure_name: string;
+        if (info.user_flags & .NO_PROCEDURE_NAME) == 0 && context.stack_trace && context.stack_trace.next && context.stack_trace.next.next {
+            procedure_name = context.stack_trace.next.next.info.name;
+        }
+
+        to_standard_error   := (info.common_flags & .ERROR) != 0;
+        should_log_location := (info.user_flags & .FORCE_LOG_LOCATION) != 0;
+
         header: string;
-        log_context := #procedure_name();
-
-        #if log_level == {
-        case .LOG;
-            header = ifx override_header then override_header else "LOG";
-            DEFAULT_LOG_LOCATION_BEHAVIOR :: false;
-        case .WARNING;
-            header = ifx override_header then override_header else "WARNING";
-            DEFAULT_LOG_LOCATION_BEHAVIOR :: true;
-        case .ERROR;
-            header = ifx override_header then override_header else "ERROR";
-            DEFAULT_LOG_LOCATION_BEHAVIOR :: true;
+        if (info.common_flags & .ERROR) != 0 {
+            header = "ERROR";
+            should_log_location = true;
+        } else if (info.common_flags & .WARNING) != 0 {
+            header = "WARNING";
+        } else {
+            header = "LOG";
         }
 
-        do_log_location := should_log_location();
-        report_impl(fmt, ..args, log_context=log_context, do_log_location, caller_loc, header, add_newline);
-    }
-}
-
-#if USER_VALIDATION_LEVEL > 0 {
-    check :: (condition: bool, fmt := "", args: ..Any, $level := 1, caller_loc := #caller_location) #expand #no_debug {
-        #assert(level > 0);
-        #if level <= USER_VALIDATION_LEVEL {
-            if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
-        }
+        ack_log_impl(message, procedure_name, should_log_location, info.location, header, (info.user_flags & .NO_NEWLINE) == 0, (info.user_flags & .CALLBACK_ONLY) != 0, to_standard_error);
     }
 } else {
-    check :: (#discard condition: bool, #discard fmt := "", #discard args: ..Any, $level := 1, #discard caller_loc := #caller_location) #expand {}
+    ack_log :: (#discard message: string, #discard data: *void, #discard in_info: Log_Info) {}
 }
 
 // like check, but always evaluates the condition, even if asserts are disabled. also returns
 // the evaluated condition, so it can be used in if statements.
-evaluate :: (condition: bool, fmt := "", args: ..Any, $level := 1, caller_loc := #caller_location) -> bool #expand #no_debug {
-    #assert(level > 0);
-    #if level <= USER_VALIDATION_LEVEL {
-        if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
+evaluate :: (condition: bool, fmt := "", args: ..Any, $level := Ack_Validation_Level.NORMAL, caller_loc := #caller_location) -> bool #expand #no_debug {
+    #if ENABLE_VALIDATION {
+        if level <= USER_VALIDATION_LEVEL {
+            if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
+        }
     }
     return condition;
 }
@@ -107,36 +156,28 @@ fmt_verbose :: (x: $T) -> FormatArray #expand #modify{ return T.(*Type_Info).typ
 
 #scope_module
 
-should_log_location :: () -> bool #expand {
-    #if #complete `log_location == {
-    case .AUTO;
-        return `DEFAULT_LOG_LOCATION_BEHAVIOR;
-    case .YES;
-        return true;
-    case .NO;
-        return false;
-    }
-}
-
-report_impl :: (
-    fmt: string,
-    args: ..Any,
+ack_log_impl :: (
+    msg: string,
     log_context: string,
     log_location: bool,
     caller_loc: Source_Code_Location,
     header: string,
-    add_newline := true
+    add_newline_if_needed: bool,
+    only_callback: bool,
+    to_standard_error: bool
 ) {
+    scope_lock(*logging_lock);
+
     auto_release_temp();
 
-    MAX_HEADER_COUNT :: 20;
+    MAX_HEADER_COUNT :: 8;
     MAX_CONTEXT_COUNT :: 26;
     BRACKETS_COUNT :: 4;
     END_LEAD_SPACE :: 1;
     LEAD_BUFFER_SIZE :: MAX_HEADER_COUNT + MAX_CONTEXT_COUNT + BRACKETS_COUNT;
 
-    lead_buffer := talloc(LEAD_BUFFER_SIZE);
-    lead_buffer_string := string.{0, xx lead_buffer};
+    lead_buffer: [LEAD_BUFFER_SIZE]u8 = ---;
+    lead_buffer_string := string.{0, xx lead_buffer.data};
     print_lead_item_to_buffer_string(*lead_buffer_string, header, MAX_HEADER_COUNT);
     print_lead_item_to_buffer_string(*lead_buffer_string, log_context, MAX_CONTEXT_COUNT);
 
@@ -145,28 +186,27 @@ report_impl :: (
         use_location = tprint("\n>%", caller_loc);
     }
 
-    msg := tprint(fmt, ..args);
     fully_processed_text: string;
+
+    optional_newline := ifx add_newline_if_needed && (msg.count == 0 || msg[msg.count-1] != #char "\n") then "\n" else "";
 
     #if LOG_VERTICAL_MODE {
         if try_replace_context_memory(header, log_context) {
-            fully_processed_text = tprint("  %\n    % %", lead_buffer_string, msg, use_location);
+            fully_processed_text = tprint("  %\n    % %%", lead_buffer_string, msg, use_location, optional_newline);
         } else {
-            fully_processed_text = tprint(   "    % %", msg, use_location);
+            fully_processed_text = tprint(   "    % %%", msg, use_location, optional_newline);
         }
     } else {
-        fully_processed_text = tprint("% % %", lead_buffer_string, msg, use_location);
+        fully_processed_text = tprint("% % %%", lead_buffer_string, msg, use_location, optional_newline);
     }
 
-    if term_log_passthrough_callback {
-        term_log_passthrough_callback(fully_processed_text);
+    if global_log_options.callback != null {
+        global_log_options.callback(fully_processed_text);
     }
-    if !call_term_log_passthrough_only {
-        if add_newline {
-            log(fully_processed_text);
-        } else {
-            print(fully_processed_text);
-        }
+
+    if !only_callback {
+        write_string(fully_processed_text, to_standard_error);
+        write_to_log_file(fully_processed_text);
     }
 }
 
@@ -194,21 +234,21 @@ print_lead_item_to_buffer_string :: inline (bufstr: *string, lead_item: string, 
 }
 
 try_replace_context_memory :: (header: string, context_str: string) -> bool {
-    if header == last_known_header && context_str == last_known_context {
-        omit_context_count += 1;
-        if omit_context_count >= omit_context_max_before_restate_context {
-            omit_context_count = 0;
-        }
-    } else {
-        omit_context_count = 0;
-    }
-
-    if omit_context_count > 0 {
-        return false;
-    } else {
-        remember(header, context_str);
+    // without a header, there's nothing to remember. every log must be considered unique.
+    if header == "" {
         return true;
     }
+
+    if header == last_known_header && context_str == last_known_context {
+        omit_context_count += 1;
+        if omit_context_count < omit_context_max_before_restate_context {
+            return false;
+        }
+    }
+
+    omit_context_count = 0;
+    remember(header, context_str);
+    return true;
 }
 
 remember :: (header: string, context_str: string) {
@@ -227,6 +267,33 @@ remember_copy :: inline (user_string: string, memory: *string, memory_buffer: *[
     memory.count = copy_size;
 }
 
+write_to_log_file :: inline (message: string) {
+    if global_log_options.disable_file_write {
+        return;
+    }
+    if logging_file.handle == null {
+        if global_log_options.file_location.count > 0 {
+            make_directory_if_it_does_not_exist(global_log_options.file_location);
+        }
+        scope_set_working_directory(global_log_options.file_location, global_log_options.file_location.count > 0);
+        apollo_time := current_time_consensus();
+        calendar_time := to_calendar(apollo_time, global_log_options.file_time_zone);
+        file_name := tprint("ack_log__%_%_%__%_%_%__%.txt", calendar_time.year, calendar_time.month_starting_at_0 + 1, calendar_time.day_of_month_starting_at_0 + 1, calendar_time.hour, calendar_time.minute, calendar_time.second, calendar_time.time_zone);
+        logging_file = file_open(file_name, for_writing=true);
+    }
+    if logging_file.handle != null {
+        file_write(*logging_file, message);
+    }
+}
+
+// mirroring Log_Info to make user_flags typed as Ack_Log_Flags
+Ack_Log_Info :: struct {
+    source_identifier:   u64;
+    location:     Source_Code_Location;
+    common_flags: Log_Flags;
+    user_flags:   Ack_Log_Flags;
+}
+
 MEMORY_BUFFER_SIZE :: 128;
 last_known_header_buffer: [MEMORY_BUFFER_SIZE]u8;
 last_known_header: string;
@@ -237,6 +304,9 @@ omit_context_count: int;
 omit_context_max_before_restate_context := 30;
 
 initialized_internal_strings: bool;
+
+logging_lock: Spin_Queue_Mutex;
+logging_file: File;
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

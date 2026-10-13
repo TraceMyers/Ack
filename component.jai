@@ -287,7 +287,7 @@ create_component_in_array :: (storage: *Multi_Component_Storage, id: user_types.
 // and 'new_index' is the 2d index of the component, represented in this example by the 1d index, 0.
 destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component: **storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *user_types.entity_type, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
     removing_component := get_component_indexer(storage, component);
-    engine_check(.LOW, removing_component.first >= 0);
+    engine_check(removing_component.first >= 0);
 
     entity       := user_types.id_to_entity_proc(id);
     stored_chunk := storage.chunks[removing_component.first];
@@ -295,7 +295,7 @@ destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_i
     stored_info  := *stored_chunk.infos[removing_component.second];
 
     // make sure we're not removing a component out from under another entity
-    engine_check(.LOW, memcmp(stored_id, *id, size_of(user_types.entity_id_type)) == 0); 
+    engine_check(memcmp(stored_id, *id, size_of(user_types.entity_id_type)) == 0); 
 
     if stored_info.type_at_offset == .POINTER {
         component.* = null;        
@@ -304,7 +304,7 @@ destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_i
         e_arr_ptr       := cast(*[..]*storage.first_component_type) field_ptr;
         component_index := component - e_arr_ptr.data;
 
-        engine_check(.LOW, component_index == stored_info.array_index);
+        engine_check(component_index == stored_info.array_index);
 
         if component_index < e_arr_ptr.count - 1 {
             swapping_with_component := *e_arr_ptr.*[e_arr_ptr.count-1];
@@ -440,7 +440,7 @@ get_entity_id ::  inline (storage: *Multi_Component_Storage, index: Index_2D) ->
 // your components without intending to ever reallocate, making initialization mandatory.
 debug__validate_component_storages_initialized :: (entity_components: *$T) {
     components_info := cast(*Type_Info_Struct) type_info(T);
-    engine_check(.LOW, components_info.type == .STRUCT);
+    engine_check(components_info.type == .STRUCT);
     for member : components_info.members {
         if !is_subclass_of(member.type, "Multi_Component_Storage") {
             continue;
@@ -448,7 +448,7 @@ debug__validate_component_storages_initialized :: (entity_components: *$T) {
         // all component storage types specializations have their members at the same offsets.
         // so, (void) just means the specialization doesn't matter.
         component_storage := cast(*Component_Storage(void)) (cast(*u8) entity_components + member.offset_in_bytes);
-        engine_check(.LOW, component_storage.chunks.allocated != 0, "entity component storage % uninitialized!", member.name);
+        engine_check(component_storage.chunks.allocated != 0, "entity component storage % uninitialized!", member.name);
     }
 }
 
@@ -460,7 +460,7 @@ debug__validate_component_pointers :: (storage: *Multi_Component_Storage, compon
      for id : storage.ids {
         e := user_types.id_to_entity_proc(id);
         e_cmp_ptr  := cast(**type_of(storage.*).first_component_type) ((cast(*u8) e) + component_ptr_offset);
-        #insert #run tprint("engine_check(.LOW, e_cmp_ptr.* == *storage.%[it_index]);\n", storage.first_component_name);
+        #insert #run tprint("engine_check(e_cmp_ptr.* == *storage.%[it_index]);\n", storage.first_component_name);
     }
 }
 
@@ -481,7 +481,7 @@ get_component_pointer_and_offset :: (storage: *Multi_Component_Storage, entity: 
         component_ptr = cast(**storage.first_component_type) ((cast(*u8) entity) + component_ptr_offset);
     }
 
-    engine_check(.HIGH, component_ptr_offset >= 0 && component_ptr_offset < size_of(type_of(entity.*)));
+    engine_check(component_ptr_offset >= 0 && component_ptr_offset < size_of(type_of(entity.*)), level=.HIGH);
     return component_ptr, component_ptr_offset;
 }
 
@@ -507,7 +507,7 @@ get_first_component_pointer_offset :: (component_type: Type) -> int {
 }
 
 add_new_component :: (storage: *Multi_Component_Storage, component_ptr: **storage.first_component_type, id: user_types.entity_id_type, entity: *$T, offset: int, array_index: int) {
-    engine_check(.LOW, array_index <= #run get_max_value(type_of(Component_Storage_Info.array_index)));
+    engine_check(array_index <= #run get_max_value(type_of(Component_Storage_Info.array_index)));
 
     next_component_count := storage.component_count + 1;
     defer storage.component_count = next_component_count;
@@ -516,7 +516,7 @@ add_new_component :: (storage: *Multi_Component_Storage, component_ptr: **storag
     have_chunk_count := storage.chunks.count;
 
     if need_chunk_count > have_chunk_count {
-        engine_check(.LOW, need_chunk_count == have_chunk_count + 1);
+        engine_check(need_chunk_count == have_chunk_count + 1);
         array_add(*storage.chunks);
         new_chunk_index := have_chunk_count;
         alloc_chunks(storage, new_chunk_index, new_chunk_index);
@@ -547,7 +547,7 @@ chunk_allocations_same_sized :: (using storage: *Multi_Component_Storage) -> boo
 
 alloc_chunks :: (using storage: *Multi_Component_Storage, first: int, last: int) {
     for c : first..last {
-        engine_check(.LOW, storage.chunks[c] == null);
+        engine_check(storage.chunks[c] == null);
         chunks[c] = alloc(size_of(storage.Chunk),, storage.chunks.allocator);
         memset(storage.chunks[c], 0, size_of(storage.Chunk));
     }
@@ -555,7 +555,7 @@ alloc_chunks :: (using storage: *Multi_Component_Storage, first: int, last: int)
 
 free_chunks :: (using storage: *Multi_Component_Storage, first: int, last: int) {
     for c : first..last {
-        engine_check(.LOW, chunks[c] != null);
+        engine_check(chunks[c] != null);
         free(chunks[c],, chunks.allocator);
     }
 }
@@ -563,7 +563,7 @@ free_chunks :: (using storage: *Multi_Component_Storage, first: int, last: int) 
 get_chunk_count_and_max :: inline (using storage: *Multi_Component_Storage) -> count: int, max: int {
     chunk_count_max := chunks.count;
     chunk_count := get_component_indexer(storage, component_count).first + 1;
-    engine_check(.HIGH, chunk_count <= chunk_count_max);
+    engine_check(chunk_count <= chunk_count_max, level=.HIGH);
     return chunk_count, chunk_count_max;
 }
 

@@ -111,7 +111,7 @@ apply_sawtooth_curve :: (alpha: float, x_min := 0.0, x_max := 0.999999, y_offset
 // todo: make a universal curve palette that 1. applies to any engine float field (including user-made interfaces) and many under-the-hood float values and 2. you can call up the interface whenever and apply your interactions (curve selection + params) to whatever you like in code.
 use_curve_palette :: (window: Window_Type, renderer: *Renderer, camera_info: Camera_Info, camera_position: Vector3, camera_orientation: Quaternion, viewport: Vector2, time: float, screen_portion_max := 0.4) -> float {
     if viewport.x == 0 || viewport.y == 0 {
-        engine_warning(.HIGH, "viewport = % both components must be nonzero", viewport);
+        engine_warning("viewport = % both components must be nonzero", viewport, flags=.VERBOSE_ONLY);
         return 0;
     }
 

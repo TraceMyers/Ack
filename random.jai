@@ -60,8 +60,8 @@ random_vector :: (x_range: Vector2, y_range: Vector2, z_range: Vector2, state: *
 // sample_resolution is how many possible y values can be drawn from the distribution.
 // sample_granularity is the maximum difference in likelihood between y values.
 make_pmf :: (pdf: (x: float) -> y: float, min_x: float, max_x: float, sample_resolution: int, sample_granularity := 10.0) -> []float {
-    engine_check(.LOW, sample_resolution >= 2);
-    engine_check(.LOW, sample_granularity >= 2);
+    engine_check(sample_resolution >= 2);
+    engine_check(sample_granularity >= 2);
 
     y_value_count_max := sample_granularity - 1;
 
@@ -70,7 +70,7 @@ make_pmf :: (pdf: (x: float) -> y: float, min_x: float, max_x: float, sample_res
     max_y: float;
     for y : curve.y_values {
         // (pseudo) likelihood values must be >= 0
-        engine_check(.HIGH, y >= 0);
+        engine_check(y >= 0, level=.HIGH);
         max_y = max(y, max_y);
     }
 

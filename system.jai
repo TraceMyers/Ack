@@ -30,76 +30,6 @@ query_system_information :: (info: *System_Information) {
 //     }
 }
 
-is_window_open :: (window: Window_Type) -> bool {
-    #if OS == .WINDOWS {
-        return xx IsWindow(window);
-    }
-    return false;
-}
-
-is_window_minimized :: (window: Window_Type) -> bool {
-    #if OS == .WINDOWS {
-        return xx IsIconic(window);
-    }
-    return false;
-}
-
-make_window_take_focus :: (window: Window_Type) {
-    if OS == .WINDOWS {
-        SetForegroundWindow(window);
-        Win32.SetCapture(window);
-    }
-}
-
-get_mouse_cursor_position :: () -> x: s32, y: s32 {
-    #if OS == .WINDOWS {
-        pos: Win32.POINT;
-        Win32.GetCursorPos(*pos);
-        return pos.x, pos.y;
-    }
-    return 0,0;
-}
-
-set_mouse_cursor_position :: (x: s32, y: s32) {
-    #if OS == .WINDOWS {
-        SetCursorPos(x, y);
-    }
-}
-
-set_mouse_cursor_visibility :: (window: Window_Type, visible: bool) {
-    #if OS == .WINDOWS {
-        if visible {
-            ShowCursor(true);
-        } else {
-            // windows uses a voting system for ShowCursor that expects all applications to agree that the cursor
-            // should be hidden or shown, which... I don't know maybe there's a way to make it work.
-            // this stuffs the ballot box.
-            safety_counter := 100;
-            while ShowCursor(false) >= 0 && safety_counter > 0 { 
-                safety_counter -= 1; 
-            }
-        }
-    }
-}
-
-get_console_window :: () -> Window_Type {
-    #if OS == .WINDOWS {
-        return GetConsoleWindow();
-    } else return null;
-}
-
-set_console_cursor_position :: (window: Window_Type, x: s16, y: s16) {
-    if OS == .WINDOWS {
-        SetConsoleCursorPosition(window, {x, y});
-    }
-}
-
-clear_console :: () {
-    if OS == .WINDOWS {
-        print("\e[1;1H\e[2J");
-    }
-}
-
 MIN_CPU_PAUSE_CYCLES : u64 : 320;
 
 // try to pause the cpu at least some number of tsc cycles while minimizing overshoot. if wait_cycles < min value, 
@@ -245,7 +175,7 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
             security_params: SyncObjectSecurityParams = .TIMER_MODIFY_STATE | .SYNCHRONIZE;
             flags : s32 = CREATE_WAITABLE_TIMER_MANUAL_RESET | CREATE_WAITABLE_TIMER_HIGH_RESOLUTION;
             context.system_timer = CreateWaitableTimerExW(null, null, flags, xx security_params);
-            engine_check(.LOW, context.system_timer != null);
+            engine_check(context.system_timer != null);
         }
 
         spent_ms: float64;
@@ -259,10 +189,10 @@ wait_inaccurate :: inline (wait_ms: float64) -> time_spent_ms: float64, end_time
             remaining_time_in_hundreds_of_ns.QuadPart *= -1; 
 
             set_success := Win32.SetWaitableTimer(context.system_timer, *remaining_time_in_hundreds_of_ns, 0, null, null, Win32.BOOL.FALSE);
-            engine_check(.LOW, set_success == .TRUE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
+            engine_check(set_success == .TRUE, "win32 SetWaitableTimer error: %", Win32.GetLastError());
 
             wait_success := Win32.WaitForSingleObject(context.system_timer, 20);
-            engine_check(.LOW, wait_success == Win32.WAIT_OBJECT_0, "win32 WaitForSingleObject error: %", Win32.GetLastError());
+            engine_check(wait_success == Win32.WAIT_OBJECT_0, "win32 WaitForSingleObject error: %", Win32.GetLastError());
 
             end_time = seconds_since_init();
             spent_ms = (end_time - start_time) * 1000.0;
@@ -344,5 +274,61 @@ estimate_cycle_count :: (samples: []u64) -> float64, bool {
         return cycle_count_est, true;
     } else {
         return 0, false;
+    }
+}
+
+#if OS == .WINDOWS {
+    Win32 :: #import "Windows";
+
+    user32   :: #system_library "user32";
+    kernel32 :: #system_library "kernel32";
+
+    IsWindow :: (window: Win32.HWND) -> Win32.BOOL #foreign user32;
+    IsIconic :: (window: Win32.HWND) -> Win32.BOOL #foreign user32;
+    SetCursorPos :: (x: s32, y: s32) -> Win32.BOOL #foreign user32;
+    SetForegroundWindow :: (window: Win32.HWND) -> Win32. BOOL #foreign user32;
+    SetFocus :: (window: Win32.HWND) -> Win32.BOOL #foreign user32;
+    ShowCursor :: (show: bool) -> s32 #foreign user32;
+    
+    GetConsoleTitleW :: (lpConsoleTitle: *s8, nSize: s32) -> s32 #foreign kernel32;
+    SetConsoleTitleW :: (lpConsoleTitle: *s8) -> Win32.BOOL #foreign kernel32;
+    GetConsoleWindow :: () -> Win32.HWND #foreign kernel32;
+    SetConsoleCursorPosition :: (hConsoleOutput: Win32.HANDLE, dwCursorPosition: Win32.COORD) -> Win32.BOOL #foreign kernel32;
+    SetConsoleTextAttribute :: (hConsoleOutput: Win32.HANDLE, wAttributes: s16) -> Win32.BOOL #foreign kernel32; 
+
+    FindWindowW :: (lpClassName: *s8, lpWindowName: *s8) -> Win32.HWND #foreign user32;
+    GetTickCount :: () -> s32 #foreign kernel32;
+    
+    GetConsoleScreenBufferInfo :: (hConsoleOutput: Win32.HANDLE, lpConsoleScreenBufferInfo: *Console_Screen_Buffer_Info) -> Win32.BOOL #foreign kernel32;
+
+    ScrollConsoleScreenBufferW :: (hConsoleOutput: Win32.HANDLE, lpScrollRectangle: *Win32.SMALL_RECT, lpClipRectangle: *Win32.SMALL_RECT, dwDestinationOrigin: Win32.COORD, lpFill: *Char_Info) -> Win32.BOOL #foreign kernel32;
+
+    Console_Screen_Buffer_Info :: struct {
+        dwSize: Win32.COORD;
+        dwCursorPosition: Win32.COORD;
+        wAttributes: s16;
+        srWindow: Win32.SMALL_RECT;
+        dwMaximumWindowSize: Win32.COORD;
+
+    }
+
+    Char_Info :: struct {
+        using Char : union {
+            UnicodeChar: s16;
+            AsciiChar:   s8;
+        }
+        Attributes: s16;
+    }
+
+    CreateWaitableTimerExW :: (lpTimerAttributes: *Win32.SECURITY_ATTRIBUTES, lpName: *u16, dwFlags: s32, dwDesiredAccess: s32) -> Win32.HANDLE #foreign kernel32;
+
+    CREATE_WAITABLE_TIMER_MANUAL_RESET : s32 : 0x1; 
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION : s32 : 0x2;
+    TIMER_MODIFY_STATE : s32 : 0x02;
+
+    SyncObjectSecurityParams :: enum s32 {
+        SYNCHRONIZE         :: 0x00100000;
+        TIMER_MODIFY_STATE  :: 0x00000002;
+        TIMER_ALL_ACCESS    :: 0x001f0003;
     }
 }

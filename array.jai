@@ -19,7 +19,7 @@ make_static_array :: inline ($T: Type, count := 0) -> []T {
 
 array_element_index :: inline (array: []T, item: *$T) -> s64 {
     index := item - array.data;
-    engine_check(.LOW, index >= 0 && index < array.count);
+    engine_check(index >= 0 && index < array.count);
     return index;
 }
 
@@ -53,13 +53,13 @@ array_concatenate :: (arrays: ..[]$T) -> []T {
         memcpy(out_array.data + dst_index, it.data, copy_size);
         dst_index += it.count;
     }
-    engine_check(.LOW, dst_index == out_array.count);
+    engine_check(dst_index == out_array.count);
 
     return out_array;
 }
 
 make_local_static_array :: inline ($T: Type, $max: int, count := 0, $id := "") -> []T #expand {
-    engine_check(.LOW, count <= max);
+    engine_check(count <= max);
     array_name :: #run tprint("`_local_static_array_storage_%", id);
     #insert #run tprint("%: [max]T;", array_name);
     array: []T;
@@ -79,7 +79,7 @@ static_array_add :: inline (array: *[]$T, item: T, upper_bound: s64) -> bool {
 }
 
 copy_range_inside_array :: (array: *[]$T, dst: s64, src: s64, count: s64) {
-    engine_check(.LOW, count > 0 && dst != src);
+    engine_check(count > 0 && dst != src);
     diff := dst - src;
     abs_diff := abs(diff);
     if abs_diff < count {
@@ -94,7 +94,7 @@ copy_range_inside_array :: (array: *[]$T, dst: s64, src: s64, count: s64) {
 }
 
 array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
-    engine_check(.LOW, remove_free_proportion >= 0 && remove_free_proportion <= 1);
+    engine_check(remove_free_proportion >= 0 && remove_free_proportion <= 1);
 
     maybe_new_allocation: *T;
     keep_allocated := array.allocated;
@@ -123,8 +123,8 @@ array_shrink :: (array: *[..]$T, remove_free_proportion := 0.75) {
 
 array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion := 0.35, remove_free_proportion := 0.75, minimum_allocated := 8) -> bool {
     if array.allocated == 0 {
-        engine_check(.LOW, array.data == null);
-        engine_check(.LOW, array.count == 0);
+        engine_check(array.data == null);
+        engine_check(array.count == 0);
         return false;
     }
 
@@ -137,7 +137,7 @@ array_shrink_if_small_enough :: (array: *[..]$T, realloc_if_using_leq_proportion
         remove_proportion := min(1 - min_proportion, remove_free_proportion);
         prev_allocated := array.allocated;
         array_shrink(array, remove_proportion);
-        engine_check(.LOW, prev_allocated >= array.allocated);
+        engine_check(prev_allocated >= array.allocated);
         return prev_allocated != array.allocated;
     }
 

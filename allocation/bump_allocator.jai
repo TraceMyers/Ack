@@ -15,7 +15,7 @@ Bump_Allocator_Heap :: struct {
 
 bump_allocator_initialize :: (using bump: *Bump_Allocator, in_heap_size := BUMP_ALLOCATOR_DEFAULT_HEAP_SIZE) {
     parent_allocator = context.allocator;
-    engine_check(.LOW, in_heap_size > 0);
+    engine_check(in_heap_size > 0);
     in_heap_size = ceil_to_power_of_two_multiple(in_heap_size, 8);
     proc = bump_allocator_proc;
     data = bump;
@@ -41,7 +41,7 @@ bump_allocator_proc :: (mode: Allocator_Mode, size: s64, old_size: s64, old_memo
 
 bump_allocator_allocate :: (using bump: *Bump_Allocator, size: s64) -> *void {
     new_size := heap.end + size;
-    engine_check(.LOW, new_size <= heap.bytes.count);
+    engine_check(new_size <= heap.bytes.count);
     data_out := *heap.bytes[heap.end];
     memset(data_out, 0, size);
     // align everything to 8 because it's easy and works fine I think
@@ -81,7 +81,7 @@ get_high_water_mark :: (using bump: *Bump_Allocator) -> s32 {
 }
 
 reset_to_high_water_mark :: (using bump: *Bump_Allocator, mark: s32) {
-    engine_check(.LOW, heap.bytes.count >= mark);
+    engine_check(heap.bytes.count >= mark);
     heap.end = mark;
 }
 

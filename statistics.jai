@@ -79,7 +79,7 @@ calculate_mode :: (array: []$T) -> T, success: bool {
         }
     }
 
-    engine_check(.LOW, mode != null);
+    engine_check(mode != null);
     return mode.*, true;
 }
 

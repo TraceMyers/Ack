@@ -102,7 +102,7 @@ operator * :: inline (color: Color4f, scalar: float) -> Color4f #symmetric {
 
 to_color4f :: inline (color3f: Color3f, alpha := 1.0) -> Color4f {
     debug__check_float_rgb(color3f);
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     float_color: Color4f = ---;
     float_color.r = color3f.r;
@@ -114,7 +114,7 @@ to_color4f :: inline (color3f: Color3f, alpha := 1.0) -> Color4f {
 
 to_color4f :: inline (color3f: Color3f, alpha : u8 = 255) -> Color4f {
     debug__check_float_rgb(color3f);
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     float_color: Color4f = ---;
     float_color.r = color3f.r;
@@ -169,8 +169,8 @@ lerp :: inline (begin: Color4f, end: Color4f, t: float) -> Color4f {
 
 lerp_to_grey :: inline (color: $T/FLOAT_RGB_TYPES, grey_value: float, alpha: float) -> T {
     debug__check_float_rgb(color);
-    engine_check(.HIGH, is_norm_float(grey_value));
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(grey_value), level=.HIGH);
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     out_color := T.{
         r = lerp(color.r, grey_value, alpha),
@@ -198,14 +198,14 @@ to_grey :: inline (color: $T/FLOAT_RGB_TYPES) -> T {
 
 lighten :: inline (color: $T/FLOAT_RGB_TYPES, alpha: float32) -> T {
     debug__check_float_rgb(color);
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     return lerp_to_grey(color, 1, alpha);
 }
 
 darken :: inline (color: $T/FLOAT_RGB_TYPES, alpha: float32) -> T {
     debug__check_float_rgb(color);
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     return lerp_to_grey(color, 0, alpha);
 }
@@ -215,7 +215,7 @@ darken :: inline (color: $T/FLOAT_RGB_TYPES, alpha: float32) -> T {
 // 0.5 -> middle luminance of the hue
 set_lightness :: (hsy: *Color_HSY, lightness := 0.5) {
     debug__check_hsy(hsy.*);
-    engine_check(.HIGH, is_norm_float(lightness));
+    engine_check(is_norm_float(lightness), level=.HIGH);
 
     mid_grey := get_grey_value(hue_to_rgb(hsy.hue));
     if lightness >= 0.5 {
@@ -238,8 +238,8 @@ get_lightness :: (hsy: Color_HSY) -> float32 {
 
 scale_saturation :: inline (color: $T/FLOAT_RGB_TYPES, scale: float32, try_preserve_aspect := HSY_Component.HUE) -> T {
     debug__check_float_rgb(color);
-    engine_check(.HIGH, scale >= 0);
-    engine_check(.LOW, try_preserve_aspect != .SATURATION);
+    engine_check(scale >= 0, level=.HIGH);
+    engine_check(try_preserve_aspect != .SATURATION);
 
     min_saturation := to_min_saturation(color);
 
@@ -274,7 +274,7 @@ to_min_saturation :: to_grey;
 to_max_saturation :: (color: $T/FLOAT_RGB_TYPES, try_preserve_aspect := HSY_Component.HUE) -> max_saturation: T, saturation_scale: float32 {
     debug__check_float_rgb(color);
 
-    engine_check(.LOW, try_preserve_aspect != .SATURATION);
+    engine_check(try_preserve_aspect != .SATURATION);
 
     min_saturation := to_min_saturation(color);
     grey_value := min_saturation.r;
@@ -380,8 +380,8 @@ hue_to_hsy :: inline (hue: float32, saturation := 1.0, alpha := 1.0) -> Color_HS
 }
 
 hue_to_rgb :: (hue: float32, alpha := 1.0, $T := Color4f) -> T #modify { return T == Color3f || T == Color4f; } {
-    engine_check(.HIGH, is_norm_float(hue));
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(hue), level=.HIGH);
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     color := T.{
         r = respace(abs(0.5 - hue),           {ONE_SIXTH, ONE_THIRD}, {0, 1}),
@@ -471,7 +471,7 @@ rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
         }
         derive_saturation(*hsy, rgb.g, max_saturated_luminance);
     } else {
-        engine_check(.LOW, max_saturated.b == 1, "if b != 1, a mistake was made within this procedure");
+        engine_check(max_saturated.b == 1, "if b != 1, a mistake was made within this procedure");
         if max_saturated.r > 0 { // rb
             hsy.hue = 2 * ONE_THIRD + max_saturated.r * ONE_SIXTH;
         } else { // bgss
@@ -489,10 +489,10 @@ rgb_to_hsy :: (rgb: $T/FLOAT_RGB_TYPES) -> Color_HSY {
 // opposite-ish hues.
 // todo: the star algorithm is essentially n steps with 2 stages of alternation. stages of alternation could also be parameterized
 sample_linear_color_space :: (steps: int, initial_hue := 0.0, saturation := 1.0, lightness := 0.5, alpha := 1.0, move_pattern := enum { LINEAR; STAR; }.LINEAR) -> []Color4f {
-    engine_check(.HIGH, is_norm_float(initial_hue));
-    engine_check(.HIGH, is_norm_float(saturation));
-    engine_check(.HIGH, is_norm_float(lightness));
-    engine_check(.HIGH, is_norm_float(alpha));
+    engine_check(is_norm_float(initial_hue), level=.HIGH);
+    engine_check(is_norm_float(saturation), level=.HIGH);
+    engine_check(is_norm_float(lightness), level=.HIGH);
+    engine_check(is_norm_float(alpha), level=.HIGH);
 
     if steps == 0 {
         return .[];
@@ -532,19 +532,19 @@ sample_linear_color_space :: (steps: int, initial_hue := 0.0, saturation := 1.0,
 }
 
 debug__check_float_rgb :: inline (rgb: $T/FLOAT_RGB_TYPES) {
-    engine_check(.HIGH, is_norm_float(rgb.r));
-    engine_check(.HIGH, is_norm_float(rgb.g));
-    engine_check(.HIGH, is_norm_float(rgb.g));
+    engine_check(is_norm_float(rgb.r), level=.HIGH);
+    engine_check(is_norm_float(rgb.g), level=.HIGH);
+    engine_check(is_norm_float(rgb.g), level=.HIGH);
     #if T == Color4f {
-        engine_check(.HIGH, is_norm_float(rgb.a));
+        engine_check(is_norm_float(rgb.a), level=.HIGH);
     }
 }
 
 debug__check_hsy :: inline (hsy: Color_HSY) {
-    engine_check(.HIGH, is_norm_float(hsy.hue));
-    engine_check(.HIGH, is_norm_float(hsy.saturation));
-    engine_check(.HIGH, is_norm_float(hsy.luminance));
-    engine_check(.HIGH, is_norm_float(hsy.alpha));
+    engine_check(is_norm_float(hsy.hue), level=.HIGH);
+    engine_check(is_norm_float(hsy.saturation), level=.HIGH);
+    engine_check(is_norm_float(hsy.luminance), level=.HIGH);
+    engine_check(is_norm_float(hsy.alpha), level=.HIGH);
 }
 
 #scope_module

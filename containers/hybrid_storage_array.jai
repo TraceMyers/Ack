@@ -36,7 +36,7 @@ operator *[] :: (using array: *Hybrid_Storage_Array($T), i: int) -> *T {
 
 operator []= :: (using array: *Hybrid_Storage_Array($T), i: int, x: T) {
     if allocation == .INTERNAL {
-        engine_check(.LOW, i < internal_count);
+        engine_check(i < internal_count);
         internal_items[i] = x;
     } else {
         external[i] = x;
@@ -52,7 +52,7 @@ array_add :: (using array: *Hybrid_Storage_Array($T), item: T) {
             return;
         }
 
-        engine_check(.LOW, internal_count == internal_items.count);
+        engine_check(internal_count == internal_items.count);
         move_to_external_allocation(array, internal_items.count * 2);
     } 
 
@@ -124,7 +124,7 @@ Resize_Array_Partial :: struct {
 }
 
 move_to_internal_allocation :: inline (using array: *Hybrid_Storage_Array) {
-    engine_check(.LOW, external.count <= internal_items.count);
+    engine_check(external.count <= internal_items.count);
 
     allocation = .INTERNAL;
 

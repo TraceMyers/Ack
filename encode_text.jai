@@ -133,11 +133,13 @@ is_ascii :: inline (in: u32) -> bool {
     return (in & 0x7f) == in;
 }
 
-write_null_bytes :: (encoded: string, dst: *u8, user_data: *void, count: s8) -> int {
-    if dst != null && count > 0 {
+write_null_bytes :: (encoded: string, dst: *u8, user_data: *void, $count: s8) -> int {
+    if dst == null {
+        return count;
+    } else if count > 0 {
         memset(dst, 0, count);
-    }
-    return count;
+        return count;
+    } else return 0;
 }
 
 write_1_null_byte  :: #bake_arguments write_null_bytes(count=1);
@@ -193,14 +195,14 @@ encode_text :: (src: string, encoder: Text_Encoder, enable_log := true, user_dat
 
             #if #run encoder.proc != null {
                 result := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain, user_data);
-                engine_check(.HIGH, result.write_count <= MAX_WRITE_SIZE);
+                engine_check(result.write_count <= MAX_WRITE_SIZE, level=.HIGH);
             } else {
                 // cannot use an encoder with no procedure
                 result := Text_Encode_Result.{status=.INVALID_ENCODE_PROCEDURE};
             }
 
             if !result.status != 0 {
-                engine_warning(.MEDIUM, "failed to encode string '%' from % to %. error code: %.", view(src, 0, 100), encoder.encode_from, encoder.encode_to, result.status, caller_loc=caller_loc);
+                engine_warning("failed to encode string '%' from % to %. error code: %.", view(src, 0, 100), encoder.encode_from, encoder.encode_to, result.status, loc=caller_loc);
                 // making sure this happens regardless of what context.allocator is (see defer at top)
                 set_temporary_storage_mark(temp_storage_mark);
                 return "", result.status;
@@ -235,7 +237,7 @@ encode_text :: (src: string, encoder: Text_Encoder, enable_log := true, user_dat
     
     if want_terminating_bytes > 0 {
         wrote_count := encoder.terminator({out_index, out_buffer}, out_buffer + out_index, user_data);
-        engine_check(.LOW, wrote_count <= want_terminating_bytes);
+        engine_check(wrote_count <= want_terminating_bytes);
     }
 
     return string.{out_index, out_buffer}, 0;

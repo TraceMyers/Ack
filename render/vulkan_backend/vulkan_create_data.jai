@@ -33,16 +33,16 @@ begin_command_buffer :: (frame: *Graphics_Frame) -> VkCommandBuffer, bool {
 }
 
 begin_command_buffer :: (cmd: VkCommandBuffer) -> bool {
-    if !render_evaluate(.LOW, vkResetCommandBuffer(cmd, 0), "failed to reset a command buffer") then return false;
+    if !render_evaluate(vkResetCommandBuffer(cmd, 0), "failed to reset a command buffer") then return false;
     command_buffer_begin := VkCommandBufferBeginInfo.{flags = .ONE_TIME_SUBMIT_BIT};
-    if !render_evaluate(.LOW, vkBeginCommandBuffer(cmd, *command_buffer_begin), "failed to begin a command buffer") then return false;
+    if !render_evaluate(vkBeginCommandBuffer(cmd, *command_buffer_begin), "failed to begin a command buffer") then return false;
     return true;
 }
 
 acquire_next_swapchain_image :: (current_frame: *Graphics_Frame) -> u32, bool {
     using context.renderer;
     image_index: u32;
-    if !render_evaluate(.LOW, vkAcquireNextImageKHR(logical.obj, swapchain.obj, NANOSECONDS_PER_SECOND, current_frame.image_available_semaphore, null, *image_index), "failed to wait to get an image from the swapchain") then return 0xffff_ffff, false;
+    if !render_evaluate(vkAcquireNextImageKHR(logical.obj, swapchain.obj, NANOSECONDS_PER_SECOND, current_frame.image_available_semaphore, null, *image_index), "failed to wait to get an image from the swapchain") then return 0xffff_ffff, false;
     return image_index, true;
 }
 
@@ -176,14 +176,14 @@ make_vertex_descriptors :: ($T: Type, binding_index: u32 = 0) -> VkVertexInputBi
     };
 
     struct_info := cast(*Type_Info_Struct)T;
-    render_check(.LOW, struct_info.members.count > 0);
+    render_check(struct_info.members.count > 0);
 
     attributes: [..]VkVertexInputAttributeDescription;
     array_reserve(*attributes, struct_info.members.count);
 
     for *struct_info.members {
         format := struct_member_vertex_input_binding_format(it);
-        render_check(.LOW, format != .UNDEFINED);
+        render_check(format != .UNDEFINED);
         array_add(*attributes, .{
             location = xx it_index,
             binding = binding_index,
@@ -196,7 +196,7 @@ make_vertex_descriptors :: ($T: Type, binding_index: u32 = 0) -> VkVertexInputBi
 }
 
 struct_member_vertex_input_binding_format :: (info: *Type_Info_Struct_Member, depth := 0) -> VkFormat {
-    render_check(.LOW, depth <= 1);
+    render_check(depth <= 1);
     format: VkFormat;
     if info.type.type == .FLOAT {
         format = ifx info.type.runtime_size == 4 then .R32_SFLOAT else .R64_SFLOAT;
@@ -215,9 +215,9 @@ struct_member_vertex_input_binding_format :: (info: *Type_Info_Struct_Member, de
             format = ifx is_signed then .R64_SINT else .R64_UINT;
         }
     } else if info.type.type == .STRUCT {
-        render_check(.LOW, depth == 0);
+        render_check(depth == 0);
         member_struct_info := cast(*Type_Info_Struct)info.type;
-        render_check(.LOW, member_struct_info.members.count > 0);
+        render_check(member_struct_info.members.count > 0);
 
         only_one_field_type := true;
         repeating_field_format: VkFormat;
@@ -261,11 +261,11 @@ struct_member_vertex_input_binding_format :: (info: *Type_Info_Struct_Member, de
         }
     } else if info.type.type == .ARRAY {
         array_type_info := info.type.(*Type_Info_Array);
-        render_check(.LOW, array_type_info.array_count > 0 && array_type_info.array_type == .FIXED);
+        render_check(array_type_info.array_count > 0 && array_type_info.array_type == .FIXED);
         if array_type_info.element_type.type == {
         case .INTEGER;
             int_element_type := array_type_info.element_type.(*Type_Info_Integer);
-            render_check(.LOW, int_element_type.runtime_size == 2);
+            render_check(int_element_type.runtime_size == 2);
             if array_type_info.array_count == {
             case 2;
                 if int_element_type.signed {
@@ -288,7 +288,7 @@ struct_member_vertex_input_binding_format :: (info: *Type_Info_Struct_Member, de
             }
         case .FLOAT;
             float_element_type := cast(*Type_Info_Float) array_type_info.element_type;
-            render_check(.LOW, float_element_type.runtime_size == 4);
+            render_check(float_element_type.runtime_size == 4);
             if array_type_info.array_count == {
             case 2;
                 return .R32G32_SFLOAT;
@@ -297,7 +297,7 @@ struct_member_vertex_input_binding_format :: (info: *Type_Info_Struct_Member, de
             case 4;
                 return .R32G32B32A32_SFLOAT;
             case;
-                render_check(.LOW, false);
+                render_check(false);
             }
         }
     }
@@ -318,7 +318,7 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, array: []$T, override_count := -1, c
     }
 
     copy_size := copy_count * size_of(T);
-    render_check(.LOW, buffer.size >= xx copy_size);
+    render_check(buffer.size >= xx copy_size);
 
     copy_to_gpu_buffer(buffer, cast(*void) array.data, cast(u32) copy_size, command_buffer=command_buffer);
 }
@@ -331,7 +331,7 @@ copy_to_gpu_buffer :: (buffer: *GPU_Buffer, data: *void, override_size: u32 = 0x
     copy_size   := min(buffer.size, override_size);
 
     if is_host_visible_type(heap.type) {
-        render_check(.LOW, heap.is_valid);
+        render_check(heap.is_valid);
         vbo     := heap.buffer; 
         offset  := copy_offset;
         size    := copy_size;
@@ -431,7 +431,7 @@ add_buffer_transfer_barrier :: (cmd: VkCommandBuffer) {
 
     collection := transfer_buffer_memory_barriers;
     if collection.barriers.count == 0 {
-        render_log(.HIGH, "tried to submit empty transfer barrier collection");
+        render_log("tried to submit empty transfer barrier collection", flags=.VERBOSE_ONLY);
         return;
     }
     vkCmdPipelineBarrier(cmd, .TRANSFER_BIT, collection.pipeline_stage_flags, 0, 0, null, xx collection.barriers.count, collection.barriers.data, 0, null);
@@ -453,8 +453,8 @@ add_gpu_image_for_sampling :: (path: string, sampler: VkSampler) -> *GPU_Image {
 
     use_image_data := image_data;
 
-    render_check(.LOW, channels_in_file == 4 || channels_in_file == 3, "tried to load image with channel count %", channels_in_file);
-    render_check(.LOW, width > 0 && height > 0);
+    render_check(channels_in_file == 4 || channels_in_file == 3, "tried to load image with channel count %", channels_in_file);
+    render_check(width > 0 && height > 0);
 
     image := add_gpu_image_for_sampling(xx use_image_data, width, height, sampler);
 
@@ -533,7 +533,7 @@ internal_create_ubo_or_ssbo :: (pool: VkDescriptorPool, set: *VkDescriptorSet, b
     case .DEVICE_LOCAL_BUFFER; // good
     case .HOST_VISIBLE_BUFFER; // good
     case;
-        render_check(.LOW, false, "invalid heap type passed into create_gpu_storage_buffer: %", heap_type);
+        render_check(false, "invalid heap type passed into create_gpu_storage_buffer: %", heap_type);
     }
     
     layout := ifx uniform then uniform_buffer_descriptor_set_layout else storage_buffer_descriptor_set_layout;
@@ -636,7 +636,7 @@ create_gpu_image :: (width: s32, height: s32, usage_flags: VkImageUsageFlags, me
     using context.renderer;
 
     image_index := pool_acquire(*image_pool);
-    render_check(.LOW, image_index < max_image_count);
+    render_check(image_index < max_image_count);
     image := *image_pool[image_index];
     image.pool_index = xx image_index;
 
@@ -695,7 +695,7 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
 
     memory: VkDeviceMemory;
 
-    if !render_evaluate(.LOW, vkAllocateMemory(logical.obj, *allocate_info, null, *memory), "failed to allocate a heap of type % from allocator % size %", type, allocator, size) {
+    if !render_evaluate(vkAllocateMemory(logical.obj, *allocate_info, null, *memory), "failed to allocate a heap of type % from allocator % size %", type, allocator, size) {
         return -1;
     }
 
@@ -739,7 +739,7 @@ allocate_gpu_heap :: (size: int, type: GPU_Heap_Type, allocator: GPU_Allocator, 
 allocate_material :: (mat: *Material) -> s32 {
     using context.renderer;
     new_mat_index := pool_borrow(*materials);
-    render_check(.LOW, new_mat_index != -1);
+    render_check(new_mat_index != -1);
     update_material(xx new_mat_index, mat);
     return xx new_mat_index;
 }
@@ -805,7 +805,7 @@ usage_alignment :: inline (usage_flags: VkBufferUsageFlags) -> int {
 get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, horizontal_wrap: Texture_Wrap, vertical_wrap: Texture_Wrap) -> VkSampler {
     using context.renderer;
     // this procedure has to change if this isn't true, because we're turning these into a simple hash.
-    render_check(.LOW, size_of(Texture_Filter) == 1 && size_of(Texture_Wrap) == 1);
+    render_check(size_of(Texture_Filter) == 1 && size_of(Texture_Wrap) == 1);
 
     key := 
           ((cast(u32) min_filter)     << 24) 
@@ -847,7 +847,7 @@ get_or_add_sampler :: (min_filter: Texture_Filter, mag_filter: Texture_Filter, h
     // not using because I don't have 3d uv maps
     create_info.addressModeW = create_info.addressModeW;
 
-    render_evaluate(.LOW, vkCreateSampler(logical.obj, *create_info, null, sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
+    render_evaluate(vkCreateSampler(logical.obj, *create_info, null, sampler), "failed to create sampler with min filter %, mag filter %, hz wrap %, vt wrap %", min_filter, mag_filter, horizontal_wrap, vertical_wrap);
 
     return sampler.*;
 }
@@ -897,16 +897,16 @@ find_index_of_memory_type :: (can_use_type_bits: u32, must_have_props: VkMemoryP
 submit_commands :: (cmd: VkCommandBuffer, fence: VkFence, queue: VkQueue, wait_semaphore: *VkSemaphoreSubmitInfo = null, signal_semaphore: *VkSemaphoreSubmitInfo = null) -> bool {
     using context.renderer;
 
-    if !render_evaluate(.LOW, vkEndCommandBuffer(cmd), "failed to end a command buffer") then return false;
+    if !render_evaluate(vkEndCommandBuffer(cmd), "failed to end a command buffer") then return false;
 
     cmd_submit_info := command_buffer_submit_info(cmd);
     submit_info     := roll_submit_info(*cmd_submit_info, wait_semaphore, signal_semaphore); 
 
-    if !render_evaluate(.LOW, vkQueueSubmit2(queue, 1, *submit_info, fence), "failed to submit commands to a queue") then return false;
+    if !render_evaluate(vkQueueSubmit2(queue, 1, *submit_info, fence), "failed to submit commands to a queue") then return false;
 
-    if !render_evaluate(.LOW, vkWaitForFences(logical.obj, 1, *fence, VK_TRUE, NANOSECONDS_PER_SECOND), "failed to wait for a fence") then return false;
+    if !render_evaluate(vkWaitForFences(logical.obj, 1, *fence, VK_TRUE, NANOSECONDS_PER_SECOND), "failed to wait for a fence") then return false;
 
-    if !render_evaluate(.LOW, vkResetFences(logical.obj, 1, *fence), "failed to reset a fence") then return false;
+    if !render_evaluate(vkResetFences(logical.obj, 1, *fence), "failed to reset a fence") then return false;
 
     return true;
 }
@@ -942,7 +942,7 @@ create_descriptor_pool :: (pool: *VkDescriptorPool, max_sets: u32, ratios: []Des
         pPoolSizes = sizes.data
     };
 
-    return render_evaluate(.LOW, vkCreateDescriptorPool(logical.obj, *create_info, null, pool), "failed creating descriptor pool");
+    return render_evaluate(vkCreateDescriptorPool(logical.obj, *create_info, null, pool), "failed creating descriptor pool");
 }
 
 // this is inflexible and probably not great going forward due to forcing the stages to be uniform
@@ -961,7 +961,7 @@ build_descriptor_set_layout :: (layout_builder: []VkDescriptorSetLayoutBinding, 
     };
 
     set: VkDescriptorSetLayout;
-    render_evaluate(.LOW, vkCreateDescriptorSetLayout(logical.obj, *create_info, null, *set), "failed to create a descriptor set layout");
+    render_evaluate(vkCreateDescriptorSetLayout(logical.obj, *create_info, null, *set), "failed to create a descriptor set layout");
 
     return set;
 }
@@ -974,7 +974,7 @@ allocate_descriptor_set :: (pool: VkDescriptorPool, layout: VkDescriptorSetLayou
         pNext = p_next
     };
     descriptor_set: VkDescriptorSet;
-    render_evaluate(.LOW, vkAllocateDescriptorSets(context.renderer.logical.obj, *alloc_info, *descriptor_set), "failed to allocate a descriptor set");
+    render_evaluate(vkAllocateDescriptorSets(context.renderer.logical.obj, *alloc_info, *descriptor_set), "failed to allocate a descriptor set");
     return descriptor_set;
 }
 

@@ -5,7 +5,7 @@ LUT :: struct {
 }
 
 make_lut :: (curve_function: (x: float) -> y: float, min_x: float, max_x: float, sample_resolution: int) -> LUT {
-    engine_check(.LOW, sample_resolution >= 2);
+    engine_check(sample_resolution >= 2);
 
     lut := LUT.{y_values = NewArray(float, sample_resolution), min_x = min_x, inv_domain_size = 1.0 / (max_x - min_x)};
 

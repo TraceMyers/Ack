@@ -43,7 +43,7 @@ init_renderer_shared_data :: (thread_local_renderer: *Renderer, options: Render_
 
     init_success = true;
 
-    render_log(.MEDIUM,
+    render_log(
 #string HERE
 initializing renderer for application...
 
@@ -129,7 +129,7 @@ populate_shader_data :: () -> bool {
     spiel := "render init options have 'populate_shader_data_in_working_directory' set to true";
 
     if !fully_exists {
-        render_warning(.MEDIUM, "%, but the TeRM/Render structure is unable to find path to copy shaders from. expected path is one TeRM_Render/vulkan_shaders. shaders path: %", spiel, term_shaders_path);
+        render_warning("%, but the TeRM/Render structure is unable to find path to copy shaders from. expected path is one TeRM_Render/vulkan_shaders. shaders path: %", spiel, term_shaders_path);
         return false;
     }
 
@@ -138,7 +138,7 @@ populate_shader_data :: () -> bool {
     copy_success := copy_directory(term_shaders_path, project_shaders_path,, temp);
 
     if !copy_success {
-        render_warning(.MEDIUM, "%, but the copy failed for an unknown reason. this can either be investigated at the system level or it might just be easier to copy by hand from the % to %.", spiel, term_shaders_path, project_shaders_path);
+        render_warning("%, but the copy failed for an unknown reason. this can either be investigated at the system level or it might just be easier to copy by hand from the % to %.", spiel, term_shaders_path, project_shaders_path);
         return false;
     } 
 
@@ -148,7 +148,7 @@ populate_shader_data :: () -> bool {
     fully_exists, _ = how_much_of_path_exists_on_the_local_filesystem(dst_path);
 
     if !fully_exists {
-        render_warning(.MEDIUM, "tried to create directory for shader compilation spirv output at %, but failed", spirv_path);
+        render_warning("tried to create directory for shader compilation spirv output at %, but failed", spirv_path);
         return false;
     }
 
@@ -162,10 +162,10 @@ populate_shader_data :: () -> bool {
     }
 
     if result.exit_code != 0 {
-        render_warning(.MEDIUM, "tried to compile shaders in % using the compile.bat in there, but failed with exit code %", dst_path, result.exit_code);
+        render_warning("tried to compile shaders in % using the compile.bat in there, but failed with exit code %", dst_path, result.exit_code);
         return false;
     }
-    render_log(.MEDIUM, "%, so the default shader datas were copied from % to % and the shaders were compiled. this is on by default for ease of use, but it can be turned off now.", spiel, term_shaders_path, project_shaders_path);
+    render_log("%, so the default shader datas were copied from % to % and the shaders were compiled. this is on by default for ease of use, but it can be turned off now.", spiel, term_shaders_path, project_shaders_path);
     return true;
 }
 
@@ -191,14 +191,14 @@ init_dev_gui :: (using renderer: *Renderer) {
         pPoolSizes = pool_sizes.data
     };
 
-    render_evaluate(.LOW, vkCreateDescriptorPool(logical.obj, *pool_info, null, *imgui_descriptor_pool) == .SUCCESS, "failed to create the descriptor pool for imgui");
+    render_evaluate(vkCreateDescriptorPool(logical.obj, *pool_info, null, *imgui_descriptor_pool) == .SUCCESS, "failed to create the descriptor pool for imgui");
 
     imgui_context = ImGui.CreateContext();
 
     dev_gui_init_fonts();
     dev_gui_set_theme_paper_and_ink();
 
-    render_evaluate(.LOW, ImGui.ImplWin32_Init(window), "failed to initialize imgui win32 implementation");
+    render_evaluate(ImGui.ImplWin32_Init(window), "failed to initialize imgui win32 implementation");
 
     init_info := ImGui.ImplVulkan_InitInfo.{
         ApiVersion = API_VERSION,
@@ -219,8 +219,8 @@ init_dev_gui :: (using renderer: *Renderer) {
         MSAASamples=xx msaa_samples
     };
 
-    render_evaluate(.LOW, ImGui.ImplVulkan_Init(*init_info), "failed to initialize imgui vulkan implementation");
-    render_evaluate(.LOW, ImGui.ImplVulkan_CreateFontsTexture(), "failed to create the fonts texture for imgui-vulkan");
+    render_evaluate(ImGui.ImplVulkan_Init(*init_info), "failed to initialize imgui vulkan implementation");
+    render_evaluate(ImGui.ImplVulkan_CreateFontsTexture(), "failed to create the fonts texture for imgui-vulkan");
 }
 
 // Copyright (c) 2026 Trace Myers

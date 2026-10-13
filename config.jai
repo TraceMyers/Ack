@@ -21,18 +21,18 @@
 // because that'd overcomplicate loading.
 init_config :: (max_byte_count_for_all_strings := 16384) {
     // would cause issues since temp is assumed to be free-able during load
-    engine_check(.LOW, context.allocator.proc != temp.proc);
+    engine_check(context.allocator.proc != temp.proc);
     initialized = true;
     array_reserve(*string_buffer, max_byte_count_for_all_strings);
     string_buffer.allocator = no_allocator;
 }
 
 save_config :: (filename: string, data: *$T) {
-    engine_check(.LOW, initialized);
+    engine_check(initialized);
     auto_release_temp();
 
     tinfo := cast(*Type_Info_Struct) type_info(T);
-    engine_check(.LOW, tinfo.type == .STRUCT);
+    engine_check(tinfo.type == .STRUCT);
 
     save_data: Save_Data;
     save_data.file_builder.allocator = temp;
@@ -46,7 +46,7 @@ save_config :: (filename: string, data: *$T) {
 // freed with an array_reset on that buffer. data is re-initialized just because that will make for fewer 
 // bugs. data_init pointer provided so that callers can do additional initialization before load.
 load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, data_init: (*T) = null) -> []u8 {
-    engine_check(.LOW, initialized);
+    engine_check(initialized);
     mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(mark);
     defer array_reset_keeping_memory(*string_buffer);
@@ -218,7 +218,7 @@ load_config_visitor :: (visit: *Struct_Visit, load_data: *Load_Data) -> Struct_V
         }
     case .FLOAT;
         info_float := cast(*Type_Info_Float) visit.info;
-        engine_check(.LOW, info_float.runtime_size == 4);
+        engine_check(info_float.runtime_size == 4);
         load_float(visit.data, item.values[0], item.floats[0]);
     case .STRING;
         str := cast(*string) visit.data;
@@ -277,7 +277,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
         print(*save_data.file_builder, "% = %\n", view_string(visit.path), (cast(*bool) visit.data).*);
     case .ENUM;
         info_enum := cast(*Type_Info_Enum) visit.info;
-        engine_check(.LOW, info_enum.runtime_size <= 8);
+        engine_check(info_enum.runtime_size <= 8);
         if info_enum.values.count > 0 {
             enum_str := "?";
             enum_value: int;
@@ -292,7 +292,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
         }
     case .INTEGER;
         info_integer := cast(*Type_Info_Integer) visit.info;
-        engine_check(.LOW, info_integer.runtime_size <= 8);
+        engine_check(info_integer.runtime_size <= 8);
         int_value: s64;
         memcpy(*int_value, visit.data, visit.info.runtime_size);
         if info_integer.signed {
@@ -302,7 +302,7 @@ save_config_visitor :: (visit: *Struct_Visit, save_data: *Save_Data) -> Struct_V
         }
     case .FLOAT;
         info_float := cast(*Type_Info_Float) visit.info;
-        engine_check(.LOW, info_float.runtime_size == 4);
+        engine_check(info_float.runtime_size == 4);
         float_value: float32;
         memcpy(*float_value, visit.data, 4);
         print(*save_data.file_builder, "% = % (%)\n", view_string(visit.path), float_fmt(float_value), bytes(*float_value));
