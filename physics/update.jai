@@ -35,7 +35,7 @@ update_physics :: () -> int {
     }
 
     // only updating time scale right before stepping, because this is exactly when it is used.
-    time_scale = xx engine.settings.time_scale;
+    time_scale = xx engine.clock.delta_time_scale;
     step_count = total_simulation_steps;
 
     if step_state == .PAUSED {

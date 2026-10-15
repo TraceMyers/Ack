@@ -137,6 +137,7 @@ select_physical_device :: () -> bool {
     if !render_evaluate(determine_physical_device_queue_family_capabilities(*context.renderer.physical), "unable to set selected physical device queue family properties") then return false;
 
     set_physical_device_properties(*physical);
+    set_physical_device_size(*physical);
     {
         using physical.properties;
         render_log(
@@ -149,13 +150,15 @@ found suitable physical device...
     device id       0x%
     device type     %
     device name     %
+    vram size       %
 HERE,
             make_string(get_graphics_api_version(context.renderer),,temp),
             make_string(get_physical_device_driver_version(context.renderer),,temp),
             get_physical_device_vendor(context.renderer),
             FormatInt.{value=device_id, base=16, minimum_digits=4},
             device_type,
-            device_name
+            device_name,
+            physical.size
         );
     }
 
@@ -165,7 +168,8 @@ HERE,
 set_physical_device_properties :: (physical: *Physical_Device) {
     using physical;
     temp_properties: VkPhysicalDeviceProperties;
-    vkGetPhysicalDeviceProperties(obj, *temp_properties);
+
+    vkGetPhysicalDeviceProperties(physical.obj, *temp_properties);
     properties.api_version = temp_properties.apiVersion;
     properties.driver_version = temp_properties.driverVersion;
     properties.vendor_id = temp_properties.vendorID;
@@ -174,9 +178,26 @@ set_physical_device_properties :: (physical: *Physical_Device) {
     properties.texel_buffer_alignment = temp_properties.limits.minTexelBufferOffsetAlignment;
     properties.uniform_buffer_alignment = temp_properties.limits.minUniformBufferOffsetAlignment;
     properties.storage_buffer_alignment = temp_properties.limits.minStorageBufferOffsetAlignment;
+
     // properties.image_alignment = temp_properties.limits.bufferImageGranularity;
     memcpy(properties.device_name_buffer.data, temp_properties.deviceName.data, min(properties.device_name_buffer.count, temp_properties.deviceName.count));
     properties.device_name = to_string_safe(properties.device_name_buffer.data, properties.device_name_buffer.count);
+}
+
+set_physical_device_size :: (device: *Physical_Device) -> bool {
+    physical.size = 0;
+
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(physical.obj, *memory_properties;
+
+    for 0..memory_properties.memoryHeapCount-1 {
+        if memory_properties.memoryHeaps[it].flags & .DEVICE_LOCAL_BIT {
+            physical.size = memory_properties.memoryHeaps[it].size;
+            return true;
+        }
+    }
+
+    return false;
 }
 
 score_physical_device :: (device: VkPhysicalDevice) -> score: s32 {

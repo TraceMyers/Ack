@@ -1,5 +1,3 @@
-// todo: make logging thread safe
-
 Log_Options :: struct {
     // have the logging system call this proc with the finalized text, if you set it.
     callback: (log_text: string);
@@ -16,14 +14,17 @@ global_log_options: Log_Options;
 // read Ack_Log_Flags body below
 #assert(USER_VERBOSITY_LEVELS.count <= xx Ack_Log_Flags.NO_NEWLINE);
 
+// predefined to make it easy to bake your own log procedures (see below)
+basic_log :: #procedure_of_call log(format_string=""); 
+
 // pass as user flags to log()
 Ack_Log_Flags :: enum_flags u32 {
     // user verbosity reserves the lowest half byte (0xf). indexes 0 to 15. 
     // if your program wants separate verbosities for animation, entity update, etc.
     // then give animation an index (say, 1), and entity update an index (say, 2)
     //
-    // animation_log     :: #bake_arguments log(user_flags=1);
-    // entity_update_log :: #bake_arguments log(user_flags=2);
+    // animation_log     :: #bake_arguments basic_log(user_flags=1);
+    // entity_update_log :: #bake_arguments basic_log(user_flags=2);
     //
     // during import, set their respective verbosity levels
     //
@@ -80,9 +81,9 @@ Ack_Log_Source_ID :: enum u64 {
             }
         }
 
-        procedure_name: string;
+        proc_on_call_stack_before_log: string;
         if (info.user_flags & .NO_PROCEDURE_NAME) == 0 && context.stack_trace && context.stack_trace.next && context.stack_trace.next.next {
-            procedure_name = context.stack_trace.next.next.info.name;
+            proc_on_call_stack_before_log = context.stack_trace.next.next.info.name;
         }
 
         to_standard_error   := (info.common_flags & .ERROR) != 0;
@@ -98,21 +99,10 @@ Ack_Log_Source_ID :: enum u64 {
             header = "LOG";
         }
 
-        ack_log_impl(message, procedure_name, should_log_location, info.location, header, (info.user_flags & .NO_NEWLINE) == 0, (info.user_flags & .CALLBACK_ONLY) != 0, to_standard_error);
+        ack_log_impl(message, proc_on_call_stack_before_log, should_log_location, info.location, header, (info.user_flags & .NO_NEWLINE) == 0, (info.user_flags & .CALLBACK_ONLY) != 0, to_standard_error);
     }
 } else {
     ack_log :: (#discard message: string, #discard data: *void, #discard in_info: Log_Info) {}
-}
-
-// like check, but always evaluates the condition, even if asserts are disabled. also returns
-// the evaluated condition, so it can be used in if statements.
-evaluate :: (condition: bool, fmt := "", args: ..Any, $level := Ack_Validation_Level.NORMAL, caller_loc := #caller_location) -> bool #expand #no_debug {
-    #if ENABLE_VALIDATION {
-        if level <= USER_VALIDATION_LEVEL {
-            if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
-        }
-    }
-    return condition;
 }
 
 // formatting helpers
@@ -278,7 +268,16 @@ write_to_log_file :: inline (message: string) {
         scope_set_working_directory(global_log_options.file_location, global_log_options.file_location.count > 0);
         apollo_time := current_time_consensus();
         calendar_time := to_calendar(apollo_time, global_log_options.file_time_zone);
-        file_name := tprint("ack_log__%_%_%__%_%_%__%.txt", calendar_time.year, calendar_time.month_starting_at_0 + 1, calendar_time.day_of_month_starting_at_0 + 1, calendar_time.hour, calendar_time.minute, calendar_time.second, calendar_time.time_zone);
+        file_name := tprint(
+            "ack_log__%_%_%__%_%_%__%.txt", 
+            calendar_time.year, 
+            FormatInt.{value=calendar_time.month_starting_at_0 + 1, minimum_digits=2}, 
+            FormatInt.{value=calendar_time.day_of_month_starting_at_0 + 1, minimum_digits=2},
+            FormatInt.{value=calendar_time.hour, minimum_digits=2},
+            FormatInt.{value=calendar_time.minute, minimum_digits=2},
+            FormatInt.{value=calendar_time.second, minimum_digits=2},
+            calendar_time.time_zone
+        );
         logging_file = file_open(file_name, for_writing=true);
     }
     if logging_file.handle != null {

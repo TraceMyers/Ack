@@ -26,8 +26,21 @@ path_to_string_ext :: (path: *Path, subtract_count := 0) -> string {
     return path_to_string(path.*, path.words.count - subtract_count,, temp);
 }
 
-move_down_directory :: (path: *Path, directory: string) {
-    array_add(*path.words, directory);
+// temp, assumes path is temp-allocated to it's all temp
+// directory_traversal can be one directory or multiple, e.g. "shaders" or "shaders/vulkan"
+move_down_directory :: (path: *Path, directory: string, path_must_exist := true) -> path_exists: bool {
+    move_down_directories(path, directory, path_must_exist);
+}
+
+// temp, assumes path is temp-allocated to it's all temp
+// directory_traversal can be one directory or multiple, e.g. "shaders" or "shaders/vulkan"
+move_down_directories :: (path: *Path, directory_traversal: string, path_must_exist := true) -> path_exists: bool {
+    traversal_with_forward_slashes := convert_to_forward_slashes(directory_traversal,, temp);
+    path_parts := split(traversal_with_forward_slashes, #char "/",, temp);
+    for directory : path_parts {
+        array_add(*path.words, directory);
+    }
+    return ifx path_must_exist then how_much_of_path_exists_on_the_local_filesystem(path) else true;
 }
 
 move_up_directory :: (path: *Path) {

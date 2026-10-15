@@ -6,7 +6,7 @@
     ENABLE_LOGGING           := true,
     LOG_VERTICAL_MODE        := true,
 
-    // unfortunately you need to pass integer values for VERBOSITY and VALIDATION levels,
+    // you need to pass integer values for VERBOSITY and VALIDATION levels, because the enums will not be compiled yet
     // 0 = NORMAL, 1 = VERBOSE/HIGH, 2=VERY_VERBOSE/VERY_HIGH
     
     USER_VERBOSITY_LEVELS:   []u8 = xx,force Ack_Log_Level.[.NORMAL],
@@ -74,7 +74,8 @@ engine_init :: (
     renderer_settings       := Renderer_Creation_Settings.{}, 
     physical_world_settings := Physical_World_Creation_Settings.{}, 
     use_ack_logger          := true,
-    log_options             := Log_Options.{}
+    log_options             := Log_Options.{},
+    project_info            := Project_Info.{}
 ) -> bool {
     engine_check(!engine.initialized);
     engine_check(engine.physical_world == null);
@@ -86,25 +87,23 @@ engine_init :: (
         context.logger = ack_log;
         global_log_options = log_options;
     }
-
-    run_or_return_failure :: ($code: Code) #expand {
-        engine.initialized = #insert code;
-        if !engine.initialized {
-            `return false;
-        }
-    }
     
     run_or_return_failure(create_window(window_settings));
     run_or_return_failure(create_renderer(renderer_settings));
     run_or_return_failure(create_physical_world(physical_world_settings));
+
+    engine.project_info = project_info;
+    if engine.project_info.project_path == "" {
+        engine.project_info.project_path = get_final_path(get_current_working_directory());
+    } else {
+        engine.project_info.project_path = get_final_path(engine.project_info.project_path);
+    }
 
     return true;
 }
 
 // you can use this instead of making your own loop.
 engine_loop :: () {
-    using engine;
-
     update_system :: ($name: string) #expand {
         #insert #run tprint("if engine.settings.pre_%_update then engine.settings.pre_%_update();", name, name);
         #insert #run tprint("update_%();", name);
@@ -112,24 +111,16 @@ engine_loop :: () {
     }
 
     update_clock :: () {
-        using engine;
-        new_time := end_of_frame_sync();
-        frame_time := new_time - clock.time;
-        clock.unscaled_delta_time = xx clamp(frame_time, 1.0/10_000.0, 0.3);
-        clock.delta_time = xx (clock.unscaled_delta_time * settings.time_scale);
-        clock.time = new_time;
-        clock.frame += 1;
+        update_clock(*engine.clock);
     }
 
-    clock.time = xx seconds_since_init();
-    clock.unscaled_delta_time = 1.0 / 60.0;
-    clock.delta_time = xx (clock.unscaled_delta_time * settings.time_scale);
+    init_clock(*engine.clock);
 
-    while !settings.quit {
+    while !engine.settings.quit {
         reset_temporary_storage();
         update_system("input");
         // if the window is already closed, then we need to quit right away
-        if settings.quit then break;
+        if engine.settings.quit then break;
         update_system("physics");
         update_system("renderer");
         update_system("clock");
@@ -150,31 +141,33 @@ engine_path :: () -> string {
     check :: (#discard condition: bool, #discard fmt := "", #discard args: ..Any, $level := Ack_Validation_Level.NORMAL, #discard caller_loc := #caller_location) #expand {}
 }
 
+// like check, but always evaluates the condition, even if asserts are disabled. also returns
+// the evaluated condition, so it can be used in if statements.
+evaluate :: (condition: bool, fmt := "", args: ..Any, $level := Ack_Validation_Level.NORMAL, caller_loc := #caller_location) -> bool #expand #no_debug {
+    #if ENABLE_VALIDATION {
+        if level <= USER_VALIDATION_LEVEL {
+            if !condition && assert_helper(fmt, ..args, caller_loc) then debug_break();
+        }
+    }
+    return condition;
+}
+
 // -----------------------------------------------------------------------------------------------
 
 Game_Engine :: struct {
     clock: Loop_Clock;
     settings: Engine_Settings;
+    project_info: Project_Info;
     input: Game_Input;
     renderer: *Renderer;
     physical_world: *Physical_World;
     initialized: bool;
 }
 
-Loop_Clock :: struct {
-    frame: int;
-    time: float64;
-    delta_time: float32;
-    unscaled_delta_time: float32;
-}
-
 Engine_Settings :: struct {
     // updatable during loop
     quit: bool;
     auto_sync_frame_time := true;
-
-    time_scale: float64 = 1.0;
-
     // before and after reading system input and calling input bindings
     pre_input_update: ();
     post_input_update: ();
@@ -187,6 +180,13 @@ Engine_Settings :: struct {
     // before and after updating engine.clock
     pre_clock_update: ();
     post_clock_update: ();
+}
+
+Project_Info :: struct {
+    // path to the project. set to working directory in engine_init if not explicitly passed
+    project_path: string;
+    // all other paths are project path-relative
+    shaders_path := "shaders";
 }
 
 // -----------------------------------------------------------------------------------------------
@@ -227,8 +227,8 @@ Engine_Settings :: struct {
 #load "misc.jai";
 #load "context_additions.jai";
 #load "engine_logging_and_validation.jai";
-#load "engine_loop.jai";
 #load "window.jai";
+#load "clock.jai";
 
 // base imports
 #import "Basic";

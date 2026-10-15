@@ -5,7 +5,8 @@
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------- Misc Metaprogramming
 
-minit :: inline (component: *$T) {
+
+meminit :: inline (component: *$T) {
     ini :: initializer_of(T);
     #if ini {
         inline ini(component);
@@ -90,6 +91,13 @@ align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
     }
 
     return align;
+}
+
+run_or_return_failure :: ($code: Code) #expand {
+    engine.initialized = #insert code;
+    if !engine.initialized {
+        `return false;
+    }
 }
 
 get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
