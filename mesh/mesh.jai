@@ -2,6 +2,7 @@
 #load "convex.jai";
 #load "data_management.jai";
 #load "merge.jai";
+#load "skeletal_animation.jai";
 
 NO_JOINT : s16 : -1;
 
@@ -160,7 +161,7 @@ Skeleton :: struct {
 Skeletal_Pose :: struct {
     allocation:      []u8;
     local_joints:    []Joint_Transform;
-    model_joints:    []Matrix4;    // local accumulated up the hierarchy
+    model_joints:    []Matrix4;    // local accumulated down the hierarchy
     skinning_joints: []Matrix4;    // world * inverse_bind_pose, uploaded to gpu
 }
 

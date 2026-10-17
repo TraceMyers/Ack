@@ -1,10 +1,10 @@
-make_transform_matrix :: (position: Vector3, orientation: Quaternion, scale: Vector3) -> Matrix4 {
-    matrix: Matrix4;
-    matrix = make_translation_matrix4(position);
-    matrix = rotate(matrix, orientation);
-    scale_mat := make_scale_matrix4(scale);
-    matrix *= scale_mat;
-    return matrix;
+make_transform_matrix :: (position: Vector3, orientation: Quaternion, in_scale: Vector3) -> Matrix4 {
+    mat := rotation_matrix(Matrix4, orientation);
+    scale(*mat, in_scale);
+    mat._14 = position.x;
+    mat._24 = position.y;
+    mat._34 = position.z;
+    return mat;
 }
 
 decompose_transform_matrix :: (transform: *Matrix4, out_position: *Vector3, out_orientation: *Quaternion, out_scale: *Vector3) {

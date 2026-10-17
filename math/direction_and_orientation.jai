@@ -145,8 +145,8 @@ get_right_direction_xy :: inline (q: Quaternion) -> Vector3 {
 }
 
 calculate_axes :: (orientation: Quaternion, fore: *Vector3, right: *Vector3, up: *Vector3) {
-    fore.* = get_fore_direction(orientation);
-    up.* = get_up_direction(orientation);
+    fore.*  = get_fore_direction(orientation);
+    up.*    = get_up_direction(orientation);
     right.* = normalize(cross(fore.*, up.*));
 }
 
@@ -190,6 +190,7 @@ make_quat :: (fore: Vector3, right: Vector3, up: Vector3) -> Quaternion {
         if !is_normalized(fore,  SMALL_NUMBER) 
         || !is_normalized(right, SMALL_NUMBER)
         || !is_normalized(up,    SMALL_NUMBER) {
+            engine_log("one of these vectors isn't normalized: %, %, %", fore, right, up, flags=.VERY_VERBOSE_ONLY);
             ONE_OVER_ROOT_2 :: #run 1. / sqrt(2.);
             // if any of the vectors isn't normalized, randomly return one of two highly different rotations to make it obvious something is wrong. using % 4 (as opposed to % 2) to try to dodge the cpus that might only return even tsc values. https://community.intel.com/t5/Mobile-and-Desktop-Processors/RDTSC-only-returns-evenly-numbered-values-on-some-chips/m-p/1231812/highlight/true?profile.language=en
             if rdtsc() % 4 == 0 {
@@ -255,7 +256,7 @@ interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: floa
     if cos_theta >= ALMOST_COS_0 {
         return use_target;
     } else if cos_theta >= COS_PI_OVER_12 {
-        // small distances can be lerped without being able to tell the difference
+        // small distances can be lerped and get basically the same result as a spherical lerp
         return nlerp(origin, use_target, alpha);
     } else {
         return slerp(origin, use_target, alpha);

@@ -87,12 +87,7 @@ create_renderer :: (settings: Renderer_Creation_Settings) -> bool {
     render_check(engine.renderer == null);
 
     engine.renderer = New(Renderer);
-    {
-        using engine.renderer;
-        creation_settings = settings;
-        backend.window_dimensions.x = window_width;
-        backend.window_dimensions.y = window_height;
-    }
+    engine.renderer.creation_settings = settings;
 
     render_log(
 #string HERE
@@ -103,22 +98,30 @@ initializing renderer for application...
     using % graphics, version %
 HERE,
         settings.application_name, 
-        renderer_version_string(settings.application_version),
+        make_version_string(settings.application_version),
         ifx settings.engine_name == "" then "?" else settings.engine_name, 
-        renderer_version_string(settings.engine_version),
+        make_version_string(settings.engine_version),
         engine.renderer.backend.API,
-        renderer_version_string(engine.renderer.backend.API_VERSION)
+        make_version_string(engine.renderer.backend.API_VERSION),
+        user_flags = xx Ack_Log_Flags.ADD_NEWLINE
     );
 
     if settings.copy_shaders_from_engine && !copy_shaders_from_engine() {
-        return false;
-    }
-    if settings.compile_shaders && !compile_shaders() {
+        render_error("renderer creation failed");
         return false;
     }
 
-    backend_create_renderer(engine.renderer);
+    // if settings.compile_shaders && !compile_shaders() {
+    //     render_error("renderer creation failed");
+    //     return false;
+    // }
 
+    if !backend_create_renderer() {
+        render_error("renderer creation failed");
+        return false;
+    }
+    
+    render_log("renderer creation success");
     return true;
 }
 
@@ -132,31 +135,36 @@ update_renderer :: () {
 }
 
 copy_shaders_from_engine :: () -> success: bool {
-    // spiel := "render init options have 'populate_shader_data_in_working_directory' set to true";
+    report_copy_error :: (error_fmt: string, args: ..Any) #expand {
+        render_error("failed to copy shaders from the engine to the project: %", tprint(error_fmt, ..args));
+        `return false;
+    }
 
     working_directory := get_working_directory();
     defer set_working_directory(working_directory);
 
     renderer_path := ack_renderer_path();
 
-    src_path := path_parse_ext(renderer_path);
+    src_path := parse_path_ext(renderer_path);
     if !move_down_directory(*src_path, "shaders") {
-        // todo: error
+        report_copy_error("no shaders directory in engine (renderer path=%)", src_path);
         return false;
     }
     src_path_str := path_to_string_ext(*src_path);
 
-    dst_path := path_parse_ext(engine.project_info.shaders_path);
-    if !move_down_directories(*dst_path, engine.creation_settings.project_shader_directory) {
-        // todo: error
-        return false;
-    }
+    dst_path := parse_path_ext(engine.project_info.project_path);
     dst_path_str := path_to_string_ext(*dst_path);
+    if !move_down_directories(*dst_path, engine.project_info.shaders_path) {
+        dst_path_str = path_to_string_ext(*dst_path);
+        if !make_directory_if_it_does_not_exist(dst_path_str) {
+            report_copy_error("failed to make or find project shader path %", dst_path_str);
+            return false;
+        }
+    }
     
     copy_success := copy_directory(src_path_str, dst_path_str,, temp);
     if !copy_success {
-        // todo: error
-        return false;
+        report_copy_error("failed to copy shaders from % to %", src_path_str, dst_path_str);
     }
 
     return true;
@@ -165,13 +173,13 @@ copy_shaders_from_engine :: () -> success: bool {
 compile_shaders :: () -> success: bool {
     using engine;
 
-    shaders_path := parse_path_ext(project_settings.shaders_path);
-    if !file_exists(shaders_path) {
+    shaders_path := parse_path_ext(project_info.shaders_path);
+    shaders_path_str := path_to_string_ext(*shaders_path);
+    if !file_exists(shaders_path_str) {
         // todo: error
         return false;
     }
 
-    shaders_path_str := path_to_string_ext(*shaders_path);
     scope_set_working_directory(shaders_path_str);
 
     if !file_exists("glslc.exe") {

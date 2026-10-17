@@ -87,18 +87,19 @@ engine_init :: (
         context.logger = ack_log;
         global_log_options = log_options;
     }
-    
-    run_or_return_failure(create_window(window_settings));
-    run_or_return_failure(create_renderer(renderer_settings));
-    run_or_return_failure(create_physical_world(physical_world_settings));
 
     engine.project_info = project_info;
     if engine.project_info.project_path == "" {
-        engine.project_info.project_path = get_final_path(get_current_working_directory());
+        engine.project_info.project_path = get_final_path(get_working_directory());
     } else {
         engine.project_info.project_path = get_final_path(engine.project_info.project_path);
     }
 
+    run_or_return_failure(create_window(window_settings));
+    run_or_return_failure(create_renderer(renderer_settings));
+    run_or_return_failure(create_physical_world(physical_world_settings));
+
+    engine.initialized = true;
     return true;
 }
 
@@ -114,6 +115,11 @@ engine_loop :: () {
         update_clock(*engine.clock);
     }
 
+    if !engine.initialized {
+        engine_log("engine uninitialized. exiting loop");
+        return;
+    }
+
     init_clock(*engine.clock);
 
     while !engine.settings.quit {
@@ -121,7 +127,7 @@ engine_loop :: () {
         update_system("input");
         // if the window is already closed, then we need to quit right away
         if engine.settings.quit then break;
-        update_system("physics");
+        // update_system("physics");
         update_system("renderer");
         update_system("clock");
     }
@@ -192,7 +198,7 @@ Project_Info :: struct {
 // -----------------------------------------------------------------------------------------------
 
 // multi-file loads
-// #load "mesh/mesh.jai";
+#load "mesh/mesh.jai";
 // #load "navmesh/navmesh.jai";
 #load "physics/physics.jai";
 #load "render/render.jai";
@@ -229,6 +235,7 @@ Project_Info :: struct {
 #load "engine_logging_and_validation.jai";
 #load "window.jai";
 #load "clock.jai";
+#load "curves.jai";
 
 // base imports
 #import "Basic";

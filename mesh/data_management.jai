@@ -14,7 +14,6 @@ Managed_Meshes :: struct {
     path_lookup_table: Table(string, Mesh_Ref);
     instanced_meshes: Pool(Instanced_Mesh);
     animation_instances: Pool(Skeletal_Mesh_Animation_Instance);
-    specializations: Pool(Mesh_Specialization_Params);
 }
 
 Skeletal_Animation_Playback_Control :: struct {

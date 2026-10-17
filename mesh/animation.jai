@@ -50,8 +50,8 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     blend_alpha_sum := 0.0;
     if blends.count > 0 then for blends {
         blend_alpha_sum += it.blend_alpha;
-        engine_check(abs(blend_alpha_sum - 1.0) < 0.001);
     }
+    if blends.count > 0 then engine_check(abs(blend_alpha_sum - 1.0) < 0.0001);
 
     allocation_size := (size_of(Joint_Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
     joint_count     := skeleton.joints.count;
@@ -102,7 +102,6 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     }
 
     for *joint, ji : skeleton.joints {
-            
         local_joint := *pose.local_joints[ji];
 
         if blends.count > 0 then for blends {
@@ -137,17 +136,17 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
             local_joint.* = joint.local_rest_pose;
         }
 
-        if per_anim.count > 0 {
-            normalize(local_joint.rotation);
-        }
+        normalize(local_joint.rotation);
 
         if joint.parent != -1 {
-            pose.model_joints[ji] = pose.model_joints[joint.parent] * make_transform_matrix(local_joint.*);
+            pose.model_joints[ji].mat4x3 = pose.model_joints[joint.parent].mat4x3 * make_transform_matrix(local_joint.*).mat4x3;
+            pose.model_joints[ji].v[3]   = {0,0,0,1};
         } else {
             pose.model_joints[ji] = make_transform_matrix(local_joint.*);
         }
 
-        pose.skinning_joints[ji] = pose.model_joints[ji] * joint.inverse_bind_pose;
+        pose.skinning_joints[ji].mat4x3 = pose.model_joints[ji].mat4x3 * joint.inverse_bind_pose.mat4x3;
+        pose.skinning_joints[ji].v[3]   = {0,0,0,1};
     }
 }
 

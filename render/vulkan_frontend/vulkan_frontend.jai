@@ -336,17 +336,17 @@ Queue_Family_Capability_Flags :: enum_flags {
     TRANSFER;
 }
 
-Buffer_Memory_Barrier_Collection :: struct {
-    barriers: [..]VkBufferMemoryBarrier;
-    pipeline_stage_flags: VkPipelineStageFlags;
-}
-
 Queue_Family_Indices :: struct {
     present_index:  u32 = U32_MAX;
     graphics_index: u32 = U32_MAX;
     compute_index:  u32 = U32_MAX;
     transfer_index: u32 = U32_MAX;
     #overlay(present_index) array: [4]u32 = ---;
+}
+
+Buffer_Memory_Barrier_Collection :: struct {
+    barriers: [..]VkBufferMemoryBarrier;
+    pipeline_stage_flags: VkPipelineStageFlags;
 }
 
 Physical_Device :: struct {

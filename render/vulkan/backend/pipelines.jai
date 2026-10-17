@@ -1,4 +1,4 @@
-Default_Pipeline :: struct {
+Graphics_Pipeline :: enum {
     BILLBOARD;
     OPAQUE_STATIC_MESH;
     OPAQUE_SKELETAL_MESH;
@@ -7,7 +7,7 @@ Default_Pipeline :: struct {
     DEPTH_VISUALIZATION;
 }
 
-Default_Pipeline_Layout :: struct {
+Graphics_Pipeline_Layout :: enum {
     BILLBOARD;
     OPAQUE_STATIC_MESH;
     OPAQUE_SKELETAL_MESH;

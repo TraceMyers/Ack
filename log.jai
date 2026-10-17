@@ -1,3 +1,5 @@
+// todo: call site rate-limiting (with params) would be pretty easy: just use the code location as the hash
+
 Log_Options :: struct {
     // have the logging system call this proc with the finalized text, if you set it.
     callback: (log_text: string);
@@ -12,7 +14,7 @@ Log_Options :: struct {
 global_log_options: Log_Options;
 
 // read Ack_Log_Flags body below
-#assert(USER_VERBOSITY_LEVELS.count <= xx Ack_Log_Flags.NO_NEWLINE);
+#assert(USER_VERBOSITY_LEVELS.count <= xx Ack_Log_Flags.NO_PROCEDURE_NAME);
 
 // predefined to make it easy to bake your own log procedures (see below)
 basic_log :: #procedure_of_call log(format_string=""); 
@@ -35,14 +37,14 @@ Ack_Log_Flags :: enum_flags u32 {
     //
     // animation_log("yadda yadda", flags=.VERBOSE_ONLY);
 
-    // don't add a newline if there isn't one already in the message.
-    NO_NEWLINE             :: 0x10;
     // don't print the procedure name
-    NO_PROCEDURE_NAME;
+    NO_PROCEDURE_NAME :: 0x10;
     // log the location of the caller even if it's not an error
     FORCE_LOG_LOCATION;
     // only call the passthrough, don't write to stdout/stderror/file.
     CALLBACK_ONLY;
+    // add an extra newline at the end
+    ADD_NEWLINE;
 }
 
 // used to identify log source for engine only
@@ -57,14 +59,18 @@ Ack_Log_Source_ID :: enum u64 {
         info := cast(*Ack_Log_Info) *in_info;
 
         verbosity: Log_Level;
+        is_engine_log: bool;
 
         if cast(Ack_Log_Source_ID) info.source_identifier == {
         case .ENGINE;
             verbosity = xx GENERAL_VERBOSITY_LEVEL;
+            is_engine_log = true;
         case .RENDER;
             verbosity = xx RENDER_VERBOSITY_LEVEL;
+            is_engine_log = true;
         case .PHYSICS;
             verbosity = xx PHYSICS_VERBOSITY_LEVEL;
+            is_engine_log = true;
         case;
             user_verbosity_id := (info.user_flags & 0xf);
             engine_check(xx user_verbosity_id < USER_VERBOSITY_LEVELS.count, "indexing to user verbosity level %, but USER_VERBOSITY_LEVELS (in ack module params) has length %. log() being called from %.", user_verbosity_id, USER_VERBOSITY_LEVELS.count, info.location);
@@ -83,7 +89,13 @@ Ack_Log_Source_ID :: enum u64 {
 
         proc_on_call_stack_before_log: string;
         if (info.user_flags & .NO_PROCEDURE_NAME) == 0 && context.stack_trace && context.stack_trace.next && context.stack_trace.next.next {
-            proc_on_call_stack_before_log = context.stack_trace.next.next.info.name;
+            if is_engine_log {
+                if context.stack_trace.next.next.next {
+                    proc_on_call_stack_before_log = context.stack_trace.next.next.next.info.name;
+                }
+            } else {
+                proc_on_call_stack_before_log = context.stack_trace.next.next.info.name;
+            }
         }
 
         to_standard_error   := (info.common_flags & .ERROR) != 0;
@@ -99,7 +111,7 @@ Ack_Log_Source_ID :: enum u64 {
             header = "LOG";
         }
 
-        ack_log_impl(message, proc_on_call_stack_before_log, should_log_location, info.location, header, (info.user_flags & .NO_NEWLINE) == 0, (info.user_flags & .CALLBACK_ONLY) != 0, to_standard_error);
+        ack_log_impl(message, proc_on_call_stack_before_log, should_log_location, info.location, header, (info.user_flags & .CALLBACK_ONLY) != 0, to_standard_error, (info.user_flags & .ADD_NEWLINE) != 0);
     }
 } else {
     ack_log :: (#discard message: string, #discard data: *void, #discard in_info: Log_Info) {}
@@ -152,9 +164,9 @@ ack_log_impl :: (
     log_location: bool,
     caller_loc: Source_Code_Location,
     header: string,
-    add_newline_if_needed: bool,
     only_callback: bool,
-    to_standard_error: bool
+    to_standard_error: bool,
+    add_newline: bool
 ) {
     scope_lock(*logging_lock);
 
@@ -178,16 +190,16 @@ ack_log_impl :: (
 
     fully_processed_text: string;
 
-    optional_newline := ifx add_newline_if_needed && (msg.count == 0 || msg[msg.count-1] != #char "\n") then "\n" else "";
+    optional_newline := ifx add_newline then "\n\n" else "\n";
 
     #if LOG_VERTICAL_MODE {
         if try_replace_context_memory(header, log_context) {
-            fully_processed_text = tprint("  %\n    % %%", lead_buffer_string, msg, use_location, optional_newline);
+            fully_processed_text = tprint("  %\n    % %%", lead_buffer_string, trim(msg), use_location, optional_newline);
         } else {
-            fully_processed_text = tprint(   "    % %%", msg, use_location, optional_newline);
+            fully_processed_text = tprint(   "    % %%", trim(msg), use_location, optional_newline);
         }
     } else {
-        fully_processed_text = tprint("% % %%", lead_buffer_string, msg, use_location, optional_newline);
+        fully_processed_text = tprint("% % %%", lead_buffer_string, trim(msg), use_location, optional_newline);
     }
 
     if global_log_options.callback != null {

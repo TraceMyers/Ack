@@ -29,13 +29,14 @@ path_to_string_ext :: (path: *Path, subtract_count := 0) -> string {
 // temp, assumes path is temp-allocated to it's all temp
 // directory_traversal can be one directory or multiple, e.g. "shaders" or "shaders/vulkan"
 move_down_directory :: (path: *Path, directory: string, path_must_exist := true) -> path_exists: bool {
-    move_down_directories(path, directory, path_must_exist);
+    return move_down_directories(path, directory, path_must_exist);
 }
 
 // temp, assumes path is temp-allocated to it's all temp
 // directory_traversal can be one directory or multiple, e.g. "shaders" or "shaders/vulkan"
 move_down_directories :: (path: *Path, directory_traversal: string, path_must_exist := true) -> path_exists: bool {
-    traversal_with_forward_slashes := convert_to_forward_slashes(directory_traversal,, temp);
+    traversal_with_forward_slashes := copy_string(directory_traversal,, temp);
+    convert_to_forward_slashes(traversal_with_forward_slashes,, temp);
     path_parts := split(traversal_with_forward_slashes, #char "/",, temp);
     for directory : path_parts {
         array_add(*path.words, directory);
