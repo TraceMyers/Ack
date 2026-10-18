@@ -1,3 +1,10 @@
+#scope_file
+
+using engine.renderer;
+using engine.renderer.backend;
+
+#scope_module
+
 Physical_Device :: struct {
     obj: VkPhysicalDevice;
     type: VkPhysicalDeviceType;
@@ -40,7 +47,6 @@ Physical_Device_Properties :: struct {
 }
 
 select_physical_device :: () -> bool {
-    using engine.renderer.backend;
     auto_release_temp();
 
     devices, result := vkEnumeratePhysicalDevices(vk_instance,,temp);
@@ -142,7 +148,7 @@ determine_physical_device_queue_family_capabilities :: (physical: *Physical_Devi
         using physical.queue_family_indices;
 
         present_support: VkBool32;
-        vkGetPhysicalDeviceSurfaceSupportKHR(physical.obj, xx it_index, engine.renderer.backend.surface, *present_support);
+        vkGetPhysicalDeviceSurfaceSupportKHR(physical.obj, xx it_index, surface, *present_support);
 
         // just try to get them all on the same queue.
         score := 0.0;
@@ -214,27 +220,30 @@ device_extensions_are_supported :: (phys: VkPhysicalDevice, extensions: []*u8) -
 }
 
 depth_buffer_format :: (phys: VkPhysicalDevice) -> VkFormat {
-    props: VkFormatProperties;
-    vkGetPhysicalDeviceFormatProperties(phys, engine.renderer.backend.DEPTH_FORMAT, *props);
-    if (props.optimalTilingFeatures & .DEPTH_STENCIL_ATTACHMENT_BIT) != 0 {
-        return engine.renderer.backend.DEPTH_FORMAT;
+    need_flags : VkFormatFeatureFlags = .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_IMAGE_BIT;
+    for format : DEPTH_STENCIL_FORMATS {
+        props: VkFormatProperties;
+        vkGetPhysicalDeviceFormatProperties(phys, format, *props);
+        if (props.optimalTilingFeatures & need_flags) == need_flags {
+            return format;
+        }
     }
     return .UNDEFINED;
 }
 
 get_swapchain_support_info :: (phys: VkPhysicalDevice, info: *Swapchain_Support_Info) -> bool {
-    if !render_evaluate(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, engine.renderer.backend.surface, *info.capabilities), "unable to get surface capabilities of a physical device") {
+    if !render_evaluate(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, surface, *info.capabilities), "unable to get surface capabilities of a physical device") {
         return false;
     }
     result: VkResult;
     {
-        info.formats, result = vkGetPhysicalDeviceSurfaceFormatsKHR(phys, engine.renderer.backend.surface);
+        info.formats, result = vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surface);
         if !render_evaluate(result, "unable to get phys device surface formats") || info.formats.count == 0 {
             return false;
         }
     }
     {
-        info.present_modes, result = vkGetPhysicalDeviceSurfacePresentModesKHR(phys, engine.renderer.backend.surface);
+        info.present_modes, result = vkGetPhysicalDeviceSurfacePresentModesKHR(phys, surface);
         if !render_evaluate(result, "unable to get surface present modes") || info.present_modes.count == 0 {
             return false;
         }

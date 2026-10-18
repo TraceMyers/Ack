@@ -15,6 +15,7 @@ layout(location=5) out      vec4 out_color;
 layout(location=6) out      vec4 add_color;
 layout(location=7) out      vec4 tint;
 layout(location=8) out flat int  out_material_id;
+layout(location=9) out flat int  out_entity_id;
 
 layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
     Skinned_Mesh_Instance_Shader_Data array[];
@@ -28,10 +29,14 @@ layout(set=5, binding=0, scalar) readonly buffer Joint_Data {
     mat4 array[];
 } skinning_joints;
 
+Skinned_Mesh_Instance_Shader_Data get_skinned_mesh_instance(Mesh_Section_Shader_Data mesh_section) {
+    int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
+    return mesh_instances.array[mesh_instance_index];
+}
+
 vec4 skinned_mesh_transform_vector(vec4 vector) {
     Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
-    int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
-    Skinned_Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
+    Skinned_Mesh_Instance_Shader_Data mesh_inst = get_skinned_mesh_instance(mesh_section);
 
     int joint_offset = mesh_inst.joint_transform_offset;
 
@@ -52,8 +57,7 @@ vec4 skinned_mesh_transform_vector(vec4 vector) {
 
 void main() {
     Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
-    int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
-    Skinned_Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
+    Skinned_Mesh_Instance_Shader_Data mesh_inst = get_skinned_mesh_instance(mesh_section);
 
     vec4 homogenous_position = vec4(in_position, 1.0);
     vec4 skinned_position = skinned_mesh_transform_vector(homogenous_position);
@@ -81,4 +85,5 @@ void main() {
     out_uv_1        = in_uv_1;
     out_color       = in_color;
     out_material_id = mesh_section.material;
+    out_entity_id   = mesh_inst.entity_id;
 }

@@ -24,3 +24,4 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "backend/pipelines.jai";
 #load "backend/swapchain.jai";
 #load "backend/getters.jai";
+#load "backend/frame.jai";

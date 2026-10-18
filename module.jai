@@ -6,7 +6,8 @@
     ENABLE_LOGGING           := true,
     LOG_VERTICAL_MODE        := true,
 
-    // you need to pass integer values for VERBOSITY and VALIDATION levels, because the enums will not be compiled yet
+    // you need to pass integer values for VERBOSITY and VALIDATION levels, 
+    // because the enums will not be compiled at import time.
     // 0 = NORMAL, 1 = VERBOSE/HIGH, 2=VERY_VERBOSE/VERY_HIGH
     
     USER_VERBOSITY_LEVELS:   []u8 = xx,force Ack_Log_Level.[.NORMAL],
@@ -28,7 +29,6 @@
     PHYSICS_DELTA_TIME                := 1.0 / 100.0,
     MIN_PHYSICS_BODY_SPEED_ALONG_AXIS := 0.000001,
     FLIP_VECTOR_2D_Y_AXIS             := false // origin at upper left? flip it
-
 ) {
     Entity_ID_Default :: u64;
     Collision_Channels_Default :: enum_flags u32 { DEFAULT; };
@@ -68,7 +68,7 @@ ACK_VERSION :: Version.{0,1,0};
 engine: Game_Engine;
 
 // this can be called instead of doing manual init
-engine_init :: (
+game_init :: (
     engine_settings         := Engine_Settings.{},
     window_settings         := Window_Creation_Settings.{}, 
     renderer_settings       := Renderer_Creation_Settings.{}, 
@@ -104,7 +104,7 @@ engine_init :: (
 }
 
 // you can use this instead of making your own loop.
-engine_loop :: () {
+game_loop :: () {
     update_system :: ($name: string) #expand {
         #insert #run tprint("if engine.settings.pre_%_update then engine.settings.pre_%_update();", name, name);
         #insert #run tprint("update_%();", name);
@@ -189,7 +189,7 @@ Engine_Settings :: struct {
 }
 
 Project_Info :: struct {
-    // path to the project. set to working directory in engine_init if not explicitly passed
+    // path to the project. is set to current working directory in game_init if not explicitly passed
     project_path: string;
     // all other paths are project path-relative
     shaders_path := "shaders";

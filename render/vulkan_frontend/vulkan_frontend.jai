@@ -454,7 +454,7 @@ GPU_Allocation :: struct {
 GPU_Image :: struct {
     using #as allocation: GPU_Allocation;
     obj:                  VkImage;   
-    view:                 VkImageView;
+    views:                VkImageView;
     extent:               VkExtent3D;
     format:               VkFormat;
     usage:                VkImageUsageFlags;

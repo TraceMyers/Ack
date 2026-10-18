@@ -55,8 +55,21 @@ array_add :: (using array: *Hybrid_Storage_Array($T), item: T) {
         engine_check(internal_count == internal_items.count);
         move_to_external_allocation(array, internal_items.count * 2);
     } 
-
     array_add(*external, item);
+}
+
+array_add :: (using array: *Hybrid_Storage_Array($T)) -> *T {
+    if allocation == .INTERNAL {
+        if internal_count < internal_items.count {
+            retval := *internal_items[internal_count];
+            internal_count += 1;
+            return retval;
+        }
+
+        engine_check(internal_count == internal_items.count);
+        move_to_external_allocation(array, internal_items.count * 2);
+    } 
+    return array_add(*external);
 }
 
 array_unordered_remove_by_value :: (using array: *Hybrid_Storage_Array($T), item: T) {

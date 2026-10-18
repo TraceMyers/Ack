@@ -4,17 +4,30 @@ case "VULKAN";
 }
 
 Renderer :: struct {
-    using frontend: Renderer_Frontend;
-    // backend isn't opaque because it doesn't seem necessary. frontend and backend are
-    // separated so that it's clear what is managed by the user program and what 
+    // modify data here and the renderer will react on update.
+    config: Renderer_Config;
+
+    // todo: define user's role in adding to/building the dev gui, then provide controls.
+    // dev_gui_callback: *void;
+
+    // copied here at the beginning of per-frame update. modifying it has no consequences to 
+    // rendering except under race conditions.
+    using last_per_frame_input: Renderer_Per_Frame_Input;
+
+    // backend isn't opaque because it doesn't seem necessary. backend is just separated so 
+    // that it's clear what is typically managed & accessed by the user program and what 
     // is typically managed by the renderer.
     backend: Renderer_Backend;
+
     // copied into renderer post-creation. provided for read-only reference. modifying it 
     // doesn't do anything.
     creation_settings: Renderer_Creation_Settings;
 }
 
 Renderer_Creation_Settings :: struct {
+    // config = configurable after creation. the renderer has a copy of this data which
+    // can be modified *there*. modifying renderer's creation_settings does nothing.
+    // leaving it unedited keeps a clean record of the creation settings, including config.
     config: Renderer_Config;
 
     application_name    := "your graphics application";
@@ -29,14 +42,32 @@ Renderer_Creation_Settings :: struct {
     max_skeletal_mesh_instances : u32 = 16_384;
 
     // only need to do once/initially, or after in-engine shaders have been updated
-    copy_shaders_from_engine := true;
+    copy_shaders_from_engine                    := true;
     // only need to do when shaders are updated (todo: file watching)
-    compile_shaders          := true;
-    use_dev_gui              := true;
+    compile_shaders                             := true;
+    // use the getrect-based developer ui (may want to turn off for shipping builds)
+    use_dev_gui                                 := true;
+    // if false, main thread: physics -> pre renderer -> update renderer -> post renderer
+    // if true,  main thread: pre renderer + -> pre clock
+    //                                     v
+    //         render thread:              + -> update renderer -> post render
+    // if post render proc exists, the main thread will stall just before calling pre render,
+    // until post render is complete. if not, then it stalls until the renderer update is complete
+    run_renderer_on_its_own_thread              := true;
+    // if run_renderer_on_its_own_thread is true, setting this to true shifts the above to:
+    // post physics + -> pre clock
+    //              v
+    //              + -> pre renderer -> update renderer -> post renderer
+    // same main thread stalling behavior as above, except the stall happens at post physics 
+    // rather than pre render.
+    call_pre_renderer_update_from_render_thread := false;
 }
 
 // values provided during creation that are also configurable afterward.
 Renderer_Config :: struct {
+    clear_color := COLOR4F_WHITE;
+    view_mode: Renderer_View_Mode;
+    depth_view_mode_max_distance := 200.0;
     msaa_samples : u32 = 1;
     render_dimensions_override: Vector2i;
 }
@@ -45,19 +76,6 @@ Renderer_View_Mode :: enum u8 {
     LIT;
     UNLIT;
     DEPTH;
-}
-
-Renderer_Frontend :: struct {
-    clear_color := COLOR4F_WHITE;
-    view_mode: Renderer_View_Mode;
-    depth_view_mode_max_distance := 200.0;
-
-    // todo: define user's role in adding to/building the dev gui, then provide controls.
-    // dev_gui_callback: *void;
-
-    // copied here at the beginning of per-frame update. meant to be a read-only reference.
-    // modifying it has no consequences.
-    using last_per_frame_input: Renderer_Per_Frame_Input;
 }
 
 Renderer_Per_Frame_Input :: struct {
@@ -72,7 +90,7 @@ Renderer_Per_Frame_Input :: struct {
 }
 
 Renderer_Per_Frame_Output :: struct {
-    rendered_frame_count: s32;
+    rendered_frame_count: u64;
 }
 
 Shader_Compile_Info :: struct {
@@ -88,14 +106,15 @@ create_renderer :: (settings: Renderer_Creation_Settings) -> bool {
 
     engine.renderer = New(Renderer);
     engine.renderer.creation_settings = settings;
+    engine.renderer.config = settings.config;
 
     render_log(
 #string HERE
 initializing renderer for application...
 
     %, version %
-    made with %, version %
-    using % graphics, version %
+    made with % version %
+    using % graphics version %
 HERE,
         settings.application_name, 
         make_version_string(settings.application_version),
@@ -111,10 +130,10 @@ HERE,
         return false;
     }
 
-    // if settings.compile_shaders && !compile_shaders() {
-    //     render_error("renderer creation failed");
-    //     return false;
-    // }
+    if settings.compile_shaders && !compile_shaders() {
+        render_error("renderer creation failed");
+        return false;
+    }
 
     if !backend_create_renderer() {
         render_error("renderer creation failed");
@@ -135,6 +154,8 @@ update_renderer :: () {
 }
 
 copy_shaders_from_engine :: () -> success: bool {
+    render_log("copying shaders from engine", flags=.VERBOSE_ONLY);
+
     report_copy_error :: (error_fmt: string, args: ..Any) #expand {
         render_error("failed to copy shaders from the engine to the project: %", tprint(error_fmt, ..args));
         `return false;
@@ -161,33 +182,39 @@ copy_shaders_from_engine :: () -> success: bool {
             return false;
         }
     }
+
+    dst_path_str = path_to_string_ext(*dst_path);
+    render_log("copy source = %, dest = %", src_path_str, dst_path_str, flags=.VERY_VERBOSE_ONLY);
     
     copy_success := copy_directory(src_path_str, dst_path_str,, temp);
     if !copy_success {
         report_copy_error("failed to copy shaders from % to %", src_path_str, dst_path_str);
+        return false;
     }
 
+    render_log("success copying shaders from engine", flags=.VERBOSE_ONLY);
     return true;
 }
 
 compile_shaders :: () -> success: bool {
     using engine;
+    render_log("compiling shaders", flags=.VERBOSE_ONLY);
 
     shaders_path := parse_path_ext(project_info.shaders_path);
     shaders_path_str := path_to_string_ext(*shaders_path);
     if !file_exists(shaders_path_str) {
-        // todo: error
+        render_error("did not find path %", shaders_path_str);
         return false;
     }
 
     scope_set_working_directory(shaders_path_str);
 
     if !file_exists("glslc.exe") {
-        // todo: error
+        render_error("did not find glslc.exe at %", shaders_path_str);
         return false;
     }
     if !file_exists("src") {
-        // todo: warning
+        render_error("did not find 'src' directory at %", shaders_path_str);
         return false;
     }
 
@@ -241,18 +268,21 @@ compile_shaders :: () -> success: bool {
     }
 
     for shader : files.shaders {
-        compile_shader(header_text, shader);
+        if !compile_shader(header_text, shader) {
+            return false;
+        }
     }
 
     file_delete("temp.glsl");
 
+    render_log("finished compiling shaders", flags=.VERBOSE_ONLY);
     return true;
 }
 
 compile_shader :: (header_text: string, shader: Shader_Compile_Info) -> bool {
     auto_release_temp();
 
-    render_log("shader compilation: % -> %", shader.input_path, shader.output_path, flags=.VERBOSE_ONLY);
+    render_log("shader compilation: % -> %", shader.input_path, shader.output_path, flags=.VERY_VERBOSE_ONLY);
 
     shader_text, read_success := read_entire_file(shader.input_path, true,, temp);
     if !read_success {
@@ -307,18 +337,15 @@ ack_renderer_path :: () -> string {
 Renderer_Backend_Base :: struct {
     DEFAULT_GPU_HEAP_SIZE :: 64 * 1024 * 1024;
 
-    config: Renderer_Config;
-
     init_success: bool;
-    queueing_draw_commands: bool; // was: in_the_middle_of_rendering
+    currently_updating_renderer: bool; // was: in_the_middle_of_rendering
+
+    rendered_frame_count: u64;
 
     gpu_heaps:  Pool(GPU_Heap);
-    textures:   Pool(GPU_Image);
+    images:     Pool(GPU_Image);
     materials:  Pool(Material);
     meshes:     Managed_Meshes;
-
-    physical_device: Physical_Device;
-    logical_device:  Logical_Device;
 }
 
 NANOSECONDS_PER_SECOND      :: 1_000_000_000;

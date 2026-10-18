@@ -1,3 +1,10 @@
+#scope_file
+
+using engine.renderer;
+using engine.renderer.backend;
+
+#scope_module
+
 GPU_Linear_Allocator :: struct {
     heaps: [..]s16;
     heap_type: GPU_Heap_Type;
@@ -5,9 +12,7 @@ GPU_Linear_Allocator :: struct {
     frontier_offset: int;
 }
 
-initialize_linear_allocators :: () -> bool {
-    using engine.renderer.backend;
-
+initialize_allocators :: () -> bool {
     // Create throwaway resources to probe compatibility
 
     dummy_buffer_create_info := VkBufferCreateInfo.{
@@ -61,74 +66,7 @@ initialize_linear_allocators :: () -> bool {
     return true;
 }
 
-gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, size: int, usage_flags: VkBufferUsageFlags, temp := false) -> GPU_Buffer {
-    using engine.renderer.backend;
-
-    render_check(is_buffer_type(heap_type));
-
-    align := usage_alignment(usage_flags);
-    buffer := GPU_Buffer.{
-        allocation = gpu_linear_allocate_aligned(size, align, heap_type, temp),
-        usage_flags = usage_flags
-    };
-
-    return buffer;
-}
-
-gpu_linear_allocate :: inline (heap_type: GPU_Heap_Type, width: s32, height: s32, usage_flags: VkImageUsageFlags, format := VkFormat.R8G8B8A8_UNORM, mip_count: u32 = 1, layer_count: u32 = 1, create_color_view := true) -> *GPU_Image {
-    using context.renderer;
-
-    render_check(is_image_type(heap_type));
-
-    image_index := pool_borrow(*image_pool);
-    render_check(image_index < max_texture_count);
-    image := *image_pool[image_index];
-    image.pool_index = xx image_index;
-
-    image.extent      = {xx width, xx height, 1};
-    image.format      = format;
-    image.usage       = usage_flags;
-    image.mip_count   = xx mip_count;
-    image.layer_count = xx layer_count;
-
-    create_info := VkImageCreateInfo.{
-        imageType = ._2D,
-        format = image.format,
-        extent = image.extent,
-        mipLevels = mip_count,
-        // here, can stack images together, (like maybe albedo, metallic, roughness, etc.)
-        // maybe it's not good for that example, though since I don't think we usually mip
-        // pbr-type textures?
-        arrayLayers = layer_count,
-        samples = ._1_BIT, // MSAA
-        tiling = .OPTIMAL,
-        usage = usage_flags,
-        sharingMode = .EXCLUSIVE
-    };
-
-    memory_requirements: VkMemoryRequirements;
-    vkCreateImage(logical.obj, *create_info, null, *image.obj);
-    vkGetImageMemoryRequirements(logical.obj, image.obj, *memory_requirements);
-
-    align : int = xx memory_requirements.alignment;
-    size  : int = xx memory_requirements.size;
-
-    image.allocation = gpu_linear_allocate_aligned(size, align, heap_type, false);
-
-    heap := *gpu_heap_pool[image.allocation.source_heap];
-    vkBindImageMemory(logical.obj, image.obj, heap.memory, xx image.allocation.source_heap_offset);
-
-    if create_color_view {
-        view_create_info := image_view_create_info(image.format, image.obj, .COLOR_BIT, image.mip_count);
-        render_evaluate(vkCreateImageView(logical.obj, *view_create_info, null, *image.view), "failed to create an image view for a sampled texture");
-    }
-
-    return image;
-}
-
-gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type, temp: bool) -> GPU_Allocation {
-    using context.renderer;
-
+gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type, temp: bool, buffer_usage: VkBufferUsageFlags = 0) -> GPU_Allocation {
     if size == 0 then return {};
 
     allocator := get_linear_allocator(heap_type, temp);
@@ -141,7 +79,7 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
 
     while allocator.frontier < allocator.heaps.count {
         frontier_heap_index := allocator.heaps[allocator.frontier];
-        heap = *gpu_heap_pool[frontier_heap_index];
+        heap = *gpu_heaps[frontier_heap_index];
         render_check(heap.is_valid);
 
         if heap_type == .VERTEX_BUFFER || heap_type == .INDEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER {
@@ -164,40 +102,11 @@ gpu_linear_allocate_aligned :: (size: int, align: int, heap_type: GPU_Heap_Type,
     allocation_offset := aligned_frontier_offset;
 
     if available_size < aligned_size {
-
-        target_heap_size: int;
-        buffer_usage: VkBufferUsageFlags;
-
-        if heap_type == .VERTEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER {
-            target_heap_size = VERTEX_BUFFER_SIZE;
-            buffer_usage = .VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT;
-            // there can be only one vertex buffer, because all draws use one buffer for draw simplicity
-            render_check(allocator.heaps.count == 0);
-        } else if heap_type == .INDEX_BUFFER {
-            target_heap_size = INDEX_BUFFER_SIZE;
-            buffer_usage = .INDEX_BUFFER_BIT | .TRANSFER_DST_BIT;
-            // there can be only one index buffer, because all draws use one buffer for draw simplicity
-            render_check(allocator.heaps.count == 0);
-        } else if is_buffer_type(heap_type) {
-            target_heap_size = DEFAULT_BUFFER_HEAP_SIZE;
-            buffer_usage = 
-                  .TRANSFER_SRC_BIT
-                | .TRANSFER_DST_BIT
-                | .UNIFORM_TEXEL_BUFFER_BIT
-                | .STORAGE_TEXEL_BUFFER_BIT
-                | .UNIFORM_BUFFER_BIT
-                | .STORAGE_BUFFER_BIT
-                | .INDIRECT_BUFFER_BIT;
-        } else {
-            target_heap_size = DEFAULT_IMAGE_HEAP_SIZE;
-        }
-
-        heap_size := max(size, target_heap_size);
-
-        heap_index := allocate_gpu_heap(heap_size, heap_type, .LINEAR_ALLOCATOR, buffer_usage);
+        heap_size := max(size, DEFAULT_GPU_HEAP_SIZE);
+        heap_index := allocate_gpu_heap(heap_size, heap_type, .LINEAR, buffer_usage);
         render_check(heap_index != 0xffff);
+
         array_add(*allocator.heaps, heap_index);
-        heap = *gpu_heap_pool[heap_index];
 
         allocation_offset = 0;
         allocator.frontier = xx allocator.heaps.count - 1;
@@ -227,6 +136,6 @@ get_linear_allocator :: (heap_type: GPU_Heap_Type, temp: bool) -> *GPU_Linear_Al
         frame := get_current_frame();
         return *frame.temp_allocators[heap_type];
     } else {
-        return *context.renderer.linear_allocators[heap_type]; 
+        return *linear_allocators[heap_type]; 
     }
 }

@@ -1,46 +1,34 @@
+#scope_file
+
+using engine.renderer;
+using engine.renderer.backend;
+
+#scope_module
+
 backend_create_renderer :: () -> bool {
-    using engine.renderer;
     auto_release_temp();
 
     run_and_return_if_failure :: (proc: Code, caller_loc := #caller_location) #expand {
         proc_name :: #run code_string(proc);
         render_log("calling %", proc_name, flags=.VERBOSE_ONLY);
-        #insert #run tprint("backend.init_success = %();", proc_name);
-        if !render_evaluate(backend.init_success, "failed on stage %", proc_name) {
+        #insert #run tprint("init_success = %();", proc_name);
+        if !render_evaluate(init_success, "failed on stage %", proc_name) {
             `return false;
         }
     }
+    
+    pool_init(*gpu_heaps, 1024);
+    pool_init(*images,    creation_settings.max_textures,  true);
+    pool_init(*materials, creation_settings.max_materials, true);
 
-    backend.init_success = true; 
+    init_success = true; 
     
     run_and_return_if_failure(create_vk_instance);
     run_and_return_if_failure(create_surface);
     run_and_return_if_failure(select_physical_device);
-
-    // once physical device is gotten, we know how much local vram we have, so we can prepare
-    // for allocating vram and other things.
-    vram_size: int;
-    if backend.physical_device.size <= 0 {
-        vram_size = 2 * 1024 * 1024 * 1024;
-    } else {
-        vram_size = xx backend.physical_device.size;
-    }
-    max_gpu_heaps := (vram_size / backend.DEFAULT_GPU_HEAP_SIZE) - 2;
-    
-    // todo: figure out minimum number of heaps for renderer to function
-    MINIMUM_GPU_HEAPS :: 8;
-    if max_gpu_heaps < MINIMUM_GPU_HEAPS {
-        render_error("num possible heaps with vram size % is %. minimum = %.", vram_size, max_gpu_heaps, MINIMUM_GPU_HEAPS);
-        return false;
-    }
-
-    pool_init(*backend.gpu_heaps, max_gpu_heaps, true);
-    pool_init(*backend.textures,  creation_settings.max_textures,  true);
-    pool_init(*backend.materials, creation_settings.max_materials, true);
-
     run_and_return_if_failure(create_logical_device);
-    run_and_return_if_failure(initialize_linear_allocators);
-    // run_and_return_if_failure(create_swapchain_and_attachments);
+    run_and_return_if_failure(initialize_allocators);
+    run_and_return_if_failure(create_swapchain_and_attachments);
     // run_and_return_if_failure(create_frame_datas);
     // run_and_return_if_failure(create_default_descriptors);
     // run_and_return_if_failure(create_descriptors);
@@ -52,7 +40,6 @@ backend_create_renderer :: () -> bool {
 // todo: figure out how to make this not take 1,000,000,000 years.
 // seems it's mostly vkCreateInstance()
 create_vk_instance :: () -> bool {
-    using engine.renderer;
     auto_release_temp();
     
     if !render_evaluate(instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
@@ -64,7 +51,7 @@ create_vk_instance :: () -> bool {
         applicationVersion  = to_vulkan_version(creation_settings.application_version),
         pEngineName         = temp_c_string(creation_settings.engine_name),
         engineVersion       = to_vulkan_version(creation_settings.engine_version),
-        apiVersion          = backend.API_VERSION
+        apiVersion          = API_VERSION
     };
     create_info := VkInstanceCreateInfo.{
         pApplicationInfo = *app_info,
@@ -74,7 +61,7 @@ create_vk_instance :: () -> bool {
         ppEnabledExtensionNames = required_instance_extensions.data
     };
 
-    if !render_evaluate(vkCreateInstance(*create_info, null, *backend.vk_instance), "failed to create vulkan instance") then return false;
+    if !render_evaluate(vkCreateInstance(*create_info, null, *vk_instance), "failed to create vulkan instance") then return false;
 
     render_log("created vk instance", flags=.VERBOSE_ONLY);
     return true;
@@ -128,8 +115,6 @@ instance_layers_are_supported :: (layers: []*u8) -> bool {
 }
 
 create_surface :: () -> bool {
-    using engine.renderer.backend;
-
     #if OS == .WINDOWS {
         create_info := VkWin32SurfaceCreateInfoKHR.{
             hwnd = window,
@@ -145,10 +130,9 @@ create_surface :: () -> bool {
 }
 
 create_logical_device :: () -> bool {
-    using engine.renderer.backend;
     auto_release_temp();
 
-    queue_priority : float32 = 1.0;
+    queue_priority := 1.0;
     unique_queue_family_indices := temp_get_unique_queue_family_indices(*physical_device);
     queue_create_infos := make_dynamic_array(VkDeviceQueueCreateInfo, 4,, temp);
 

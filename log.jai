@@ -114,7 +114,7 @@ Ack_Log_Source_ID :: enum u64 {
         ack_log_impl(message, proc_on_call_stack_before_log, should_log_location, info.location, header, (info.user_flags & .CALLBACK_ONLY) != 0, to_standard_error, (info.user_flags & .ADD_NEWLINE) != 0);
     }
 } else {
-    ack_log :: (#discard message: string, #discard data: *void, #discard in_info: Log_Info) {}
+    ack_log :: (message: string, data: *void, in_info: Log_Info) {}
 }
 
 // formatting helpers

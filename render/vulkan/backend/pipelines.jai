@@ -1,3 +1,10 @@
+#scope_file
+
+using engine.renderer;
+using engine.renderer.backend;
+
+#scope_module
+
 Graphics_Pipeline :: enum {
     BILLBOARD;
     OPAQUE_STATIC_MESH;

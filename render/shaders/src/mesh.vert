@@ -13,6 +13,7 @@ layout(location=5) out      vec4 out_color;
 layout(location=6) out      vec4 add_color;
 layout(location=7) out      vec4 tint;
 layout(location=8) out flat int  out_material_id;
+layout(location=9) out flat int  out_entity_id;
 
 layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
     Mesh_Instance_Shader_Data array[];
@@ -22,10 +23,14 @@ layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
     Mesh_Section_Shader_Data array[];
 } mesh_sections;
 
-void main() {
-    Mesh_Section_Shader_Data  mesh_section = mesh_sections.array[gl_DrawID];
+Mesh_Instance_Shader_Data get_mesh_instance(Mesh_Section_Shader_Data mesh_section) {
     int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
-    Mesh_Instance_Shader_Data mesh_inst = mesh_instances.array[mesh_instance_index];
+    return mesh_instances.array[mesh_instance_index];
+}
+
+void main() {
+    Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
+    Mesh_Instance_Shader_Data mesh_inst = get_mesh_instance(mesh_section);
 
     mat4 model = mesh_inst.transform;
 
@@ -46,4 +51,5 @@ void main() {
     out_uv_1        = in_uv_1;
     out_color       = in_color * tint;
     out_material_id = mesh_section.material;
+    out_entity_id   = mesh_inst.entity_id;
 }

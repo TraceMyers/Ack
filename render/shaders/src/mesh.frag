@@ -6,8 +6,13 @@ layout(location=5) in      vec4 in_color;
 layout(location=6) in      vec4 add_color;
 layout(location=7) in      vec4 tint;
 layout(location=8) in flat int  in_material_id;
+layout(location=9) in flat int  entity_id;
 
 layout(location=0) out vec4 color;
+
+layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
+    Mesh_Section_Shader_Data array[];
+} mesh_sections;
 
 void main() {
     Material mat = material_block.materials[in_material_id]; 
