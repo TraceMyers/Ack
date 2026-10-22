@@ -20,7 +20,6 @@ Renderer_Backend :: struct {
     transfer_queue:  VkQueue; // per thread?
 
     frames: []GPU_Frame;
-    frame_index: int;
 
     pipelines:              [..]VkPipeline;
     pipeline_layouts:       [..]VkPipelineLayout;

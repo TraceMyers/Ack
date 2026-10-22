@@ -11,19 +11,21 @@ Swapchain_Support_Info :: struct {
     present_modes: []VkPresentModeKHR;
 }
 
+
 Swapchain :: struct {
     obj: VkSwapchainKHR;
     extent: VkExtent2D;
     format: VkSurfaceFormatKHR;
     present_mode: VkPresentModeKHR;
     images: []*GPU_Image;
+    image_rendered: [..]VkSemaphore;
+    image_index: int;
 }
 
 create_swapchain_and_attachments :: () -> bool {
     auto_release_temp();
 
-    vkQueueWaitIdle(transfer_queue);
-    vkQueueWaitIdle(graphics_queue);
+    vkDeviceWaitIdle(logical_device.obj);
 
     if window_width <= 0 || window_height <= 0 {
         return false;
@@ -63,7 +65,8 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
         then U32_MAX 
         else support_info.capabilities.maxImageCount;
 
-    image_count := min(support_info.capabilities.minImageCount + 1, max_image_count);
+    // preference = 2 images. double buffering even if we get more.
+    image_count := min(max(support_info.capabilities.minImageCount, 2), max_image_count);
 
     create_info := VkSwapchainCreateInfoKHR.{
         surface = surface,
@@ -100,6 +103,23 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
     }
 
     swapchain.images = make_static_array(*GPU_Image, swapchain_image_objects.count);
+
+    start_index := swapchain.image_rendered.count;
+    end_index   := swapchain.images.count - 1;
+    if swapchain.image_rendered.count < swapchain.images.count {
+        semaphore_create_info := VkSemaphoreCreateInfo.{};
+        array_resize(*swapchain.image_rendered, swapchain.images.count);
+        for start_index..end_index {
+            if !render_evaluate(vkCreateSemaphore(logical_device.obj, *semaphore_create_info, null, *swapchain.image_rendered[it]), "failed to create a swapchain image semaphore") {
+                return false;
+            }
+        }
+    } else if swapchain.image_rendered.count > swapchain.images.count {
+        for start_index..end_index {
+            vkDestroySemaphore(logical_device.obj, swapchain.image_rendered[it], null);
+        }
+        array_resize(*swapchain.image_rendered, swapchain.images.count);
+    }
 
     for *image : swapchain.images {
         image.* = create_gpu_image(.NONE, 0, xx swapchain.extent.width, xx swapchain.extent.height, create_info.imageUsage, swapchain.format.format, premade_image=swapchain_image_objects[it_index]);

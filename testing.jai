@@ -645,184 +645,58 @@ could_be_procedure_name :: (str: string) -> bool {
 //     return_test_success();
 // }
 
-// gp_allocator_test :: () -> bool, string {
-//     a: GP_Allocator;
-//     initialize_gp_allocator(*a,, context.default_allocator);
+allocator_64_test :: () -> bool, string {
+    a: Allocator_64;
+    a.data_allocator = context.default_allocator;
+    allocator_64_startup(*a);
+    defer allocator_64_shutdown(*a);
 
-//     ITER_CT :: 10_000;
+    Live :: struct {
+        memory: *u8;
+        size:   s64;
+        stamp:  u8;
+    }
+    live: [..]Live;
+    live.allocator = temp;
 
-//     // total_time: float64;
-//     max_time: float64;
-//     allocations: [..]*u8;
+    stamp_is_intact :: (l: Live) -> bool {
+        for 0..l.size-1 {
+            if l.memory[it] != l.stamp then return false;
+        }
+        return true;
+    }
 
-//     allocation_sizes: [ITER_CT]s64;
-//     for 0..ITER_CT-1 {
-//         alloc_sz := random_get_within_range(1, 2048-size_of(Allocation_Header)).(s64);
-//         allocation_sizes[it] = alloc_sz;
-//     }
+    // in-grid, oversized, and over-aligned allocations, with random frees mixed in
+    for 0..9_999 {
+        size  := random_get_within_range(1, 64 * 16 * 2).(s64);
+        align := 8 << (it % 4);
+        context.allocator_align = xx align;
+        memory := alloc(size,,a).(*u8);
+        test_condition((memory.(u64) & (align - 1).(u64)) == 0);
 
-//     t1 := seconds_since_init();
-//     for 0..ITER_CT-1 {
-//         // t1 := seconds_since_init();
-//         allocation := alloc(allocation_sizes[it],,a).(*u8);
-//         // t2 := seconds_since_init();
-//         // time_taken := t2 - t1;
-//         // max_time = max(time_taken, max_time);
-//         // total_time += time_taken;
-//         // array_add(*allocations, allocation);
-//     }
-//     t2 := seconds_since_init();
-//     total_time := t2 - t1;
+        l := Live.{memory, size, xx (it % 255 + 1)};
+        memset(l.memory, l.stamp, l.size);
+        array_add(*live, l);
 
-//     avg_time := total_time / ITER_CT.(float64);
+        if it & 1 {
+            index := random_get_within_range(0, (live.count-1).(float)).(s64);
+            test_condition(stamp_is_intact(live[index]));
+            free(live[index].memory,,a);
+            array_unordered_remove_by_index(*live, index);
+        }
+    }
+    context.allocator_align = 8;
 
-//     // log("gp allocator (small) avg alloc time:                        %us", avg_time * 1000 * 1000);
-//     // log("gp allocator (small) avg alloc time (last 100 allocations): %us", last_100_us_per_alloc);
-//     // log("gp allocator (small) max time:                              %us", max_time * 1000 * 1000);
+    for live {
+        test_condition(stamp_is_intact(it));
+        free(it.memory,,a);
+    }
 
-//     // for allocations {
-//     //     free(it,,a);
-//     // }
+    // everything freed: only the kept empty pages are left
+    test_condition(a.ranges.count <= a.keep_empty_pages);
 
-//     return_test_success();
-// }
-
-// super_allocator_test :: () -> bool, string {
-//     MIN_CHUNK_SZ :: 16;
-//     HEADER_SPACE :: #run ceil_to_power_of_two_multiple(size_of(Allocation_Header), 8);
-
-//     a: Super_Allocator(MIN_CHUNK_SZ);
-//     initialize_super_allocator(*a,, context.default_allocator/*, MIN_CHUNK_SZ*/);
-//     // scope_set_allocator(a);
-
-//     data_1_sz := 129;
-//     allocated_chunk_ct := div_ceil(data_1_sz, MIN_CHUNK_SZ) + 1; // + 1 for header
-//     data_1 := alloc(data_1_sz,,a);
-//     test_condition(data_1 == xx ((*a.chunk_lists[0][0]).(*u8)+HEADER_SPACE));
-
-//     data_2_sz := 880;
-//     allocated_chunk_ct += div_ceil(data_2_sz, MIN_CHUNK_SZ) + 1;
-//     data_2 := alloc(880,,a);
-
-//     free(data_1,,a);
-//     free(data_2,,a);
-
-//     POINTER_COUNT :: 200;
-//     pointers: [..]*void;
-//     pointers.allocator = temp;
-//     array_resize(*pointers, POINTER_COUNT);
-
-//     total_alloc_seconds: float64;
-//     total_alloc_seconds_last_100: float64;
-//     max_time: float64;
-
-//     as_byte_array :: (str: string) -> []u8 {
-//         arr: []u8;
-//         arr.data = str.data;
-//         arr.count = str.count;
-//         return arr;
-//     }
-
-//     // grow_super_allocator_books(*a);
-
-//     // for 0..checkpoints_1.count-1 {
-//     //     log("1 [%]:\n%", checkpoints_1[it].name, FormatArray.{value=as_byte_array(checkpoints_1[it].content), stop_printing_after_this_many_elements=1000});
-//     // }
-
-//     // grow_super_allocator_books_2(*a);
-//     // grow_super_allocator_books(*a);
-
-//     // for 0..checkpoints_1.count-1 {
-//         // if checkpoints_1[it].content != checkpoints_2[it].content {
-//             // assert(checkpoints_1[it].name == checkpoints_2[it].name);
-//             // log("bad comparison at checkpoint %", checkpoints_1[it].name);
-//             // log("1:\n%", FormatArray.{value=as_byte_array(checkpoints_1[it].content), stop_printing_after_this_many_elements=1000});
-//             // log("2:\n%", FormatArray.{value=as_byte_array(checkpoints_2[it].content), stop_printing_after_this_many_elements=1000});
-//         // }
-//     // }
-
-//     for 0..pointers.count-1 {
-//         bin_ct := random_get_within_range(1, 64).(s64);
-//         alloc_sz := bin_ct * /*a.min_allocation_size*/ MIN_CHUNK_SZ;
-//         t1 := seconds_since_init();
-//         pointers[it] = alloc(alloc_sz,,a);
-//         t2 := seconds_since_init();
-//         total_alloc_seconds += t2 - t1;
-//         max_time = max(max_time, t2-t1);
-//         if it >= POINTER_COUNT-100 {
-//             total_alloc_seconds_last_100 += t2 - t1;
-//         }
-//     }
-//     for 0..pointers.count-1 {
-//         index := ifx pointers.count > 1 then round(random_get_within_range(0, (pointers.count-1).(float))) else 0;
-//         ptr := pointers[index];
-//         array_ordered_remove_by_index(*pointers, index);
-//         free(ptr,,a);
-//     }
-
-//     // log("small allocator data");
-//     // log("%", repr(*a.small_allocator));
-
-//     // not real world but whatever
-//     // total_alloc_ms := total_alloc_seconds * 1000.0;
-//     // ms_per_alloc := total_alloc_ms / POINTER_COUNT.(float64);
-//     // us_per_alloc := ms_per_alloc * 1000.0;
-
-//     // last_100_total_ms := total_alloc_seconds_last_100 * 1000.0;
-//     // last_100_ms_per_alloc := last_100_total_ms / 100.0;
-//     // last_100_us_per_alloc := last_100_ms_per_alloc * 1000.0;
-
-//     // log("super allocator avg alloc time:                        %us", us_per_alloc);
-//     // log("super allocator avg alloc time (last 100 allocations): %us", last_100_us_per_alloc);
-//     // log("super allocator max time:                              %us", max_time * 1000.0 * 1000.0);
-
-//     // total_alloc_seconds = 0;
-//     // total_alloc_seconds_last_100 = 0;
-//     // max_time = 0;
-//     // array_resize(*pointers, POINTER_COUNT);
-
-//     // for 0..POINTER_COUNT-1 {
-//     //     bin_ct: s64;
-//     //     if random_get_zero_to_one() <= 0.2 {
-//     //         bin_ct = random_get_within_range(32, 384).(s64);
-//     //     } else {
-//     //         bin_ct = random_get_within_range(1, 64).(s64);
-//     //     }
-//     //     alloc_sz := bin_ct * a.small_allocator.MIN_ALLOCATION_SIZE;
-//     //     t1 := seconds_since_init();
-//     //     refs[it] = nack_alloc(*a, alloc_sz);
-//     //     t2 := seconds_since_init();
-//     //     total_alloc_seconds += t2 - t1;
-//     //     max_time = max(max_time, t2-t1);
-//     //     if it >= POINTER_COUNT-100 {
-//     //         total_alloc_seconds_last_100 += t2 - t1;
-//     //     }
-//     // }
-//     // for 0..POINTER_COUNT-1 {
-//     //     index := ifx refs.count > 1 then round(random_get_within_range(0, (refs.count-1).(float))) else 0;
-//     //     if index < 0 {
-//     //         index = 0;
-//     //     }
-//     //     ref := refs[index];
-//     //     array_ordered_remove_by_index(*refs, index);
-//     //     nack_free(*a, *ref);
-//     // }
-
-//     // // not real world but whatever
-//     // total_alloc_ms = total_alloc_seconds * 1000.0;
-//     // ms_per_alloc = total_alloc_ms / POINTER_COUNT.(float64);
-//     // us_per_alloc = ms_per_alloc * 1000.0;
-
-//     // last_100_total_ms = total_alloc_seconds_last_100 * 1000.0;
-//     // last_100_ms_per_alloc = last_100_total_ms / 100.0;
-//     // last_100_us_per_alloc = last_100_ms_per_alloc * 1000.0;
-
-//     // log("mixed allocations avg alloc time:                        %us", us_per_alloc);
-//     // log("mixed allocations avg alloc time (last 100 allocations): %us", last_100_us_per_alloc);
-//     // log("mixed allocations max time:                              %us", max_time * 1000.0 * 1000.0);
-
-//     return_test_success();
-// }
+    return_test_success();
+}
 
 // string_test :: () -> bool, string {
 //     lines := string.[

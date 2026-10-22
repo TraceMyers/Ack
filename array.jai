@@ -13,8 +13,8 @@ make_dynamic_array :: inline ($T: Type, reserve_count := 0) -> [..]T {
     return array;
 }
 
-make_static_array :: inline ($T: Type, count := 0) -> []T {
-    return NewArray(count, T);
+make_static_array :: inline ($T: Type, count := 0, $initialized := true, alignment: s32 = -1) -> []T {
+    return NewArray(count, T, initialized, alignment);
 }
 
 array_element_index :: inline (array: []T, item: *$T) -> s64 {

@@ -36,7 +36,6 @@ Renderer_Creation_Settings :: struct {
     engine_version      := ACK_VERSION;
 
     max_textures                : u32 = 4096;
-    // max_gpu_heaps              : u32 = 512; // this doesn't really make sense as an option...
     max_materials               : u32 = 4096;
     max_static_mesh_instances   : u32 = 32_768;
     max_skeletal_mesh_instances : u32 = 16_384;
@@ -235,7 +234,7 @@ compile_shaders :: () -> success: bool {
                 break;
             }
         }
-        return sprint("spirv/%.spv", new_name);
+        return tprint("spirv/%.spv", new_name);
     }
 
     visitor :: (info: *File_Visit_Info, files: *Shader_Files) {
@@ -268,6 +267,7 @@ compile_shaders :: () -> success: bool {
     }
 
     for shader : files.shaders {
+        // todo: invoke glslc.exe once
         if !compile_shader(header_text, shader) {
             return false;
         }

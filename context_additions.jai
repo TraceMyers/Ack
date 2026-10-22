@@ -19,3 +19,6 @@
     // system
     #add_context system_timer: Win32.HANDLE;
 }
+
+#add_context allocator_align: u32 = 8;
+#add_context gpu_alloc_info: GPU_Alloc_Info;

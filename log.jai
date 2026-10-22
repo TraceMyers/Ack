@@ -194,9 +194,9 @@ ack_log_impl :: (
 
     #if LOG_VERTICAL_MODE {
         if try_replace_context_memory(header, log_context) {
-            fully_processed_text = tprint("  %\n    % %%", lead_buffer_string, trim(msg), use_location, optional_newline);
+            fully_processed_text = tprint("%\n  % %%", lead_buffer_string, trim(msg), use_location, optional_newline);
         } else {
-            fully_processed_text = tprint(   "    % %%", trim(msg), use_location, optional_newline);
+            fully_processed_text = tprint("  % %%", trim(msg), use_location, optional_newline);
         }
     } else {
         fully_processed_text = tprint("% % %%", lead_buffer_string, trim(msg), use_location, optional_newline);

@@ -29,7 +29,7 @@ backend_create_renderer :: () -> bool {
     run_and_return_if_failure(create_logical_device);
     run_and_return_if_failure(initialize_allocators);
     run_and_return_if_failure(create_swapchain_and_attachments);
-    // run_and_return_if_failure(create_frame_datas);
+    run_and_return_if_failure(create_frames);
     // run_and_return_if_failure(create_default_descriptors);
     // run_and_return_if_failure(create_descriptors);
     // run_and_return_if_failure(create_default_pipelines);
@@ -172,15 +172,9 @@ create_logical_device :: () -> bool {
         pNext = *draw_params_enable
     };
 
-    // enables syncing a fence on present
-    maintenance1_enable := VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT.{
-        swapchainMaintenance1 = VK_TRUE,
-        pNext = *dynamic_rendering_enable,
-    };
-
     sync_feature_enable := VkPhysicalDeviceSynchronization2Features.{
         synchronization2 = VK_TRUE,
-        pNext = *maintenance1_enable
+        pNext = *dynamic_rendering_enable
     };
 
     device_create_info := VkDeviceCreateInfo.{
@@ -217,21 +211,17 @@ create_logical_device :: () -> bool {
         "VK_KHR_surface",
         "VK_KHR_win32_surface",
         "VK_KHR_get_surface_capabilities2",
-        "VK_EXT_surface_maintenance1",
     ];
 } else {
     required_instance_extensions := (*u8).[
         "VK_KHR_surface",
         "VK_KHR_get_surface_capabilities2",
-        "VK_EXT_surface_maintenance1",
     ];
 }
 
 // todo: revisit which of these are needed and which are core
 required_device_extensions := (*u8).[
     "VK_KHR_swapchain",
-    "VK_EXT_swapchain_maintenance1",
-    "VK_KHR_buffer_device_address",
     "VK_KHR_dynamic_rendering",
     "VK_EXT_scalar_block_layout"
 ];

@@ -24,7 +24,7 @@ Physical_World :: struct {
     allocator: Allocator;
 
     contact_grid: Table(u32, Contact_Cell, (key: u32) -> u32 { return key; });
-    contact_grid_cell_allocator: Super_Allocator;
+    contact_grid_cell_allocator: Allocator_64;
 
     color_groups: [..]Color_Group;
 
@@ -87,7 +87,7 @@ create_physical_world :: (using settings := Physical_World_Creation_Settings.{})
 
     // note: contact grid allocation is not locked, in case a bug comes of it
     init(*engine.physical_world.contact_grid, 65536);
-    initialize_super_allocator(*engine.physical_world.contact_grid_cell_allocator, add_chunk_lists=16);
+    allocator_64_startup(*engine.physical_world.contact_grid_cell_allocator);
 
     engine.physical_world.allocator = context.allocator;
 
