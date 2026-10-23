@@ -335,17 +335,21 @@ ack_renderer_path :: () -> string {
 #scope_module
 
 Renderer_Backend_Base :: struct {
-    DEFAULT_GPU_HEAP_SIZE :: 64 * 1024 * 1024;
-
     init_success: bool;
     currently_updating_renderer: bool; // was: in_the_middle_of_rendering
 
     rendered_frame_count: u64;
 
-    gpu_heaps:  Pool(GPU_Heap);
-    images:     Pool(GPU_Image);
-    materials:  Pool(Material);
-    meshes:     Managed_Meshes;
+    // allocate from linear_allocator or general_allocator. heap_allocator is what they allocate
+    // whole heaps from.
+    heap_allocator:    GPU_Allocator;
+    linear_allocator:  GPU_Linear_Allocator;
+    general_allocator: GPU_General_Allocator;
+
+    images:       Pool(GPU_Image);
+    materials:     Pool(Material);
+    meshes:        Managed_Meshes;
+
 }
 
 NANOSECONDS_PER_SECOND      :: 1_000_000_000;

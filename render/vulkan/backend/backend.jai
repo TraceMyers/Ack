@@ -25,7 +25,5 @@ Renderer_Backend :: struct {
     pipeline_layouts:       [..]VkPipelineLayout;
     descriptor_sets:        [..]VkDescriptorSet;
     descriptor_set_layouts: [..]VkDescriptorSetLayout;
-
-    linear_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
 }
 

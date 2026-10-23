@@ -5,10 +5,62 @@ using engine.renderer.backend;
 
 #scope_module
 
-GPU_Allocator :: enum u8 {
-    NONE;
-    LINEAR;
-    DYNAMIC;
+initialize_allocators :: () -> bool {
+    // Create throwaway resources to probe compatibility
+
+    dummy_buffer_create_info := VkBufferCreateInfo.{
+        size = 4096,
+        usage = .VERTEX_BUFFER_BIT
+              | .INDEX_BUFFER_BIT
+              | .UNIFORM_BUFFER_BIT
+              | .STORAGE_BUFFER_BIT
+              | .TRANSFER_SRC_BIT
+              | .TRANSFER_DST_BIT,
+        sharingMode = .EXCLUSIVE
+    };
+    dummy_buffer: VkBuffer;
+
+    dummy_image_create_info := VkImageCreateInfo.{
+        imageType = ._2D,
+        format = .R8G8B8A8_UNORM,
+        extent = {1024, 1024, 1},
+        mipLevels = 1,
+        arrayLayers = 1,
+        samples = ._1_BIT, // MSAA
+        tiling = .OPTIMAL,
+        usage =  .TRANSFER_DST_BIT | .SAMPLED_BIT,
+        sharingMode = .EXCLUSIVE
+    };
+    dummy_image: VkImage;
+
+    dummy_buffer_requirements: VkMemoryRequirements;
+    dummy_image_requirements: VkMemoryRequirements;
+
+    vkCreateBuffer(logical_device.obj, *dummy_buffer_create_info, null, *dummy_buffer);
+    vkGetBufferMemoryRequirements(logical_device.obj, dummy_buffer, *dummy_buffer_requirements);
+    vkDestroyBuffer(logical_device.obj, dummy_buffer, null);
+
+    vkCreateImage(logical_device.obj, *dummy_image_create_info, null, *dummy_image);   // OPTIMAL tiling, typical format
+    vkGetImageMemoryRequirements(logical_device.obj, dummy_image, *dummy_image_requirements);
+    vkDestroyImage(logical_device.obj, dummy_image, null);
+
+    memory_properties: VkPhysicalDeviceMemoryProperties;
+    vkGetPhysicalDeviceMemoryProperties(physical_device.obj, *memory_properties);
+
+    physical_device.properties.device_local_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+    physical_device.properties.host_visible_buffer_memory_index = find_index_of_memory_type(dummy_buffer_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+    physical_device.properties.device_local_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .DEVICE_LOCAL_BIT, *memory_properties);
+    physical_device.properties.host_visible_image_memory_index = find_index_of_memory_type(dummy_image_requirements.memoryTypeBits, .HOST_VISIBLE_BIT | .HOST_COHERENT_BIT, *memory_properties);
+
+    gpu_allocator_startup(*heap_allocator);
+
+    linear_allocator.heap_allocator = *heap_allocator;
+    gpu_linear_allocator_startup(*linear_allocator);
+
+    general_allocator.heap_allocator = *heap_allocator;
+    gpu_general_allocator_startup(*general_allocator);
+
+    return true;
 }
 
 DEPTH_VIEW_ATTACHMENT :: 0;
@@ -32,7 +84,9 @@ GPU_Image_View :: struct {
 }
 
 GPU_Image :: struct {
-    using #as allocation: GPU_Allocation;
+    allocation:           GPU_Allocation;
+    // what allocation came from. proc is null if the image doesn't own memory (swapchain images).
+    allocator:            Allocator;
     obj:                  VkImage;   
     views:                Hybrid_Storage_Array(GPU_Image_View);
     extent:               VkExtent3D;
@@ -45,7 +99,9 @@ GPU_Image :: struct {
 }
 
 GPU_Buffer :: struct {
-    using #as allocation: GPU_Allocation;
+    allocation:  GPU_Allocation;
+    allocator:   Allocator;
+    size:        int;
     usage_flags: VkBufferUsageFlags;
 }
 
@@ -54,11 +110,16 @@ is_device_local_type :: (heap_type: GPU_Heap_Type) -> bool {
 }
 
 is_buffer_type :: (heap_type: GPU_Heap_Type) -> bool {
-    return heap_type <= .INDEX_BUFFER;
+    return heap_type != .NONE && heap_type <= .INDEX_BUFFER;
 }
 
 is_image_type :: (heap_type: GPU_Heap_Type) -> bool {
-    return !is_buffer_type(heap_type);
+    return heap_type >= .DEVICE_LOCAL_IMAGE;
+}
+
+// vertices and indices are packed without align padding
+is_packed_buffer_type :: (heap_type: GPU_Heap_Type) -> bool {
+    return heap_type == .VERTEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER || heap_type == .INDEX_BUFFER;
 }
 
 is_host_visible_type :: (heap_type: GPU_Heap_Type) -> bool {
@@ -123,12 +184,15 @@ find_index_of_memory_type :: (can_use_type_bits: u32, must_have_props: VkMemoryP
     return INVALID_MEMORY_TYPE_INDEX;
 }
 
-get_allocator :: (image: *GPU_Image) -> GPU_Allocator {
-    if image.source_heap < 0 {
-        return .NONE;
-    }
-    heap := *gpu_heaps[image.source_heap];
-    return heap.allocator;
+// allocations go through the context so that lane allocators know which heap type to use
+gpu_alloc :: (allocator: Allocator, heap_type: GPU_Heap_Type, size: int, align: int) -> GPU_Allocation, success: bool {
+    push_allocator(allocator, align, .{type = heap_type});
+    memory := alloc(size);
+    return unmask_gpu_allocation(memory), memory != null;
+}
+
+gpu_free :: (allocator: Allocator, allocation: GPU_Allocation) {
+    free(mask_gpu_allocation(allocation),, allocator);
 }
 
 // usage flags:
@@ -143,9 +207,10 @@ get_allocator :: (image: *GPU_Image) -> GPU_Allocator {
 // INPUT_ATTACHMENT_BIT         :: 0x80;
 // SHADING_RATE_IMAGE_BIT_NV    :: 0x100;
 //
-create_gpu_image :: (allocator: GPU_Allocator, heap_type: GPU_Heap_Type, width: s32, height: s32, usage_flags: VkImageUsageFlags, format := VkFormat.R8G8B8A8_UNORM, mip_count: u32 = 1, layer_count: u32 = 1, premade_image: VkImage = null) ->  *GPU_Image {
+// pass allocator = .{} and a premade_image for images that don't own memory
+create_gpu_image :: (allocator: Allocator, heap_type: GPU_Heap_Type, width: s32, height: s32, usage_flags: VkImageUsageFlags, format := VkFormat.R8G8B8A8_UNORM, mip_count: u32 = 1, layer_count: u32 = 1, premade_image: VkImage = null) ->  *GPU_Image {
     // if no allocator, must assign an image object
-    render_check((premade_image != null) == (allocator == .NONE));
+    render_check((premade_image != null) == (allocator.proc == null));
 
     image_index := pool_borrow(*images);
     render_check(image_index < creation_settings.max_textures);
@@ -160,7 +225,7 @@ create_gpu_image :: (allocator: GPU_Allocator, heap_type: GPU_Heap_Type, width: 
 
     memory_requirements: VkMemoryRequirements;
 
-    if allocator != .NONE {
+    if allocator.proc != null {
         render_check(is_image_type(heap_type));
         create_info := VkImageCreateInfo.{
             imageType = ._2D,
@@ -179,24 +244,16 @@ create_gpu_image :: (allocator: GPU_Allocator, heap_type: GPU_Heap_Type, width: 
 
         vkCreateImage(logical_device.obj, *create_info, null, *image.obj);
         vkGetImageMemoryRequirements(logical_device.obj, image.obj, *memory_requirements);
+
+        success: bool;
+        image.allocation, success = gpu_alloc(allocator, heap_type, xx memory_requirements.size, xx memory_requirements.alignment);
+        render_check(success, "failed to allocate % bytes for an image of heap type %", memory_requirements.size, heap_type);
+        image.allocator = allocator;
+
+        heap := get_heap(*heap_allocator, image.allocation);
+        vkBindImageMemory(logical_device.obj, image.obj, heap.renderer_data.memory, image.allocation.offset);
     } else {
         image.obj = premade_image;
-    }
-
-    align : int = xx memory_requirements.alignment;
-    size  : int = xx memory_requirements.size;
-
-    if allocator == {
-    case .NONE;
-    case .LINEAR;
-        image.allocation = gpu_linear_allocate_aligned(size, align, heap_type, false);
-    case .DYNAMIC;
-        image.allocation = gpu_dynamic_allocate_aligned(size, heap_type);
-    }
-
-    if allocator != .NONE {
-        heap := *gpu_heaps[image.allocation.source_heap];
-        vkBindImageMemory(logical_device.obj, image.obj, heap.memory, xx image.allocation.source_heap_offset);
     }
 
     return image;
@@ -284,8 +341,7 @@ image_view_create_info :: inline (format: VkFormat, image: VkImage, aspect_flags
 }
 
 // note that the gpu vram allocation is not freed here when using a linear allocator.
-// to do that, you have to free the heap that a series of linear allocations are in
-// OR keep the allocations and just reset the whole allocator with gpu_linear_allocator_reset.
+// to do that, reset the whole allocator with gpu_linear_allocator_reset_keeping_memory.
 // that approach is the easiest way to go for per-world stuff.
 destroy_gpu_image :: (image_ptr: **GPU_Image) {
     image := image_ptr.*;
@@ -293,54 +349,41 @@ destroy_gpu_image :: (image_ptr: **GPU_Image) {
         return;
     }
 
-    allocator := get_allocator(image);
-
     for view : image.views {
         vkDestroyImageView(logical_device.obj, view.obj, null);
     }
     array_reset(*image.views);
 
-    if image.obj != null && allocator != .NONE {
+    if image.obj != null && image.allocator.proc != null {
         vkDestroyImage(logical_device.obj, image.obj, null);
-    }
-
-    if allocator == .DYNAMIC {
-        free_gpu_heap(image.source_heap);
+        gpu_free(image.allocator, image.allocation);
     }
 
     pool_return(*images, image);
     image_ptr.* = null;
 }
 
-create_gpu_buffer :: (allocator: GPU_Allocator, heap_type: GPU_Heap_Type, size: int, usage_flags: VkBufferUsageFlags, temp := false) -> GPU_Buffer {
+// usage_flags is how this buffer will be used. it determines alignment, and has to be a subset of
+// the usage of the heap type's buffers (see determine_buffer_usage).
+create_gpu_buffer :: (allocator: Allocator, heap_type: GPU_Heap_Type, size: int, usage_flags: VkBufferUsageFlags) -> GPU_Buffer {
     render_check(is_buffer_type(heap_type));
-    render_check(allocator != .NONE);
+    render_check(allocator.proc != null);
+    render_check((usage_flags & ~determine_buffer_usage(heap_type)) == 0, "usage % not supported by heap type %", usage_flags, heap_type);
 
-    if temp then render_check(allocator == .LINEAR);
+    align := ifx is_packed_buffer_type(heap_type) then 1 else max(usage_alignment(usage_flags), 1);
 
-    align := usage_alignment(usage_flags);
-    buffer: GPU_Buffer;
-    if allocator == .LINEAR {
-        buffer = GPU_Buffer.{
-            allocation = gpu_linear_allocate_aligned(size, align, heap_type, temp, usage_flags),
-            usage_flags = usage_flags
-        };
-    } else {
-        render_check(!temp);
-        buffer = GPU_Buffer.{
-            allocation = gpu_dynamic_allocate_aligned(size, heap_type, usage_flags),
-            usage_flags = usage_flags
-        };
-    }
-
+    buffer := GPU_Buffer.{allocator = allocator, size = size, usage_flags = usage_flags};
+    success: bool;
+    buffer.allocation, success = gpu_alloc(allocator, heap_type, size, align);
+    render_check(success, "failed to allocate % bytes for a buffer of heap type %", size, heap_type);
     return buffer;
 }
 
-gpu_dynamic_allocate_aligned :: (size: int, type: GPU_Heap_Type, usage_flags: VkBufferUsageFlags = 0) -> GPU_Allocation {
-    return GPU_Allocation.{
-        source_heap = allocate_gpu_heap(size, type, .DYNAMIC, usage_flags),
-        size        = xx size
-    };
+destroy_gpu_buffer :: (buffer: *GPU_Buffer) {
+    if buffer.allocator.proc != null {
+        gpu_free(buffer.allocator, buffer.allocation);
+    }
+    buffer.* = {};
 }
 
 allocate_material :: (mat: *Material) -> s32 {
@@ -350,15 +393,12 @@ allocate_material :: (mat: *Material) -> s32 {
     return xx new_mat_index;
 }
 
+// every buffer in a heap shares the heap's VkBuffer, so usage is per heap type
 determine_buffer_usage :: (heap_type: GPU_Heap_Type) -> VkBufferUsageFlags {
     if heap_type == .VERTEX_BUFFER || heap_type == .SKINNED_VERTEX_BUFFER {
         return .VERTEX_BUFFER_BIT | .TRANSFER_DST_BIT;
-        // there can be only one vertex buffer, because all draws use one buffer for draw simplicity
-        render_check(allocator.heaps.count == 0);
     } else if heap_type == .INDEX_BUFFER {
         return .INDEX_BUFFER_BIT | .TRANSFER_DST_BIT;
-        // there can be only one index buffer, because all draws use one buffer for draw simplicity
-        render_check(allocator.heaps.count == 0);
     } else if is_buffer_type(heap_type) {
         return 
               .TRANSFER_SRC_BIT
@@ -389,12 +429,13 @@ renderer_backend_allocate_gpu_heap :: (heap: *GPU_Heap, size: int, info: GPU_All
     }
 
     buffer: VkBuffer;
+    buffer_usage := determine_buffer_usage(info.type);
     min_alignment: u32 = 0;
 
     if is_buffer_type(info.type) {
         create_info := VkBufferCreateInfo.{
             size        = xx size,
-            usage       = info.buffer_usage,
+            usage       = buffer_usage,
             sharingMode = .EXCLUSIVE
         };
 
@@ -422,7 +463,7 @@ renderer_backend_allocate_gpu_heap :: (heap: *GPU_Heap, size: int, info: GPU_All
         renderer_data        = {
             memory               = memory,
             buffer               = buffer,
-            buffer_usage         = info.buffer_usage,
+            buffer_usage         = buffer_usage,
         }
     };
 

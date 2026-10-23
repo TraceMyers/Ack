@@ -19,7 +19,6 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "backend/backend.jai";
 #load "backend/create_renderer.jai";
 #load "backend/gpu_allocation.jai";
-#load "backend/gpu_linear_allocator.jai";
 #load "backend/physical_device.jai";
 #load "backend/pipelines.jai";
 #load "backend/swapchain.jai";

@@ -1,5 +1,7 @@
 #load "allocator_64.jai";
 #load "linear_allocator.jai";
+#load "general_purpose_allocator.jai";
+#load "heap_allocator.jai";
 #load "gpu_allocator.jai";
 #load "no_allocator.jai";
 

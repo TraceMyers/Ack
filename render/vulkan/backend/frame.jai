@@ -13,7 +13,8 @@ GPU_Frame :: struct {
     render_fence:               VkFence;
     present_fence:              VkFence;
 
-    temp_allocators: [GPU_HEAP_TYPE_COUNT]GPU_Linear_Allocator;
+    // reset at the start of the frame
+    temp_allocator: GPU_Linear_Allocator;
 
     // ...
 }
@@ -24,5 +25,9 @@ get_current_frame :: () -> frame: *GPU_Frame, index: int {
 }
 
 create_frames :: () -> bool {
+    for *frames {
+        it.temp_allocator.heap_allocator = *heap_allocator;
+        gpu_linear_allocator_startup(*it.temp_allocator);
+    }
     return true;
 }

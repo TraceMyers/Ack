@@ -122,7 +122,7 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
     }
 
     for *image : swapchain.images {
-        image.* = create_gpu_image(.NONE, 0, xx swapchain.extent.width, xx swapchain.extent.height, create_info.imageUsage, swapchain.format.format, premade_image=swapchain_image_objects[it_index]);
+        image.* = create_gpu_image({}, .NONE, xx swapchain.extent.width, xx swapchain.extent.height, create_info.imageUsage, swapchain.format.format, premade_image=swapchain_image_objects[it_index]);
         if !create_image_views(image.*, {.COLOR_BIT, .COLOR_ATTACHMENT_OPTIMAL}) {
             return false;
         }
@@ -184,7 +184,7 @@ choose_swapchain_extent :: (using info: *Swapchain_Support_Info) -> VkExtent2D, 
 create_render_target :: () -> bool {
     render_check(render_target == null);
 
-    render_target = create_gpu_image(.DYNAMIC, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .COLOR_ATTACHMENT_BIT | .SAMPLED_BIT | .STORAGE_BIT, .R16G16B16A16_SFLOAT);
+    render_target = create_gpu_image(general_allocator, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .COLOR_ATTACHMENT_BIT | .SAMPLED_BIT | .STORAGE_BIT, .R16G16B16A16_SFLOAT);
     if !render_evaluate(create_image_views(render_target, {.COLOR_BIT, .COLOR_ATTACHMENT_OPTIMAL}), "failed to create the render target image view") {
         return false;
     }
@@ -200,7 +200,7 @@ create_render_target :: () -> bool {
 create_depth_buffer :: () -> bool {
     render_check(depth_buffer == null);
 
-    depth_buffer = create_gpu_image(.DYNAMIC, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT, depth_buffer_format(physical_device.obj));
+    depth_buffer = create_gpu_image(general_allocator, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT, depth_buffer_format(physical_device.obj));
     if !render_evaluate(create_image_views(depth_buffer, {.DEPTH_BIT | .STENCIL_BIT, .DEPTH_STENCIL_ATTACHMENT_OPTIMAL}, {.DEPTH_BIT, .DEPTH_STENCIL_READ_ONLY_OPTIMAL}), "failed to create one of the depth buffer image views") {
         return false;
     }

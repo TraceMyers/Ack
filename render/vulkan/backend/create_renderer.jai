@@ -17,7 +17,6 @@ backend_create_renderer :: () -> bool {
         }
     }
     
-    pool_init(*gpu_heaps, 1024);
     pool_init(*images,    creation_settings.max_textures,  true);
     pool_init(*materials, creation_settings.max_materials, true);
 

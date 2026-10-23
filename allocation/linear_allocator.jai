@@ -1,3 +1,4 @@
+// can be scoped to a heap by starting it under push_allocator(heap). see make_heap.
 Linear_Allocator :: struct {
     using #as base: Allocator;
     using body: Linear_Allocator_Body;
@@ -105,7 +106,7 @@ linear_allocator_allocate :: (using allocator: *Linear_Allocator, size: s64) -> 
         // making it the only situation where a lower-level allocator determines alignment
         // to a higher-level one.
         if data_allocator.proc == gpu_allocator_proc {
-            align = max(get_heap(xx data_allocator.data, xx page.bytes.data).min_alignment, align);
+            align = max(get_heap(xx data_allocator.data, cast(*void) page.bytes.data).min_alignment, align);
         }
 
         begin_address, aligned_size = get_begin_address_and_aligned_size(page, size, align);
@@ -171,7 +172,7 @@ add_page :: (allocator: *Linear_Allocator, size: int) -> *Linear_Allocator_Page 
 
 get_begin_address_and_aligned_size :: (page: *Linear_Allocator_Page, size: int, align: u32) -> address: *void, size: int {
     begin_address         := (cast(u64) page.bytes.data) + (cast(u64) page.allocated);
-    aligned_begin_address := align_forward(xx begin_address, align);
+    aligned_begin_address : u64 = xx align_forward(xx begin_address, align);
     aligned_size          :int = xx ((aligned_begin_address - begin_address) + xx size);
     return cast(*void) aligned_begin_address, aligned_size;
 }

@@ -698,6 +698,140 @@ allocator_64_test :: () -> bool, string {
     return_test_success();
 }
 
+general_purpose_allocator_test :: () -> bool, string {
+    a: General_Purpose_Allocator;
+    a.data_allocator  = context.default_allocator;
+    a.books_allocator = context.default_allocator;
+    general_purpose_allocator_startup(*a);
+    defer general_purpose_allocator_shutdown(*a);
+
+    Live :: struct {
+        memory: *u8;
+        size:   s64;
+        stamp:  u8;
+    }
+    live: [..]Live;
+    live.allocator = temp;
+
+    stamp_is_intact :: (l: Live, size: s64) -> bool {
+        for 0..size-1 {
+            if l.memory[it] != l.stamp then return false;
+        }
+        return true;
+    }
+
+    // sizes for the small and large grids and the fallback, with random resizes and frees mixed in
+    for 0..4_999 {
+        max_size := 1024;
+        if it % 16 >= 12 then max_size = 64 * 1024;
+        if it % 16 == 15 then max_size = 256 * 1024;
+        size  := random_get_within_range(1, xx max_size).(s64);
+        align := 8 << (it % 4);
+        context.allocator_align = xx align;
+        memory := alloc(size,,a).(*u8);
+        test_condition((memory.(u64) & (align - 1).(u64)) == 0);
+        test_condition(a.proc(.IS_THIS_YOURS, 0, 0, memory, a.data) != null);
+
+        l := Live.{memory, size, xx (it % 255 + 1)};
+        memset(l.memory, l.stamp, l.size);
+        array_add(*live, l);
+
+        context.allocator_align = 8;
+        if it % 3 == 0 {
+            index    := random_get_within_range(0, (live.count-1).(float)).(s64);
+            l        := *live[index];
+            new_size := random_get_within_range(1, xx max_size).(s64);
+            l.memory  = realloc(l.memory, new_size, l.size,,a);
+            test_condition(stamp_is_intact(l.*, min(l.size, new_size)));
+            l.size = new_size;
+            memset(l.memory, l.stamp, l.size);
+        }
+        if it & 1 {
+            index := random_get_within_range(0, (live.count-1).(float)).(s64);
+            test_condition(stamp_is_intact(live[index], live[index].size));
+            free(live[index].memory,,a);
+            array_unordered_remove_by_index(*live, index);
+        }
+    }
+
+    for live {
+        test_condition(stamp_is_intact(it, it.size));
+        free(it.memory,,a);
+    }
+
+    // everything freed: only the kept empty pages are left
+    test_condition(a.small.ranges.count <= a.small.keep_empty_pages);
+    // small's kept pages are themselves live allocations in large
+    test_condition(a.large.ranges.count <= a.large.keep_empty_pages + a.small.ranges.count);
+
+    return_test_success();
+}
+
+world_heap_test :: () -> bool, string {
+    heap := make_heap();
+
+    gp:      General_Purpose_Allocator;
+    scratch: Linear_Allocator;
+    grid:    Allocator_64;
+    {
+        push_allocator(heap);
+        scratch.default_page_size = 1024 * 1024;
+        general_purpose_allocator_startup(*gp);
+        linear_allocator_startup(*scratch);
+        allocator_64_startup(*grid);
+    }
+    test_condition(gp.books_allocator.data == heap.data && gp.data_allocator.data == heap.data);
+    test_condition(scratch.books_allocator.data == heap.data && scratch.data_allocator.data == heap.data);
+    test_condition(grid.books_allocator.data == heap.data && grid.data_allocator.data == heap.data);
+
+    stale := alloc(64,, heap);
+    test_condition(heap.proc(.IS_THIS_YOURS, 0, 0, stale, heap.data) != null);
+
+    // a nested heap is freed with its parent
+    level_heap := create_heap(heap);
+    memset(alloc(256 * 1024,, level_heap), 4, 256 * 1024);
+
+    context.allocator_align = 256;
+    over_aligned := alloc(100,, heap);
+    context.allocator_align = 8;
+    test_condition((over_aligned.(u64) & 255) == 0);
+
+    for 0..299 {
+        size := random_get_within_range(1, 128 * 1024).(s64);
+        memset(alloc(size,, gp), 1, size);
+        memset(alloc(size,, scratch), 2, size);
+        memset(alloc(size,, grid), 3, size);
+    }
+
+    release_heap(heap);
+    gp = {}; scratch = {}; grid = {};
+
+    // the new heap may land where the old one was. it must come back empty.
+    heap = make_heap();
+    defer release_heap(heap);
+    test_condition(heap.proc(.IS_THIS_YOURS, 0, 0, stale, heap.data) == null);
+
+    {
+        push_allocator(heap);
+        general_purpose_allocator_startup(*gp);
+    }
+    defer gp = {};
+
+    memories: [100]*u8;
+    for *memories {
+        it.* = alloc(4096,, gp);
+        memset(it.*, xx it_index, 4096);
+    }
+    for memories {
+        for byte : 0..4095 {
+            test_condition(it[byte] == xx it_index);
+        }
+        free(it,, gp);
+    }
+
+    return_test_success();
+}
+
 // string_test :: () -> bool, string {
 //     lines := string.[
 //         "",

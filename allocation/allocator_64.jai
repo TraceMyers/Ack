@@ -7,6 +7,8 @@
 //
 // chains well: pages are 4096 * slot_size bytes, which is exactly the max in-grid allocation of an
 // Allocator_64 with 64x the slot size. so 16 -> 1024 -> context.allocator is a decent gp allocator.
+//
+// can be scoped to a heap by starting it under push_allocator(heap). see make_heap.
 
 ALLOCATOR_64_RUN_BUCKETS :: 7; // free runs of >= 1, 2, 4, 8, 16, 32, 64 slots
 
