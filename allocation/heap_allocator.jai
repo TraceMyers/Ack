@@ -11,10 +11,7 @@
 //     gp = {}; scratch = {}; // don't shut them down, their memory is already gone
 //
 // every block is linked into a list through a header in front of it, and release_heap walks that
-// list. the default allocator's own heaps can't be used for this: destroying one leaves its blocks
-// allocated, and its heap_free_all crashes when a heap has both large and huge blocks.
-//
-// heaps nest. create_heap(world_heap) makes a heap backed by world_heap, which is freed along with it.
+// list. heaps nest. create_heap(world_heap) makes a heap backed by world_heap, which is freed along with it.
 
 Heap_Allocator :: struct {
     using #as base: Allocator;

@@ -191,12 +191,14 @@ ack_log_impl :: (
     fully_processed_text: string;
 
     optional_newline := ifx add_newline then "\n\n" else "\n";
+    printing_log_context := true;
 
     #if LOG_VERTICAL_MODE {
         if try_replace_context_memory(header, log_context) {
             fully_processed_text = tprint("%\n  % %%", lead_buffer_string, trim(msg), use_location, optional_newline);
         } else {
             fully_processed_text = tprint("  % %%", trim(msg), use_location, optional_newline);
+            printing_log_context = false;
         }
     } else {
         fully_processed_text = tprint("% % %%", lead_buffer_string, trim(msg), use_location, optional_newline);
@@ -208,7 +210,7 @@ ack_log_impl :: (
 
     if !only_callback {
         write_string(fully_processed_text, to_standard_error);
-        write_to_log_file(fully_processed_text);
+        write_to_log_file(fully_processed_text, printing_log_context);
     }
 }
 
@@ -269,17 +271,16 @@ remember_copy :: inline (user_string: string, memory: *string, memory_buffer: *[
     memory.count = copy_size;
 }
 
-write_to_log_file :: inline (message: string) {
+write_to_log_file :: inline (message: string, printing_log_context: bool) {
     if global_log_options.disable_file_write {
         return;
     }
+    calendar_time := to_calendar(current_time_consensus(), global_log_options.file_time_zone);
     if logging_file.handle == null {
         if global_log_options.file_location.count > 0 {
             make_directory_if_it_does_not_exist(global_log_options.file_location);
         }
         scope_set_working_directory(global_log_options.file_location, global_log_options.file_location.count > 0);
-        apollo_time := current_time_consensus();
-        calendar_time := to_calendar(apollo_time, global_log_options.file_time_zone);
         file_name := tprint(
             "ack_log__%_%_%__%_%_%__%.txt", 
             calendar_time.year, 
@@ -293,7 +294,18 @@ write_to_log_file :: inline (message: string) {
         logging_file = file_open(file_name, for_writing=true);
     }
     if logging_file.handle != null {
-        file_write(*logging_file, message);
+        // timestamp only goes to the file, not stdout or the callback
+        maybe_newline_after := ifx printing_log_context then "" else "\n";
+        timestamp_and_message := tprint(
+            "%:%:%.% %%",
+            FormatInt.{value=calendar_time.hour, minimum_digits=2},
+            FormatInt.{value=calendar_time.minute, minimum_digits=2},
+            FormatInt.{value=calendar_time.second, minimum_digits=2},
+            FormatInt.{value=calendar_time.millisecond, minimum_digits=3},
+            maybe_newline_after,
+            message
+        );
+        file_write(*logging_file, timestamp_and_message);
     }
 }
 
