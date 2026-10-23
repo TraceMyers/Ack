@@ -416,14 +416,13 @@ renderer_backend_allocate_gpu_heap :: (heap: *GPU_Heap, size: int, info: GPU_All
     }
 
     heap.* = GPU_Heap.{
-        size                 = size,
-        type                 = type,
-        allocator            = allocator,
-        min_alignment        = min_alignment
+        size                 = xx size,
+        type                 = info.type,
+        min_alignment        = min_alignment,
         renderer_data        = {
             memory               = memory,
             buffer               = buffer,
-            buffer_usage         = buffer_usage,
+            buffer_usage         = info.buffer_usage,
         }
     };
 
@@ -432,8 +431,8 @@ renderer_backend_allocate_gpu_heap :: (heap: *GPU_Heap, size: int, info: GPU_All
 
 renderer_backend_free_gpu_heap :: (heap: *GPU_Heap) {
     if is_buffer_type(heap.type) {
-        vkDestroyBuffer(logical_device.obj, heap.buffer, null);
+        vkDestroyBuffer(logical_device.obj, heap.renderer_data.buffer, null);
     }
-    vkFreeMemory(logical_device.obj, heap.memory, null);
+    vkFreeMemory(logical_device.obj, heap.renderer_data.memory, null);
     heap.* = {};
 }

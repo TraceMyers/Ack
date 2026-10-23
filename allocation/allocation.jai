@@ -1,5 +1,6 @@
 #load "allocator_64.jai";
-#load "bump_allocator.jai";
+#load "linear_allocator.jai";
+#load "gpu_allocator.jai";
 #load "no_allocator.jai";
 
 push_allocator :: (allocator: Allocator, align: int) #expand #no_debug {

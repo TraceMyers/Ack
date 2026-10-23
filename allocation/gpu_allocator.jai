@@ -18,7 +18,7 @@ GPU_Alloc_Info :: struct {
     type: GPU_Heap_Type;
 
     #if GRAPHICS_API == "VULKAN" {
-        buffer_usage: VkBufferUsage;
+        buffer_usage: VkBufferUsageFlags;
     }
 }
 
@@ -55,34 +55,36 @@ gpu_allocator_proc :: (mode: Allocator_Mode, size: s64, old_size: s64, old_memor
 
     if #complete mode == {
     case .FREE;
-        return gpu_allocator_free(alocator, cast,force(GPU_Allocation) old_memory);
+        if old_memory == null then return null;
+        return gpu_allocator_free(allocator, cast,force(GPU_Allocation) old_memory);
     case .RESIZE;
-        return engine_validate(false, "resize not supported");
+        engine_check(false, "resize not supported");
+        return null;
     case .ALLOCATE;
         return gpu_allocator_allocate(allocator, size);
     case .STARTUP;
         return gpu_allocator_startup(allocator);
     case .SHUTDOWN;
+        return gpu_allocator_shutdown(allocator);
     case .THREAD_START; 
         #through;
     case .THREAD_STOP;
         engine_check(false, "multithreaded access not supported");
         return null;
     case .CREATE_HEAP;
+        #through;
     case .DESTROY_HEAP;
         engine_check(false, "creating and destoying heaps not supported");
         return null;
     case .IS_THIS_YOURS;
+        return null;
     case .CAPS;
+        return null;
     }
-    return null;
 }
 
 gpu_allocator_startup :: (using allocator: *GPU_Allocator) -> *void {
     engine_check(heaps.items.count == 0);
-
-    // reserve heap 0, otherwise first allocation would return cast(*void) {0,0}, which is null
-    pool_borrow(*heaps);
 
     base = {
         proc = gpu_allocator_proc,
@@ -95,6 +97,21 @@ gpu_allocator_startup :: (using allocator: *GPU_Allocator) -> *void {
         pool_set_allocator(*heaps, books_allocator);
     }
 
+    // reserve heap 0, otherwise first allocation would return cast(*void) {0,0}, which is null
+    pool_borrow(*heaps);
+
+    return null;
+}
+
+gpu_allocator_shutdown :: (using allocator: *GPU_Allocator) -> *void {
+    // this for expansion skips unused pool slots
+    for *heap : heaps {
+        // heap 0 is reserved, never allocated
+        if it_index == 0 continue;
+        renderer_backend_free_gpu_heap(heap);
+    }
+    pool_reset(*heaps);
+    allocator.* = {};
     return null;
 }
 
@@ -104,12 +121,14 @@ gpu_allocator_allocate :: (allocator: *GPU_Allocator, size: s64) -> *void {
         
     heap_index := pool_borrow(*allocator.heaps);
     heap := *allocator.heaps[heap_index];
-    allocation := renderer_backend_allocate_gpu_heap(heap, size, context.gpu_alloc_info);
-    if allocation.heap < 0 {
+    success := renderer_backend_allocate_gpu_heap(heap, size, context.gpu_alloc_info);
+    if !success {
         engine_warning("failed to allocate a gpu heap");
         pool_return(*allocator.heaps, heap_index);
+        return null;
     }
-    return cast(*void) allocation;
+    allocation := GPU_Allocation.{0, xx heap_index};
+    return cast,force(*void) allocation;
 }
 
 gpu_allocator_free :: (allocator: *GPU_Allocator, allocation: GPU_Allocation) -> *void {
@@ -122,3 +141,4 @@ gpu_allocator_free :: (allocator: *GPU_Allocator, allocation: GPU_Allocation) ->
     pool_return(*allocator.heaps, allocation.heap);
     return null;
 }
+
