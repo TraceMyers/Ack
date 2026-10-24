@@ -1,44 +1,21 @@
-
 test_condition :: ($condition: Code, loc := #caller_location) #expand {
     if !(#insert condition) {
-        `return false, tprint("FAIL    : % | [cond] % @ %", #procedure_name(), #run code_string(condition), loc);
-    }
-}
+        log("  [test_condition] % @ %", #run code_string(condition), loc);
 
-return_test_success :: () -> bool, string #expand {
-    `return true, tprint("SUCCESS : %", #procedure_name());
-}
-
-run_tests :: (header: string, tests: []test_procedure) {
-    passed_test_ct := 0;
-    trm_log("\nrunning tests: %", header);
-    for tests {
-        // in release, causes crash on log, i think due to optimizations around temp allocations
-        // auto_release_temp();
-        passed_test, log_str := it();
-        passed_test_ct += cast(s64)passed_test;
-        log(log_str);
+        `return false;
     }
-    trm_log("passed % / % tests\n   ", passed_test_ct, tests.count);
 }
 
 get_testing_plugin :: () -> *Metaprogram_Plugin {
     p := New(Testing_Plugin);
 
-    p.init = xx plugin_init;
-    p.message = xx plugin_message;
+    p.init = xx testing_plugin_init;
+    p.message = xx testing_plugin_message;
 
     return p;
 }
 
-test_procedure :: #type () -> bool, string;
-
 #scope_module
-
-Test_Procedure :: struct {
-    name: string;
-    proc: test_procedure;
-}
 
 Testing_Plugin :: struct {
     using #as base: Metaprogram_Plugin;
@@ -51,22 +28,25 @@ Testing_Plugin :: struct {
     ran_tests: bool;
 }
 
-plugin_init :: (p: *Testing_Plugin, options: []string) -> bool {
+testing_plugin_init :: (p: *Testing_Plugin, options: []string) -> bool {
     array_reserve(*p.tests, 256);
 
     // parse options
     next_option_is_inclusive: bool;
     next_option_is_exclusive: bool;
+    p.run_all_tests = true;
     
     for option : options {
         if next_option_is_inclusive {
             assert(could_be_procedure_name(option), "invalid procedure name %", option);
             array_add_if_unique(*p.include_tests, option);
             next_option_is_inclusive = false;
+            p.run_all_tests = false;
         } else if next_option_is_exclusive {
             assert(could_be_procedure_name(option), "invalid procecure name %", option);
             array_add_if_unique(*p.exclude_tests, option);
             next_option_is_exclusive = false;
+            p.run_all_tests = false;
         } else {
             if option == "--all" || option == "-a" {
                 p.run_all_tests = true;
@@ -87,30 +67,106 @@ plugin_init :: (p: *Testing_Plugin, options: []string) -> bool {
     return true;
 }
 
-plugin_message :: (p: *Testing_Plugin, message: *Message) {
+testing_plugin_message :: (p: *Testing_Plugin, message: *Message) {
     if p.ran_tests {
         return;
     }
-    
+
     if message.kind == .TYPECHECKED {
         m_typechecked := cast(*Message_Typechecked) message;
         for b : m_typechecked.procedure_bodies {
             body := b.expression;
             for note : body.header.notes {
-                if note.text == "test" {
-                    // array_add_if_unique(*p.
+                if note.text == "test" || note.text == "engine_test" {
+                    if !is_runnable_test(body.header) {
+                        continue;
+                    }
+                    array_add_if_unique(*p.tests, body.header.name);
                 }
             }
         }
     } else if message.kind == .PHASE {
         m_phase := cast(*Message_Phase) message;
-        if m_phase.phase == .TYPECHECKED_ALL_WE_CAN {
-            if p.include_tests.count > 0 {
+        if m_phase.phase == .TYPECHECKED_ALL_WE_CAN && p.tests.count > 0 {
+            // if p.include_tests.count > 0 {
+            //     for p.include_tests
+            // }
+            // todo: include/exclude
+            // todo: test runner process so build process is insulated from crashes
+            builder: String_Builder;
+            print(*builder, 
+            #string END
+                #run {
+                    print("running tests...\n\n");
+                    success_count: int;
+                    total_count: int;
 
+                    test_logs: [..]string;
+                    defer_log :: (message: string, data: *void, in_info: Log_Info) {
+                        test_logs := cast(*[..]string) data;
+                        array_add(test_logs, message);
+                    }
+
+            END);
+    
+            for test : p.tests {
+                print(*builder, 
+                #string END
+                    {
+                        print("%: ");
+                        total_count += 1;
+
+                        context.logger = defer_log;
+                        context.logger_data = *test_logs;
+
+                        if %() {
+                            print("SUCCESS\n");
+                            success_count += 1;
+                        } else {
+                            print("FAILURE\n");
+                        }
+
+                        context.logger = runtime_support_default_logger;
+
+                        if test_logs.count > 0 {
+                            for test_log : test_logs {
+                                log(test_log);
+                            }
+                            array_reset(*test_logs);
+                        }
+                    }
+                END,
+                    test, test
+                );
             }
+
+            print(*builder, "print(\"\\nSUCCESS count: \%/\%\\n\", success_count, total_count); }");
+
+            add_build_string(builder_to_string(*builder), message.workspace);
+
             p.ran_tests = true;
         }
     }
+}
+
+// with dead code elimination off, tests noted in other modules (e.g. String) get typechecked too.
+// only run tests from the main program and from this engine, and only ones shaped () -> bool.
+is_runnable_test :: (header: *Code_Procedure_Header) -> bool {
+    load := header.location.enclosing_load;
+    module_name := "";
+    if load && load.enclosing_import {
+        module_name = load.enclosing_import.module_name;
+    }
+    is_main_program := load && load.enclosing_import && load.enclosing_import.module_type == .MAIN_PROGRAM;
+    if !is_main_program && module_name != "Ack!" {
+        return false;
+    }
+
+    if header.arguments.count != 0 || header.returns.count != 1 || header.returns[0].type.type != .BOOL {
+        log("[testing] skipping % (%): tests must be shaped () -> bool", header.name, get_filename(header));
+        return false;
+    }
+    return true;
 }
 
 should_run_tests :: (p: *Testing_Plugin) -> bool {
@@ -644,193 +700,6 @@ could_be_procedure_name :: (str: string) -> bool {
 //     }
 //     return_test_success();
 // }
-
-allocator_64_test :: () -> bool, string {
-    a: Allocator_64;
-    a.data_allocator = context.default_allocator;
-    allocator_64_startup(*a);
-    defer allocator_64_shutdown(*a);
-
-    Live :: struct {
-        memory: *u8;
-        size:   s64;
-        stamp:  u8;
-    }
-    live: [..]Live;
-    live.allocator = temp;
-
-    stamp_is_intact :: (l: Live) -> bool {
-        for 0..l.size-1 {
-            if l.memory[it] != l.stamp then return false;
-        }
-        return true;
-    }
-
-    // in-grid, oversized, and over-aligned allocations, with random frees mixed in
-    for 0..9_999 {
-        size  := random_get_within_range(1, 64 * 16 * 2).(s64);
-        align := 8 << (it % 4);
-        context.allocator_align = xx align;
-        memory := alloc(size,,a).(*u8);
-        test_condition((memory.(u64) & (align - 1).(u64)) == 0);
-
-        l := Live.{memory, size, xx (it % 255 + 1)};
-        memset(l.memory, l.stamp, l.size);
-        array_add(*live, l);
-
-        if it & 1 {
-            index := random_get_within_range(0, (live.count-1).(float)).(s64);
-            test_condition(stamp_is_intact(live[index]));
-            free(live[index].memory,,a);
-            array_unordered_remove_by_index(*live, index);
-        }
-    }
-    context.allocator_align = 8;
-
-    for live {
-        test_condition(stamp_is_intact(it));
-        free(it.memory,,a);
-    }
-
-    // everything freed: only the kept empty pages are left
-    test_condition(a.ranges.count <= a.keep_empty_pages);
-
-    return_test_success();
-}
-
-general_purpose_allocator_test :: () -> bool, string {
-    a: General_Purpose_Allocator;
-    a.data_allocator  = context.default_allocator;
-    a.books_allocator = context.default_allocator;
-    general_purpose_allocator_startup(*a);
-    defer general_purpose_allocator_shutdown(*a);
-
-    Live :: struct {
-        memory: *u8;
-        size:   s64;
-        stamp:  u8;
-    }
-    live: [..]Live;
-    live.allocator = temp;
-
-    stamp_is_intact :: (l: Live, size: s64) -> bool {
-        for 0..size-1 {
-            if l.memory[it] != l.stamp then return false;
-        }
-        return true;
-    }
-
-    // sizes for the small and large grids and the fallback, with random resizes and frees mixed in
-    for 0..4_999 {
-        max_size := 1024;
-        if it % 16 >= 12 then max_size = 64 * 1024;
-        if it % 16 == 15 then max_size = 256 * 1024;
-        size  := random_get_within_range(1, xx max_size).(s64);
-        align := 8 << (it % 4);
-        context.allocator_align = xx align;
-        memory := alloc(size,,a).(*u8);
-        test_condition((memory.(u64) & (align - 1).(u64)) == 0);
-        test_condition(a.proc(.IS_THIS_YOURS, 0, 0, memory, a.data) != null);
-
-        l := Live.{memory, size, xx (it % 255 + 1)};
-        memset(l.memory, l.stamp, l.size);
-        array_add(*live, l);
-
-        context.allocator_align = 8;
-        if it % 3 == 0 {
-            index    := random_get_within_range(0, (live.count-1).(float)).(s64);
-            l        := *live[index];
-            new_size := random_get_within_range(1, xx max_size).(s64);
-            l.memory  = realloc(l.memory, new_size, l.size,,a);
-            test_condition(stamp_is_intact(l.*, min(l.size, new_size)));
-            l.size = new_size;
-            memset(l.memory, l.stamp, l.size);
-        }
-        if it & 1 {
-            index := random_get_within_range(0, (live.count-1).(float)).(s64);
-            test_condition(stamp_is_intact(live[index], live[index].size));
-            free(live[index].memory,,a);
-            array_unordered_remove_by_index(*live, index);
-        }
-    }
-
-    for live {
-        test_condition(stamp_is_intact(it, it.size));
-        free(it.memory,,a);
-    }
-
-    // everything freed: only the kept empty pages are left
-    test_condition(a.small.ranges.count <= a.small.keep_empty_pages);
-    // small's kept pages are themselves live allocations in large
-    test_condition(a.large.ranges.count <= a.large.keep_empty_pages + a.small.ranges.count);
-
-    return_test_success();
-}
-
-world_heap_test :: () -> bool, string {
-    heap := make_heap();
-
-    gp:      General_Purpose_Allocator;
-    scratch: Linear_Allocator;
-    grid:    Allocator_64;
-    {
-        push_allocator(heap);
-        scratch.default_page_size = 1024 * 1024;
-        general_purpose_allocator_startup(*gp);
-        linear_allocator_startup(*scratch);
-        allocator_64_startup(*grid);
-    }
-    test_condition(gp.books_allocator.data == heap.data && gp.data_allocator.data == heap.data);
-    test_condition(scratch.books_allocator.data == heap.data && scratch.data_allocator.data == heap.data);
-    test_condition(grid.books_allocator.data == heap.data && grid.data_allocator.data == heap.data);
-
-    stale := alloc(64,, heap);
-    test_condition(heap.proc(.IS_THIS_YOURS, 0, 0, stale, heap.data) != null);
-
-    // a nested heap is freed with its parent
-    level_heap := create_heap(heap);
-    memset(alloc(256 * 1024,, level_heap), 4, 256 * 1024);
-
-    context.allocator_align = 256;
-    over_aligned := alloc(100,, heap);
-    context.allocator_align = 8;
-    test_condition((over_aligned.(u64) & 255) == 0);
-
-    for 0..299 {
-        size := random_get_within_range(1, 128 * 1024).(s64);
-        memset(alloc(size,, gp), 1, size);
-        memset(alloc(size,, scratch), 2, size);
-        memset(alloc(size,, grid), 3, size);
-    }
-
-    release_heap(heap);
-    gp = {}; scratch = {}; grid = {};
-
-    // the new heap may land where the old one was. it must come back empty.
-    heap = make_heap();
-    defer release_heap(heap);
-    test_condition(heap.proc(.IS_THIS_YOURS, 0, 0, stale, heap.data) == null);
-
-    {
-        push_allocator(heap);
-        general_purpose_allocator_startup(*gp);
-    }
-    defer gp = {};
-
-    memories: [100]*u8;
-    for *memories {
-        it.* = alloc(4096,, gp);
-        memset(it.*, xx it_index, 4096);
-    }
-    for memories {
-        for byte : 0..4095 {
-            test_condition(it[byte] == xx it_index);
-        }
-        free(it,, gp);
-    }
-
-    return_test_success();
-}
 
 // string_test :: () -> bool, string {
 //     lines := string.[

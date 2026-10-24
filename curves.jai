@@ -196,24 +196,24 @@ use_curve_palette :: (window: Window_Type, renderer: *Renderer, camera_info: Cam
                 if it > 0 {
                     line_pt_0 := get_point_on_draw_plane(draw_plane, camera_info, camera_position, fore_dir, up_dir, new_point);
                     line_pt_1 := get_point_on_draw_plane(draw_plane, camera_info, camera_position, fore_dir, up_dir, prev_point);
-                    draw_line(renderer, line_pt_0, line_pt_1, COLOR4B_WHITE, 3, true);
+                    draw_line(line_pt_0, line_pt_1, COLOR4B_WHITE, 3, true);
                 }
             }
 
             raycast_result: Raycast_Result_Simple;
             _, pointer_ray := get_camera_ray_passing_through_mouse_pointer_position(camera_info, camera_position, camera_orientation, viewport, window);
             if raycast_rectangle(*raycast_result, camera_position, pointer_ray, (ll + ur) * 0.5, length(lr-ll) * 0.5, length(ul-ll) * 0.5, right_dir, up_dir, -fore_dir) {
-                draw_line(renderer, ul, ur, COLOR4B_WHITE, 3);
-                draw_line(renderer, ur, lr, COLOR4B_WHITE, 3);
-                draw_line(renderer, lr, ll, COLOR4B_WHITE, 3);
-                draw_line(renderer, ll, ul, COLOR4B_WHITE, 3);
+                draw_line(ul, ur, COLOR4B_WHITE, 3);
+                draw_line(ur, lr, COLOR4B_WHITE, 3);
+                draw_line(lr, ll, COLOR4B_WHITE, 3);
+                draw_line(ll, ul, COLOR4B_WHITE, 3);
 
                 curve.y_offset = 0;
                 curve.y_scale  = 1;
                 circle_pt  := ll + (lr - ll) * apply_curve(curve, t);
                 circle_rad := square_width * 0.08 * plane_dist;
 
-                draw_circle(renderer, circle_pt, circle_rad, up_dir, right_dir, COLOR4B_WHITE, 3);
+                draw_circle(circle_pt, circle_rad, up_dir, right_dir, COLOR4B_WHITE, 3);
             }
         }
     }

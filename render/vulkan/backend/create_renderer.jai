@@ -1,37 +1,24 @@
-#scope_file
-
-using engine.renderer;
-using engine.renderer.backend;
-
-#scope_module
-
 backend_create_renderer :: () -> bool {
+    using engine.renderer;
     auto_release_temp();
 
-    run_and_return_if_failure :: (proc: Code, caller_loc := #caller_location) #expand {
-        proc_name :: #run code_string(proc);
-        render_log("calling %", proc_name, flags=.VERBOSE_ONLY);
-        #insert #run tprint("init_success = %();", proc_name);
-        if !render_evaluate(init_success, "failed on stage %", proc_name) {
-            `return false;
-        }
-    }
+    bcr_run_or_return_failure :: #bake_arguments engine_run_or_return_failure(flags=.VERBOSE_ONLY, log_proc=render_log, fail_log_proc=render_error);
     
-    pool_init(*images,    creation_settings.max_textures,  true);
     pool_init(*materials, creation_settings.max_materials, true);
 
     init_success = true; 
     
-    run_and_return_if_failure(create_vk_instance);
-    run_and_return_if_failure(create_surface);
-    run_and_return_if_failure(select_physical_device);
-    run_and_return_if_failure(create_logical_device);
-    run_and_return_if_failure(initialize_allocators);
-    run_and_return_if_failure(create_swapchain_and_attachments);
-    run_and_return_if_failure(create_frames);
-    // run_and_return_if_failure(create_default_descriptors);
-    // run_and_return_if_failure(create_descriptors);
-    // run_and_return_if_failure(create_default_pipelines);
+    bcr_run_or_return_failure(create_vk_instance(),               *init_success);
+    bcr_run_or_return_failure(create_surface(),                   *init_success);
+    bcr_run_or_return_failure(select_physical_device(),           *init_success);
+    bcr_run_or_return_failure(create_logical_device(),            *init_success);
+    bcr_run_or_return_failure(initialize_allocators(),            *init_success);
+    bcr_run_or_return_failure(create_swapchain_and_attachments(), *init_success);
+    bcr_run_or_return_failure(create_frames(),                    *init_success);
+    bcr_run_or_return_failure(create_upload_state(),              *init_success);
+    bcr_run_or_return_failure(create_texture_descriptors(),       *init_success);
+    bcr_run_or_return_failure(create_materials_buffer(),          *init_success);
+    bcr_run_or_return_failure(create_pipelines(),                 *init_success);
 
     return true;
 }
@@ -39,6 +26,7 @@ backend_create_renderer :: () -> bool {
 // todo: figure out how to make this not take 1,000,000,000 years.
 // seems it's mostly vkCreateInstance()
 create_vk_instance :: () -> bool {
+    using engine.renderer;
     auto_release_temp();
     
     if !render_evaluate(instance_extensions_are_supported(required_instance_extensions), "required instance extensions unsupported") then return false;
@@ -67,6 +55,7 @@ create_vk_instance :: () -> bool {
 }
 
 instance_extensions_are_supported :: (extensions: []*u8) -> bool {
+    using engine.renderer;
     auto_release_temp();
 
     available_extensions, result := vkEnumerateInstanceExtensionProperties(null,,temp);
@@ -90,6 +79,7 @@ instance_extensions_are_supported :: (extensions: []*u8) -> bool {
 }
 
 instance_layers_are_supported :: (layers: []*u8) -> bool {
+    using engine.renderer;
     auto_release_temp();
     
     available_layers, result := vkEnumerateInstanceLayerProperties(,,temp);
@@ -114,6 +104,7 @@ instance_layers_are_supported :: (layers: []*u8) -> bool {
 }
 
 create_surface :: () -> bool {
+    using engine.renderer;
     #if OS == .WINDOWS {
         create_info := VkWin32SurfaceCreateInfoKHR.{
             hwnd = window,
@@ -129,6 +120,7 @@ create_surface :: () -> bool {
 }
 
 create_logical_device :: () -> bool {
+    using engine.renderer;
     auto_release_temp();
 
     queue_priority := 1.0;
@@ -147,6 +139,10 @@ create_logical_device :: () -> bool {
         fillModeNonSolid = VK_TRUE,
         wideLines = VK_TRUE,
         multiDrawIndirect = VK_TRUE,
+        // instance data is indexed by gl_InstanceIndex, which starts at the draw's firstInstance
+        drawIndirectFirstInstance = VK_TRUE,
+        // 64-bit buffer addresses in shaders
+        shaderInt64 = VK_TRUE,
     };
 
     vulkan_1_2_features := VkPhysicalDeviceVulkan12Features.{
@@ -157,6 +153,11 @@ create_logical_device :: () -> bool {
         runtimeDescriptorArray = VK_TRUE,
         shaderSampledImageArrayNonUniformIndexing = VK_TRUE,
         descriptorBindingVariableDescriptorCount = VK_TRUE,
+        // textures can be registered while frames that use the texture array are in flight
+        descriptorBindingSampledImageUpdateAfterBind = VK_TRUE,
+        descriptorBindingUpdateUnusedWhilePending = VK_TRUE,
+        // shaders reach buffers through pointers instead of descriptors
+        bufferDeviceAddress = VK_TRUE,
     };
 
     // as far as I know, this is just for being able to use gl_DrawID in shaders for indexing by draw.

@@ -13,6 +13,9 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "frontend/per_frame_update.jai";
 #load "frontend/physical_device.jai";
 #load "frontend/system.jai";
+#load "frontend/mesh_upload.jai";
+#load "frontend/gather.jai";
+#load "frontend/lines.jai";
 
 #scope_module
 
@@ -24,3 +27,7 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "backend/swapchain.jai";
 #load "backend/getters.jai";
 #load "backend/frame.jai";
+#load "backend/commands.jai";
+#load "backend/upload.jai";
+#load "backend/descriptors.jai";
+

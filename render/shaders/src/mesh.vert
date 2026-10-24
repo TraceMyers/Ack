@@ -1,10 +1,3 @@
-layout(location=0) in vec3 in_position;
-layout(location=1) in vec3 in_normal;
-layout(location=2) in vec4 in_tangent;
-layout(location=3) in vec2 in_uv_0;
-layout(location=4) in vec2 in_uv_1;
-layout(location=5) in vec4 in_color;
-
 layout(location=0) out      mat3 out_tbn;
 // 1, 2 = mat cols
 layout(location=3) out      vec2 out_uv_0;
@@ -15,41 +8,31 @@ layout(location=7) out      vec4 tint;
 layout(location=8) out flat int  out_material_id;
 layout(location=9) out flat int  out_entity_id;
 
-layout(set=3, binding=0, scalar) readonly buffer Mesh_Instance_Data {
-    Mesh_Instance_Shader_Data array[];
-} mesh_instances;
-
-layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
-    Mesh_Section_Shader_Data array[];
-} mesh_sections;
-
-Mesh_Instance_Shader_Data get_mesh_instance(Mesh_Section_Shader_Data mesh_section) {
-    int mesh_instance_index = mesh_section.mesh_instance_offset + gl_InstanceIndex;
-    return mesh_instances.array[mesh_instance_index];
-}
-
 void main() {
-    Mesh_Section_Shader_Data mesh_section = mesh_sections.array[gl_DrawID];
-    Mesh_Instance_Shader_Data mesh_inst = get_mesh_instance(mesh_section);
+    // vertices are pulled from this draw's section. the index buffer gives gl_VertexIndex.
+    Draw_Section section = pc.sections.s[gl_DrawID];
+    Static_Mesh_Vertex vertex = Static_Vertices_Ref(section.vertices).v[gl_VertexIndex];
+    // the draw's firstInstance is where its instances start
+    Instance_Data mesh_inst = pc.instances.i[gl_InstanceIndex];
 
     mat4 model = mesh_inst.transform;
 
     // generating the orthonormal axes of this triangle in world space
-    vec3 T = normalize(vec3(vec4(in_tangent.xyz, 0.0) * model));
-    vec3 N = normalize(vec3(vec4(in_normal.xyz,  0.0) * model));
-    vec3 B = cross(N, T) * in_tangent.w; // handedness - which direction does this ortho vector point of the two?
+    vec3 T = normalize(vec3(vec4(vertex.tangent.xyz, 0.0) * model));
+    vec3 N = normalize(vec3(vec4(vertex.normal.xyz,  0.0) * model));
+    vec3 B = cross(N, T) * vertex.tangent.w; // handedness - which direction does this ortho vector point of the two?
 
     add_color = vec4(0,0,0,0);
     tint = vec4(1,1,1,1);
 
-    gl_Position = vec4(in_position, 1.0) * model * frame.view_projections[mesh_inst.layer];
+    gl_Position = vec4(vertex.position, 1.0) * model * frame.view_projection;
 
     ## mesh_specialization
 
     out_tbn         = mat3(T, B, N);
-    out_uv_0        = in_uv_0;
-    out_uv_1        = in_uv_1;
-    out_color       = in_color * tint;
-    out_material_id = mesh_section.material;
+    out_uv_0        = vertex.uv_0;
+    out_uv_1        = vertex.uv_1;
+    out_color       = vertex.color * tint;
+    out_material_id = section.material;
     out_entity_id   = mesh_inst.entity_id;
 }

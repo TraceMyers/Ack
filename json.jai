@@ -504,27 +504,25 @@ JSON_Error :: struct {
 #scope_module // -----------------------------------------------------------------------
 
 add_load_error :: (code: JSON_Error_Code, file_position: s64, flags: JSON_Error_Flags = 0) {
-    using context;
-
     if flags & .FATAL {
-        json_load_result.any_fatal_errors = true;
+        context.json_load_result.any_fatal_errors = true;
     }
 
     error := JSON_Error.{
         code=code, flags=flags|.INTERNAL_UNPROCESSED, _internal_file_position=xx file_position
     };
 
-    if json_errors.count == json_error_buffer.count {
-        if json_load_result.any_fatal_errors {
+    if context.json_errors.count == context.json_error_buffer.count {
+        if context.json_load_result.any_fatal_errors {
             // make sure at least the final fatal error is recorded, even if the errors are truncated.
-            json_error_buffer[json_error_buffer.count-1] = error;
+            context.json_error_buffer[context.json_error_buffer.count-1] = error;
         }
-        json_load_result.errors_truncated = true;
+        context.json_load_result.errors_truncated = true;
         return;
     }
 
-    json_errors.count += 1;
-    json_errors[json_errors.count-1] = error;
+    context.json_errors.count += 1;
+    context.json_errors[context.json_errors.count-1] = error;
 }
 
 // -----------------------------------------------------------------------------------
@@ -1392,9 +1390,7 @@ on_exit_main_load_proc :: (parser: *JSON_Parser, parse_success: bool, shrink_all
 
     // -----------------------------------------------------
 
-    using context;
-
-    if parse_success && shrink_allocations && json_load_result.allocator.proc != temp.proc {
+    if parse_success && shrink_allocations && context.json_load_result.allocator.proc != temp.proc {
         array_shrink_if_small_enough(*parser.elements, 0.9);
         array_shrink_if_small_enough(*parser.strings, 0.9);
         array_shrink_if_small_enough(*parser.file_positions, 0.9);
@@ -1403,22 +1399,22 @@ on_exit_main_load_proc :: (parser: *JSON_Parser, parse_success: bool, shrink_all
     post_process_success := post_process_collections(*parser.elements, parser.strings);
 
     if parse_success && post_process_success {
-        json_load_result.elements = parser.elements;
-        json_load_result.strings = parser.strings;
-        json_load_result.file_positions = parser.file_positions;
+        context.json_load_result.elements = parser.elements;
+        context.json_load_result.strings = parser.strings;
+        context.json_load_result.file_positions = parser.file_positions;
     } else {
         array_reset(*parser.elements);
         array_reset(*parser.strings);
         array_reset(*parser.file_positions);
     }
 
-    json_load_result.errors = json_errors;
+    context.json_load_result.errors = context.json_errors;
 
     file_context_lines: [8]string;
     fcl_indices: [file_context_lines.count]int;
     fcl_i := 0;
 
-    if parser.text.count > 0 && json_errors.count > 0 {
+    if parser.text.count > 0 && context.json_errors.count > 0 {
         next_text_covered_size := 0;
 
         // each error originally is only recorded at a file position
@@ -1435,7 +1431,7 @@ on_exit_main_load_proc :: (parser: *JSON_Parser, parse_success: bool, shrink_all
             file_context_lines[fcl_i] = line;
             defer fcl_i = _increment_wrap(fcl_i, 0, file_context_lines.count-1);
 
-            for *err : json_errors {
+            for *err : context.json_errors {
                 if (err.flags & .INTERNAL_UNPROCESSED) == 0 {
                     processed_error_count += 1;
                     continue;
@@ -1493,7 +1489,7 @@ HERE,
                 }
             }
 
-            if processed_error_count == json_errors.count {
+            if processed_error_count == context.json_errors.count {
                 break;
             }
         }

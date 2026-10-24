@@ -27,7 +27,7 @@ lock :: inline (mutex: *Spin_Mutex) {
 }
 
 unlock :: inline (mutex: *Spin_Mutex) {
-    atomic_write(mutex.state, false);
+    atomic_write(*mutex.state, false);
 }
 
 
@@ -62,7 +62,7 @@ RW_Lock_Type :: enum u8 {
 
 RW_Mutex :: struct {
     state: s64;
-    wait_events: [..]Event_Handle;
+    wait_events: [..]Thread_Wait_Event;
     wait_events_mutex: Spin_Mutex;
 
     #if ENABLE_RW_MUTEX_SPIN_TEST {
@@ -155,7 +155,7 @@ try_acquire_loop :: (mutex: *RW_Mutex, $key: s64, $lock_acquired: (s64) -> bool)
 wake_front :: inline (mutex: *RW_Mutex, do_lock := true) {
     if do_lock then lock(*mutex.wait_events_mutex);
     if mutex.wait_events.count > 0 {
-        signal_event(mutex.wait_events[0]);
+        signal_event(mutex.wait_events[0].handle);
     }
     if do_lock then unlock(*mutex.wait_events_mutex);
 }
@@ -172,7 +172,7 @@ move_front :: (mutex: *RW_Mutex) {
 add_wait_event :: inline (mutex: *RW_Mutex) -> Thread_Wait_Event {
     scope_lock(*mutex.wait_events_mutex);
     event := borrow_thread_wait_event();
-    array_add(*mutex.wait_events, event.handle);
+    array_add(*mutex.wait_events, event);
     return event;
 }
 
@@ -181,8 +181,8 @@ add_wait_event :: inline (mutex: *RW_Mutex) -> Thread_Wait_Event {
 // -----------------------------------------------------------------------------------
 
 init_thread_wait_events :: () {
-    context.thread_wait_Events.items.allocator = context.allocator;
-    context.thread_wait_Events.queue.allocator = context.allocator;
+    context.thread_wait_events.items.allocator = context.allocator;
+    context.thread_wait_events.queue.allocator = context.allocator;
 }
 
 borrow_thread_wait_event :: () -> Thread_Wait_Event {
@@ -196,17 +196,17 @@ borrow_thread_wait_event :: () -> Thread_Wait_Event {
         array_resize(*items, new_count);
         array_reserve(*queue, new_count);
         for < old_count..new_count-1 {
-            array_add(*queue, it);
+            array_add(*queue, xx it);
         }
     }
 
-    event  := Thread_Wake_Event.{pool_id=queue[queue.count-1]};
+    event  := Thread_Wait_Event.{pool_id=queue[queue.count-1]};
     queue.count -= 1;
 
     handle := *items[event.pool_id];
 
     if handle.* == null {
-        handle.* = CreateEventA(null, Win32.BOOL.TRUE, Win32.BOOL.FALSE, tprint("thread wait event %", event.pool_id));
+        handle.* = Win32.CreateEventA(null, xx Win32.BOOL.TRUE, xx Win32.BOOL.FALSE, temp_c_string(tprint("thread wait event %", event.pool_id)));
         engine_check(handle.* != null, level=.HIGH);
     }
     event.handle = handle.*;
@@ -217,7 +217,7 @@ borrow_thread_wait_event :: () -> Thread_Wait_Event {
 return_thread_wait_event :: (event: Thread_Wait_Event) {
     handle := context.thread_wait_events.items[event.pool_id];
     reset_event(event.handle);
-    array_add(*context.thread_wait_events.queue, event.pool_id);
+    array_add(*context.thread_wait_events.queue, xx event.pool_id);
 }
 
 // -----------------------------------------------------------------------------------
@@ -226,11 +226,11 @@ return_thread_wait_event :: (event: Thread_Wait_Event) {
     Event_Handle :: Win32.HANDLE;
 
     reset_event :: (handle: Event_Handle) {
-        Win32.ResetEvent(handle);
+        ResetEvent(handle);
     }
 
     signal_event :: (handle: Event_Handle) {
-        Win32.SetEvent(handle);
+        SetEvent(handle);
     }
 
     wait_for_event :: (event: Event_Handle) {

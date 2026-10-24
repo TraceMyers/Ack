@@ -91,7 +91,7 @@ Color_HSY :: struct {
 }
 
 operator * :: inline (color: Color4f, scalar: float) -> Color4f #symmetric {
-    debug__check_float_rgb(color4f);
+    debug__check_float_rgb(color);
 
     c := Color4f.{color.r * scalar, color.g * scalar, color.b * scalar, color.a};
     c.r = clamp(c.r, 0, 1);
@@ -114,7 +114,6 @@ to_color4f :: inline (color3f: Color3f, alpha := 1.0) -> Color4f {
 
 to_color4f :: inline (color3f: Color3f, alpha : u8 = 255) -> Color4f {
     debug__check_float_rgb(color3f);
-    engine_check(is_norm_float(alpha), level=.HIGH);
 
     float_color: Color4f = ---;
     float_color.r = color3f.r;

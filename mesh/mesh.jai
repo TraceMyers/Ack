@@ -53,7 +53,8 @@ Mesh_Vertex_Buffer :: struct {
 Texture_Buffer :: struct {
     width: s32;
     height: s32;
-    index: s16;
+    // set when uploaded to the gpu
+    image: *GPU_Image;
     // may not be allocated on cpu
     cpu_allocation: []Color4b;
 }
@@ -107,7 +108,8 @@ Texture :: struct {
     horizontal_wrap: Texture_Wrap;
     vertical_wrap:   Texture_Wrap;
     local_buffer: s16 = -1;
-    global_buffer: s16 = -1;
+    // the texture's slot in the shaders' texture array
+    global_buffer: s32 = -1;
 }
 
 Material :: struct {
@@ -193,8 +195,10 @@ Mesh_Attachment :: struct {
 Mesh_Instance :: struct {
     ref: Mesh_Ref;
     attachment: Mesh_Attachment;
+    // index into the managed meshes' specializations. see add_specialization.
     specialization_params: s32 = -1;
     visible := true;
+    layer: Draw_Layer;
 }
 
 Static_Mesh_Instance :: Mesh_Instance;
@@ -356,10 +360,10 @@ move_pointer :: inline (ptr: **u8, old_allocation: *u8, new_allocation: *u8) {
     ptr.* = new_allocation + offset;
 }
 
-clear_mesh_loading_arrays :: () {
-    array_reset(*context.ack_mesh_self_allocation); 
-    array_reset(*context.ack_mesh_buffers_allocation);
-}
+// clear_mesh_loading_arrays :: () {
+//     array_reset(*context.ack_mesh_self_allocation); 
+//     array_reset(*context.ack_mesh_buffers_allocation);
+// }
 
 alloc_or_look_up_texture_buffer :: (file: string, start_pos: int) -> s32 {
     for item : context.ack_mesh_texture_buffer_table {
@@ -381,7 +385,8 @@ alloc_or_look_up_texture_buffer :: (file: string, start_pos: int) -> s32 {
     buf := *new_item.texture_buffer;
     buf.cpu_allocation.data = xx stbi_load_from_memory(file.data + pos, count, *buf.width, *buf.height, *channels, 4);
     engine_check(channels == 4);
-    buf.cpu_allocation.count = count / 4;
+    // count is the encoded file size. the decoded image is width * height rgba pixels.
+    buf.cpu_allocation.count = buf.width * buf.height;
 
     return xx (context.ack_mesh_texture_buffer_table.count-1);
 }

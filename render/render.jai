@@ -3,6 +3,8 @@ case "VULKAN";
     #load "vulkan/vulkan.jai";
 }
 
+#load "draw.jai";
+
 Renderer :: struct {
     // modify data here and the renderer will react on update.
     config: Renderer_Config;
@@ -10,14 +12,17 @@ Renderer :: struct {
     // todo: define user's role in adding to/building the dev gui, then provide controls.
     // dev_gui_callback: *void;
 
-    // copied here at the beginning of per-frame update. modifying it has no consequences to 
+    // copied here at the beginning of per-frame update. modifying it has no consequences to
     // rendering except under race conditions.
     using last_per_frame_input: Renderer_Per_Frame_Input;
+
+    // immediate draws (debug lines, one-off meshes) submitted for the next frame. see draw.jai.
+    draws: Frame_Draws;
 
     // backend isn't opaque because it doesn't seem necessary. backend is just separated so 
     // that it's clear what is typically managed & accessed by the user program and what 
     // is typically managed by the renderer.
-    backend: Renderer_Backend;
+    using backend: Renderer_Backend;
 
     // copied into renderer post-creation. provided for read-only reference. modifying it 
     // doesn't do anything.
@@ -35,7 +40,8 @@ Renderer_Creation_Settings :: struct {
     engine_name         := "Ack!";
     engine_version      := ACK_VERSION;
 
-    max_textures                : u32 = 4096;
+    // the texture array grows past this when needed
+    initial_texture_capacity    : u32 = 1024;
     max_materials               : u32 = 4096;
     max_static_mesh_instances   : u32 = 32_768;
     max_skeletal_mesh_instances : u32 = 16_384;
@@ -78,6 +84,7 @@ Renderer_View_Mode :: enum u8 {
 }
 
 Renderer_Per_Frame_Input :: struct {
+    // the times are set from engine.clock at the start of each renderer update
     delta_time: float32;
     unscaled_delta_time: float32;
     global_shader_time: float32;
@@ -86,7 +93,23 @@ Renderer_Per_Frame_Input :: struct {
     camera_info: Camera_Info;
     camera_position: Vector3;
     camera_orientation: Quaternion;
+    light_direction := Vector3.{0, 0, -1};
 }
+
+// layers draw in this order: GAME, then LAYER_5 down to LAYER_1. the depth buffer is cleared
+// before each layer after GAME, so a layer always draws over everything in the layers before it,
+// while keeping full depth precision within itself.
+Draw_Layer :: enum u8 {
+    GAME;
+    LAYER_1; // drawn last, in front of everything
+    LAYER_2;
+    LAYER_3;
+    LAYER_4;
+    LAYER_5;
+}
+
+DRAW_LAYER_COUNT :: #run enum_highest_value(Draw_Layer) + 1;
+DRAW_LAYER_ORDER :: Draw_Layer.[.GAME, .LAYER_5, .LAYER_4, .LAYER_3, .LAYER_2, .LAYER_1];
 
 Renderer_Per_Frame_Output :: struct {
     rendered_frame_count: u64;
@@ -149,7 +172,18 @@ destroy_renderer :: () {
 }
 
 update_renderer :: () {
+    if engine.renderer == null || !engine.renderer.init_success {
+        return;
+    }
 
+    using engine.renderer;
+    delta_time               = engine.clock.delta_time;
+    unscaled_delta_time      = engine.clock.unscaled_delta_time;
+    global_shader_time       = xx engine.clock.time;
+    global_shader_delta_time = engine.clock.delta_time;
+
+    render_frame();
+    reset_frame_draws();
 }
 
 copy_shaders_from_engine :: () -> success: bool {
@@ -199,7 +233,9 @@ compile_shaders :: () -> success: bool {
     using engine;
     render_log("compiling shaders", flags=.VERBOSE_ONLY);
 
-    shaders_path := parse_path_ext(project_info.shaders_path);
+    // shaders are loaded from project_path/shaders_path, so compile them there too
+    shaders_path := parse_path_ext(project_info.project_path);
+    move_down_directories(*shaders_path, project_info.shaders_path, false);
     shaders_path_str := path_to_string_ext(*shaders_path);
     if !file_exists(shaders_path_str) {
         render_error("did not find path %", shaders_path_str);
@@ -217,9 +253,11 @@ compile_shaders :: () -> success: bool {
         return false;
     }
 
-    move_down_directory(*shaders_path, "spirv", false);
-    spirv_path_str := path_to_string_ext(*shaders_path);
-    make_directory_if_it_does_not_exist(spirv_path_str);
+    // relative to the shaders directory, which is now the working directory
+    if !make_directory_if_it_does_not_exist("spirv") {
+        render_error("failed to make the spirv directory at %", shaders_path_str);
+        return false;
+    }
 
     Shader_Files :: struct {
         header: string;
@@ -346,7 +384,6 @@ Renderer_Backend_Base :: struct {
     linear_allocator:  GPU_Linear_Allocator;
     general_allocator: GPU_General_Allocator;
 
-    images:       Pool(GPU_Image);
     materials:     Pool(Material);
     meshes:        Managed_Meshes;
 

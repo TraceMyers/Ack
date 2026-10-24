@@ -41,7 +41,7 @@ Ack_Log_Flags :: enum_flags u32 {
     NO_PROCEDURE_NAME :: 0x10;
     // log the location of the caller even if it's not an error
     FORCE_LOG_LOCATION;
-    // only call the passthrough, don't write to stdout/stderror/file.
+    // only call the callback, don't write to stdout/stderror/file.
     CALLBACK_ONLY;
     // add an extra newline at the end
     ADD_NEWLINE;

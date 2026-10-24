@@ -12,7 +12,8 @@ layout(location=2) out flat uint out_texture_index;
 // std430 makes it so arrays of data are packed correctly rather
 // than having each element aligned to the struct's alignment.
 // does nothing here probably a good idea to always use it.
-layout(set=3, binding=0, std430) readonly buffer Instance_Data {
+// todo: not ported to the new renderer yet (instances by device address, no pipeline)
+layout(set=3, binding=0, std430) readonly buffer Billboard_Instance_Data {
     Billboard_Instance instances[];
 } instance_data;
 
@@ -25,7 +26,7 @@ void main() {
     vec3 world_offset = frame.camera_up * up_distance + frame.camera_right * right_distance;
     vec3 world_pos    = inst.position.xyz + world_offset;
 
-    gl_Position = vec4(world_pos, 1.0) * frame.view_projections[inst.layer];
+    gl_Position = vec4(world_pos, 1.0) * frame.view_projection;
 
     out_tint          = inst.tint;
     out_uv            = inst.uv_offset + in_uv_0 * inst.uv_scale;

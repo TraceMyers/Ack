@@ -76,13 +76,13 @@ get_box_points :: inline (position: Vector3, length_vec: Vector3, height_vec: Ve
 
 get_closest_point_in_aabb :: inline (position: Vector3, aabb: AABB) -> Vector3 {
     diff := position - aabb.center;
-    return aabb.center + clamp(diff, aabb.extent);
+    return aabb.center + clamp(diff, aabb.center - aabb.extent, aabb.center + aabb.extent);
 }
 
 get_closest_point_in_box :: inline (position: Vector3, box: Box) -> Vector3 {
     diff := position - box.center;
     dist_along_axes := Vector3.{dot(diff, box.right), dot(diff, box.fore), dot(diff, box.up)};
-    return box.center + clamp(dist_along_axes, box.extent);
+    return box.center + clamp(dist_along_axes, box.center - box.extent, box.center + box.extent);
 }
 
 is_point_inside_box :: (point: Vector2, upper_left: Vector2, lower_right: Vector2) -> bool {

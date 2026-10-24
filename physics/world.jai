@@ -12,6 +12,7 @@ Physical_World :: struct {
     update_timestamp: float64;
     time_scale: float32;
     step_count: int;
+    last_step_delta: int;
 
     delta_time: float32;
 

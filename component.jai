@@ -23,7 +23,10 @@ information about how to interact with your entities.
         // your procedure, type: (*Your_Entity_Type) -> Your_Entity_ID
         entity_to_id_proc :: your_entity_to_id; 
         // your procedure, type: (Your_Entity_ID) -> *Your_Entity_Type
-        id_to_entity_proc :: your_id_to_entity; 
+        id_to_entity_proc :: your_id_to_entity;
+        // optional. your procedure, type: (Your_Entity_ID) -> Matrix4. the entity's world transform,
+        // which the renderer combines with each mesh instance's attachment.
+        entity_transform_proc :: your_entity_transform;
     }
 );
 
@@ -535,7 +538,7 @@ add_new_component :: (storage: *Multi_Component_Storage, component_ptr: **storag
 
         collection_tinfo := cast(*Type_Info_Struct) type_info(storage.component_collection);
         for member : collection_tinfo.members {
-            print(*builder, "minit(*chunk.%[indexer.second]);\n", member.name);
+            print(*builder, "meminit(*chunk.%[indexer.second]);\n", member.name);
         }
         return builder_to_string(*builder);
     }

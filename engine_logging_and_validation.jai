@@ -1,5 +1,7 @@
 #scope_module
 
+Engine_Log_Procedure :: #type (format_string: string, args: .. Any, loc := #caller_location, flags := Log_Flags.NONE, user_flags : u32 = 0);
+
 scope_set_log_source :: (id: Ack_Log_Source_ID) #expand {
     context.log_source_identifier = xx id;
     `defer context.log_source_identifier = 0;

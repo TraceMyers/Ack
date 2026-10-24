@@ -49,7 +49,7 @@ to_direction2d :: (dir: Vector2) -> cardinal: Direction_2D {
 }
 
 to_vector2 :: (cardinal: Direction_2D) -> Vector2 {
-    if #complete dir == {
+    if #complete cardinal == {
     case .UP;
         return VECTOR2_UP;
     case .RIGHT;
@@ -62,7 +62,7 @@ to_vector2 :: (cardinal: Direction_2D) -> Vector2 {
 }
 
 to_vector3 :: (cardinal: Direction_3D) -> Vector3 {
-    if #complete dir == {
+    if #complete cardinal == {
     case .UP;
         return VECTOR3_UP;
     case .DOWN;

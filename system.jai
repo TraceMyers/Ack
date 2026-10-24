@@ -204,6 +204,9 @@ estimate_cycle_count :: (samples: []u64) -> float64, bool {
     SetForegroundWindow :: (window: Win32.HWND) -> Win32. BOOL #foreign user32;
     SetFocus :: (window: Win32.HWND) -> Win32.BOOL #foreign user32;
     ShowCursor :: (show: bool) -> s32 #foreign user32;
+
+    SetEvent :: (handle: Win32.HANDLE) -> Win32.BOOL #foreign kernel32;
+    ResetEvent :: (handle: Win32.HANDLE) -> Win32.BOOL #foreign kernel32;
     
     GetConsoleTitleW :: (lpConsoleTitle: *s8, nSize: s32) -> s32 #foreign kernel32;
     SetConsoleTitleW :: (lpConsoleTitle: *s8) -> Win32.BOOL #foreign kernel32;

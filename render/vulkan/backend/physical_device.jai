@@ -1,10 +1,3 @@
-#scope_file
-
-using engine.renderer;
-using engine.renderer.backend;
-
-#scope_module
-
 Physical_Device :: struct {
     obj: VkPhysicalDevice;
     type: VkPhysicalDeviceType;
@@ -39,14 +32,16 @@ Physical_Device_Properties :: struct {
     texel_buffer_alignment: VkDeviceSize;
     uniform_buffer_alignment: VkDeviceSize;
     storage_buffer_alignment: VkDeviceSize;
-    device_local_buffer_memory_index: u32;
-    host_visible_buffer_memory_index: u32;
-    device_local_image_memory_index: u32;
-    host_visible_image_memory_index: u32;
+    memory_properties: VkPhysicalDeviceMemoryProperties;
+    // which memory types images can use. buffers check their own requirements when their heap is made.
+    image_memory_type_bits: u32;
     image_alignment: VkDeviceSize;
+    // upper bound for the bindless texture array
+    max_texture_descriptors: u32;
 }
 
 select_physical_device :: () -> bool {
+    using engine.renderer;
     auto_release_temp();
 
     devices, result := vkEnumeratePhysicalDevices(vk_instance,,temp);
@@ -99,6 +94,7 @@ HERE,
 }
 
 score_physical_device :: (device: VkPhysicalDevice) -> score: s32 {
+    using engine.renderer;
     properties: VkPhysicalDeviceProperties;
     features: VkPhysicalDeviceFeatures;
     vkGetPhysicalDeviceProperties(device, *properties);
@@ -137,6 +133,7 @@ score_physical_device :: (device: VkPhysicalDevice) -> score: s32 {
 }
 
 determine_physical_device_queue_family_capabilities :: (physical: *Physical_Device) -> bool {
+    using engine.renderer;
     physical.queue_family_indices = .{};
 
     queue_family_properties := vkGetPhysicalDeviceQueueFamilyProperties(physical.obj,,temp);
@@ -198,6 +195,7 @@ determine_physical_device_queue_family_capabilities :: (physical: *Physical_Devi
 }
 
 device_extensions_are_supported :: (phys: VkPhysicalDevice, extensions: []*u8) -> bool {
+    using engine.renderer;
     auto_release_temp();
 
     available_extensions, result := vkEnumerateDeviceExtensionProperties(phys, null,,temp);
@@ -220,6 +218,7 @@ device_extensions_are_supported :: (phys: VkPhysicalDevice, extensions: []*u8) -
 }
 
 depth_buffer_format :: (phys: VkPhysicalDevice) -> VkFormat {
+    using engine.renderer;
     need_flags : VkFormatFeatureFlags = .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_IMAGE_BIT;
     for format : DEPTH_STENCIL_FORMATS {
         props: VkFormatProperties;
@@ -232,6 +231,7 @@ depth_buffer_format :: (phys: VkPhysicalDevice) -> VkFormat {
 }
 
 get_swapchain_support_info :: (phys: VkPhysicalDevice, info: *Swapchain_Support_Info) -> bool {
+    using engine.renderer;
     if !render_evaluate(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(phys, surface, *info.capabilities), "unable to get surface capabilities of a physical device") {
         return false;
     }
@@ -252,10 +252,17 @@ get_swapchain_support_info :: (phys: VkPhysicalDevice, info: *Swapchain_Support_
 }
 
 set_physical_device_properties :: (physical: *Physical_Device) {
+    using engine.renderer;
     using physical;
-    temp_properties: VkPhysicalDeviceProperties;
+    indexing_properties: VkPhysicalDeviceDescriptorIndexingProperties;
+    temp_properties_2 := VkPhysicalDeviceProperties2.{pNext = *indexing_properties};
+    vkGetPhysicalDeviceProperties2(physical.obj, *temp_properties_2);
+    temp_properties := temp_properties_2.properties;
 
-    vkGetPhysicalDeviceProperties(physical.obj, *temp_properties);
+    properties.max_texture_descriptors = min(
+        min(indexing_properties.maxDescriptorSetUpdateAfterBindSampledImages, indexing_properties.maxPerStageDescriptorUpdateAfterBindSampledImages),
+        cast(u32) (1 << 20)
+    );
     properties.api_version = temp_properties.apiVersion;
     properties.driver_version = temp_properties.driverVersion;
     properties.vendor_id = temp_properties.vendorID;
@@ -271,6 +278,7 @@ set_physical_device_properties :: (physical: *Physical_Device) {
 }
 
 set_physical_device_size :: (physical: *Physical_Device) -> bool {
+    using engine.renderer;
     physical.size = 0;
 
     memory_properties: VkPhysicalDeviceMemoryProperties;
@@ -287,6 +295,7 @@ set_physical_device_size :: (physical: *Physical_Device) -> bool {
 }
 
 temp_get_unique_queue_family_indices :: (physical: *Physical_Device) -> []u32 {
+    using engine.renderer;
     already_made_queue: Queue_Family_Capability_Flags;
     unique_indices := make_dynamic_array(u32, 4,, temp);
     for 0..physical.queue_family_indices.array.count-1 {

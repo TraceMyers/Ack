@@ -7,7 +7,7 @@ LUT :: struct {
 make_lut :: (curve_function: (x: float) -> y: float, min_x: float, max_x: float, sample_resolution: int) -> LUT {
     engine_check(sample_resolution >= 2);
 
-    lut := LUT.{y_values = NewArray(float, sample_resolution), min_x = min_x, inv_domain_size = 1.0 / (max_x - min_x)};
+    lut := LUT.{y_values = make_static_array(float, sample_resolution), min_x = min_x, inv_domain_size = 1.0 / (max_x - min_x)};
 
     even_sample_resolution := sample_resolution & 0x1 == 0;
 
@@ -20,20 +20,21 @@ make_lut :: (curve_function: (x: float) -> y: float, min_x: float, max_x: float,
     return lut;
 }
 
-sample_lut_or_get_alternative :: (lut: LUT, x: float, alt := 0) -> y: float {
+sample_lut_or_get_alternative :: (lut: LUT, x: float, alt := 0.0) -> y: float {
     if lut.y_values.count == 0 {
         return alt;
     }
-    return sample_lut(lut, float);
+    return sample_lut(lut, x);
 }
 
 sample_lut :: inline (lut: LUT, x: float) -> y: float {
     norm_x := clamp((x - lut.min_x) * lut.inv_domain_size, 0, 1);
-    i := round(norm_x * y_values.count);
+    i := round(norm_x * (lut.y_values.count - 1));
     return lut.y_values[i];
 }
 
 get_lut_x_value :: (i: int, min_x: float, max_x: float, sample_resolution: int) -> x: float {
+    diff := max_x - min_x;
     if i == 0 || i == sample_resolution - 1  {
         // min and max are often important values, so keep those...
         return min_x + (diff * (cast(float) i / (sample_resolution - 1)));

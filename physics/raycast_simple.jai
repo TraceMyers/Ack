@@ -41,7 +41,7 @@ raycast_triangle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3,
 }
 
 raycast_circle :: inline (result: *Raycast_Result_Simple, ray_origin: Vector3, ray_direction: Vector3, center: Vector3, radius: float, plane_normal: Vector3) -> bool {
-    if raycast_plane_simple(result, ray_origin, ray_direction, center, plane_normal) {
+    if raycast_plane(result, ray_origin, ray_direction, center, plane_normal) {
         if distance_squared(center, result.hit_location) > square(radius) {
             result.* = {};
             return false;

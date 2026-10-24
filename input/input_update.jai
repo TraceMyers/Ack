@@ -8,6 +8,7 @@ update_input :: () {
     }
 
     update_window_events();
+    update_window();
     update_gamepad();
 
     should_quit: bool;

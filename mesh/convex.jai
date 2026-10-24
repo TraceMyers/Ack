@@ -184,10 +184,6 @@ get_triangle :: inline (using tri: *Triangle, i: int, indices: *Mesh_Index_Buffe
     normal = cross(ac, ab);
 }
 
-calc_ascending :: inline (using tri: *Triangle) {
-    ascending.a, ascending.b, ascending.c = get_ascending_tri(array_order.a, array_order.b, array_order.c);
-}
-
 Triangle :: struct {
     array: [3]u32;
     normal: Vector3; // not normalized

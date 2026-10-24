@@ -480,5 +480,60 @@ upper_bound :: (using allocator: *Allocator_64, address: u64) -> s64 {
     return low;
 }
 
+#scope_export
+
+allocator_64_test :: () -> bool {
+    a: Allocator_64;
+    a.data_allocator = context.default_allocator;
+    allocator_64_startup(*a);
+    defer allocator_64_shutdown(*a);
+
+    Live :: struct {
+        memory: *u8;
+        size:   s64;
+        stamp:  u8;
+    }
+    live: [..]Live;
+    live.allocator = temp;
+
+    stamp_is_intact :: (l: Live) -> bool {
+        for 0..l.size-1 {
+            if l.memory[it] != l.stamp then return false;
+        }
+        return true;
+    }
+
+    // in-grid, oversized, and over-aligned allocations, with random frees mixed in
+    for 0..9_999 {
+        size  := random_get_within_range(1, 64 * 16 * 2).(s64);
+        align := 8 << (it % 4);
+        context.allocator_align = xx align;
+        memory := alloc(size,,a).(*u8);
+        test_condition((memory.(u64) & (align - 1).(u64)) == 0);
+
+        l := Live.{memory, size, xx (it % 255 + 1)};
+        memset(l.memory, l.stamp, l.size);
+        array_add(*live, l);
+
+        if it & 1 {
+            index := random_get_within_range(0, (live.count-1).(float)).(s64);
+            test_condition(stamp_is_intact(live[index]));
+            free(live[index].memory,,a);
+            array_unordered_remove_by_index(*live, index);
+        }
+    }
+    context.allocator_align = 8;
+
+    for live {
+        test_condition(stamp_is_intact(it));
+        free(it.memory,,a);
+    }
+
+    // everything freed: only the kept empty pages are left
+    test_condition(a.ranges.count <= a.keep_empty_pages);
+
+    return true;
+} @engine_test
+
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

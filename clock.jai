@@ -105,6 +105,7 @@ wait_until :: (time_seconds: float64) -> current_time_seconds: float64, wait_tim
 wait :: (wait_ms: float64) -> current_time_seconds: float64, wait_time_ms: float64 {
     start_time := seconds_since_init();
     current_time, wait_time_ms := wait(start_time, wait_ms);
+    return current_time, wait_time_ms;
 }
 
 // highly accurate wait.

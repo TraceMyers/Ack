@@ -1,8 +1,5 @@
 #scope_file
 
-using engine.renderer;
-using engine.renderer.backend;
-
 #scope_module
 
 Swapchain_Support_Info :: struct {
@@ -23,6 +20,7 @@ Swapchain :: struct {
 }
 
 create_swapchain_and_attachments :: () -> bool {
+    using engine.renderer;
     auto_release_temp();
 
     vkDeviceWaitIdle(logical_device.obj);
@@ -45,6 +43,7 @@ create_swapchain_and_attachments :: () -> bool {
 }
 
 create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
+    using engine.renderer;
     support_info: Swapchain_Support_Info;
 
     if !render_evaluate(get_swapchain_support_info(physical_device.obj, *support_info,, temp), "unable to get swapchain support info for the selected physical device") then return false;
@@ -76,8 +75,8 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
         imageExtent = swapchain.extent,
         // layers per image
         imageArrayLayers = 1,
-        // render directly to the image
-        imageUsage = .COLOR_ATTACHMENT_BIT /*| .STORAGE_BIT | .TRANSFER_DST_BIT*/,
+        // the render target is blitted onto the image
+        imageUsage = .COLOR_ATTACHMENT_BIT | .TRANSFER_DST_BIT /*| .STORAGE_BIT*/,
         // how to transform the image before... presenting?
         preTransform = support_info.capabilities.currentTransform,
         // whether the alpha channel should blend with other windows
@@ -133,6 +132,7 @@ create_swapchain :: (old_swapchain_obj: VkSwapchainKHR) -> bool {
 }
 
 reset_swapchain_images_and_attachments :: () {
+    using engine.renderer;
     for *image : swapchain.images {
         destroy_gpu_image(image);
     }
@@ -142,6 +142,7 @@ reset_swapchain_images_and_attachments :: () {
 }
 
 choose_swapchain_surface_format :: (info: *Swapchain_Support_Info) -> VkSurfaceFormatKHR, bool {
+    using engine.renderer;
     for info.formats {
         if it.colorSpace == .COLOR_SPACE_SRGB_NONLINEAR_KHR {
             if it.format == .B8G8R8A8_SRGB || it.format == .R8G8B8A8_SRGB {
@@ -153,6 +154,7 @@ choose_swapchain_surface_format :: (info: *Swapchain_Support_Info) -> VkSurfaceF
 }
 
 choose_swapchain_present_mode :: (info: *Swapchain_Support_Info) -> VkPresentModeKHR, bool {
+    using engine.renderer;
     // 'the queue' for any queued mode (FIFO, FIFO_RELAXED, MAILBOX) refers to the logical section
     // post-submission-for-presentation, and pre-draw-on-monitor. the oldest image in the queue
     // is moved into the draw section once the monitor enters its vblank period.
@@ -174,6 +176,7 @@ choose_swapchain_present_mode :: (info: *Swapchain_Support_Info) -> VkPresentMod
 }
 
 choose_swapchain_extent :: (using info: *Swapchain_Support_Info) -> VkExtent2D, bool {
+    using engine.renderer;
     return {xx window_width, xx window_height}, true;
 }
 
@@ -182,9 +185,11 @@ choose_swapchain_extent :: (using info: *Swapchain_Support_Info) -> VkExtent2D, 
 
 // todo: free old allocation / allocate only what is needed
 create_render_target :: () -> bool {
+    using engine.renderer;
     render_check(render_target == null);
 
-    render_target = create_gpu_image(general_allocator, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .COLOR_ATTACHMENT_BIT | .SAMPLED_BIT | .STORAGE_BIT, .R16G16B16A16_SFLOAT);
+    // TRANSFER_SRC: blitted onto the swapchain image at the end of each frame
+    render_target = create_gpu_image(general_allocator, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .COLOR_ATTACHMENT_BIT | .SAMPLED_BIT | .STORAGE_BIT | .TRANSFER_SRC_BIT, RENDER_TARGET_FORMAT);
     if !render_evaluate(create_image_views(render_target, {.COLOR_BIT, .COLOR_ATTACHMENT_OPTIMAL}), "failed to create the render target image view") {
         return false;
     }
@@ -198,6 +203,7 @@ create_render_target :: () -> bool {
 
 // todo: free old allocation / allocate only what is needed
 create_depth_buffer :: () -> bool {
+    using engine.renderer;
     render_check(depth_buffer == null);
 
     depth_buffer = create_gpu_image(general_allocator, .DEVICE_LOCAL_IMAGE, xx swapchain.extent.width, xx swapchain.extent.height, .DEPTH_STENCIL_ATTACHMENT_BIT | .SAMPLED_BIT, depth_buffer_format(physical_device.obj));

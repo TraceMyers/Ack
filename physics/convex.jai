@@ -42,13 +42,15 @@ find_farthest_point_along_axis :: (points: []Vector3, axis: Vector3) -> Vector3 
 }
 
 calculate_support :: inline (points_a: []Vector3, points_b: []Vector3, axis: Vector3) -> Vector3 {
-    return find_farthest_point(points_a, axis) - find_farthest_point(points_b, -axis);
+    return find_farthest_point_along_axis(points_a, axis) - find_farthest_point_along_axis(points_b, -axis);
 }
 
 // convex shapes must be pre-processed into world space
 // (triangles array and half_height not necessary.)
-gjk :: (a: Shape_Convex, b: Shape_Convex, max_iterations := 1_000) -> bool {
-    axis := a.center - b.center;
+gjk :: (a_center: Vector3, a: Shape_Convex, b_center: Vector3, b: Shape_Convex, max_iterations := 1_000) -> bool {
+    return false;
+    /*
+    axis := a_center - b_center;
     axis_len_sq := length_squared(axis);
     if axis_len_sq < VERY_SMALL_NUMBER {
         return true;
@@ -86,6 +88,7 @@ gjk :: (a: Shape_Convex, b: Shape_Convex, max_iterations := 1_000) -> bool {
     }
 
     return false;
+    */
 }
 
 #scope_module

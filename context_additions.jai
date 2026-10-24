@@ -8,9 +8,9 @@
 #add_context json_load_result:        JSON_Load_Result;
 
 // mesh
-// #add_context ack_mesh_self_allocation: [..]u8;
-// #add_context ack_mesh_buffer_table: [..]Buffer_Table_Item;
-// #add_context ack_mesh_texture_buffer_table: [..]Texture_Buffer_Table_Item;
+#add_context ack_mesh_self_allocation: [..]u8;
+#add_context ack_mesh_buffer_table: [..]Buffer_Table_Item;
+#add_context ack_mesh_texture_buffer_table: [..]Texture_Buffer_Table_Item;
 
 // lock
 #add_context thread_wait_events: Event_Pool;

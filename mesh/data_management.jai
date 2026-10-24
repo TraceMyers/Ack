@@ -14,6 +14,79 @@ Managed_Meshes :: struct {
     path_lookup_table: Table(string, Mesh_Ref);
     instanced_meshes: Pool(Instanced_Mesh);
     animation_instances: Pool(Skeletal_Mesh_Animation_Instance);
+    specializations: Pool(Mesh_Specialization);
+}
+
+// per-instance tweaks to how a mesh is shaded. mirrored by Mesh_Specialization in
+// shaders/src/header.glsl, which mesh_specialization.glsl applies.
+Mesh_Specialization :: struct {
+    flags: Mesh_Specialization_Flags;
+    flash: Mesh_Specialization_Flash;
+    tint:  Mesh_Specialization_Tint;
+}
+
+// one flag per Mesh_Specialization field, named the same in upper case
+Mesh_Specialization_Flags :: enum_flags u32 {
+    FLASH;
+    TINT;
+}
+
+Mesh_Specialization_Flash :: struct {
+    rate: float = -1; // < 0: no flash. 0: constant brightening by value.
+    value: float;
+    begin_time: float;
+}
+
+Mesh_Specialization_Tint :: struct {
+    using color: Color3f = .{1, 1, 1};
+}
+
+// sets one field of the instance's specialization (e.g. "flash", "tint") and turns it on
+add_specialization :: (inst: *Mesh_Instance, $name: string, specialization: $T)
+#modify {
+    T = deduce_specialization_type(name);
+    return T != void;
+} {
+    if inst.specialization_params == -1 {
+        inst.specialization_params = xx pool_borrow(*managed.specializations);
+        managed.specializations[inst.specialization_params] = .{};
+    }
+    add_specialization_to_params(*managed.specializations[inst.specialization_params], name, specialization);
+}
+
+remove_specialization :: (inst: *Mesh_Instance, $name: string) {
+    if inst.specialization_params == -1 {
+        return;
+    }
+    params := *managed.specializations[inst.specialization_params];
+    #insert #run tprint("params.flags &= ~.%;\n", to_upper(name));
+    if params.flags == 0 {
+        pool_return(*managed.specializations, inst.specialization_params);
+        inst.specialization_params = -1;
+    }
+}
+
+get_specialization :: (inst: *Mesh_Instance) -> Mesh_Specialization {
+    if inst.specialization_params == -1 {
+        return .{};
+    }
+    return managed.specializations[inst.specialization_params];
+}
+
+add_specialization_to_params :: (params: *Mesh_Specialization, $name: string, specialization: $T) {
+    #insert #run tprint("params.% = specialization;\n", name);
+    #insert #run tprint("params.flags |= .%;\n", to_upper(name));
+}
+
+deduce_specialization_type :: (name: string) -> Type {
+    tinfo := cast(*Type_Info_Struct) type_info(Mesh_Specialization);
+    for member : tinfo.members {
+        if member.name == "flags" then continue;
+        if member.name == name {
+            return (cast(*Type) *member.type).*;
+        }
+    }
+    return void;
 }
 
 Skeletal_Animation_Playback_Control :: struct {
@@ -24,6 +97,10 @@ Skeletal_Animation_Playback_Control :: struct {
 set_managed_mesh_data :: (in_managed: *Managed_Meshes) {
     managed = in_managed;
     managed.instanced_meshes.track_generation = true;
+}
+
+get_managed_mesh_data :: () -> *Managed_Meshes {
+    return managed;
 }
 
 create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_type, component_or_array: *$T) -> *Skeletal_Mesh_Instance 
@@ -75,6 +152,7 @@ destroy_mesh_instance :: (entity_ref: user_types.entity_id_type, inst: **$T/Mesh
 
     if inst.*.specialization_params != -1 {
         pool_return(*managed.specializations, inst.*.specialization_params);
+        inst.*.specialization_params = -1;
     }
 
     if instanced.instances.type == .STATIC {

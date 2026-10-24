@@ -148,5 +148,72 @@ heap_allocator_free :: (using allocator: *Heap_Allocator, memory: *void) {
     free(block.raw,, backing);
 }
 
+#scope_export
+
+world_heap_test :: () -> bool {
+    heap := make_heap();
+
+    gp:      General_Purpose_Allocator;
+    scratch: Linear_Allocator;
+    grid:    Allocator_64;
+    {
+        push_allocator(heap);
+        scratch.default_page_size = 1024 * 1024;
+        general_purpose_allocator_startup(*gp);
+        linear_allocator_startup(*scratch);
+        allocator_64_startup(*grid);
+    }
+    test_condition(gp.books_allocator.data == heap.data && gp.data_allocator.data == heap.data);
+    test_condition(scratch.books_allocator.data == heap.data && scratch.data_allocator.data == heap.data);
+    test_condition(grid.books_allocator.data == heap.data && grid.data_allocator.data == heap.data);
+
+    stale := alloc(64,, heap);
+    test_condition(heap.proc(.IS_THIS_YOURS, 0, 0, stale, heap.data) != null);
+
+    // a nested heap is freed with its parent
+    level_heap := create_heap(heap);
+    memset(alloc(256 * 1024,, level_heap), 4, 256 * 1024);
+
+    context.allocator_align = 256;
+    over_aligned := alloc(100,, heap);
+    context.allocator_align = 8;
+    test_condition((over_aligned.(u64) & 255) == 0);
+
+    for 0..299 {
+        size := random_get_within_range(1, 128 * 1024).(s64);
+        memset(alloc(size,, gp), 1, size);
+        memset(alloc(size,, scratch), 2, size);
+        memset(alloc(size,, grid), 3, size);
+    }
+
+    release_heap(heap);
+    gp = {}; scratch = {}; grid = {};
+
+    // the new heap may land where the old one was. it must come back empty.
+    heap = make_heap();
+    defer release_heap(heap);
+    test_condition(heap.proc(.IS_THIS_YOURS, 0, 0, stale, heap.data) == null);
+
+    {
+        push_allocator(heap);
+        general_purpose_allocator_startup(*gp);
+    }
+    defer gp = {};
+
+    memories: [100]*u8;
+    for *memories {
+        it.* = alloc(4096,, gp);
+        memset(it.*, xx it_index, 4096);
+    }
+    for memories {
+        for byte : 0..4095 {
+            test_condition(it[byte] == xx it_index);
+        }
+        free(it,, gp);
+    }
+
+    return true;
+} @engine_test
+
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

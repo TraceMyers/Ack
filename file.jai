@@ -41,7 +41,9 @@ move_down_directories :: (path: *Path, directory_traversal: string, path_must_ex
     for directory : path_parts {
         array_add(*path.words, directory);
     }
-    return ifx path_must_exist then how_much_of_path_exists_on_the_local_filesystem(path) else true;
+    // not how_much_of_path_exists_on_the_local_filesystem: it reports nothing existing for absolute
+    // paths that start with a drive letter
+    return ifx path_must_exist then file_exists(path_to_string_ext(path)) else true;
 }
 
 move_up_directory :: (path: *Path) {

@@ -10,7 +10,7 @@
     // because the enums will not be compiled at import time.
     // 0 = NORMAL, 1 = VERBOSE/HIGH, 2=VERY_VERBOSE/VERY_HIGH
     
-    USER_VERBOSITY_LEVELS:   []u8 = xx,force Ack_Log_Level.[.NORMAL],
+    USER_VERBOSITY_LEVELS:   []u8 = .[0],
     GENERAL_VERBOSITY_LEVEL  := Ack_Log_Level.NORMAL,
     PHYSICS_VERBOSITY_LEVEL  := Ack_Log_Level.NORMAL,
     RENDER_VERBOSITY_LEVEL   := Ack_Log_Level.NORMAL,
@@ -44,6 +44,8 @@
         raycast_channels    :: Raycast_Channels_Default;
         entity_to_id_proc   :: (ent: *Entity_Type_Default) -> u64 { return 0; };
         id_to_entity_proc   :: (id: u64) -> *Entity_Type_Default { return null; };
+        // the renderer places an entity's mesh instances with this
+        entity_transform_proc :: (id: u64) -> Matrix4 { return Matrix4_Identity; };
         null_entity_id      : u64 : 0;
     }
 
@@ -68,7 +70,7 @@ ACK_VERSION :: Version.{0,1,0};
 engine: Game_Engine;
 
 // this can be called instead of doing manual init
-game_init :: (
+game_engine_init :: (
     engine_settings         := Engine_Settings.{},
     window_settings         := Window_Creation_Settings.{}, 
     renderer_settings       := Renderer_Creation_Settings.{}, 
@@ -95,26 +97,18 @@ game_init :: (
         engine.project_info.project_path = get_final_path(engine.project_info.project_path);
     }
 
-    run_or_return_failure(create_window(window_settings));
-    run_or_return_failure(create_renderer(renderer_settings));
-    run_or_return_failure(create_physical_world(physical_world_settings));
+    egi_run_or_return_failure :: #bake_arguments engine_run_or_return_failure(flags=.VERBOSE_ONLY);
+
+    egi_run_or_return_failure(create_window(window_settings),                 *engine.initialized);
+    egi_run_or_return_failure(create_renderer(renderer_settings),             *engine.initialized);
+    egi_run_or_return_failure(create_physical_world(physical_world_settings), *engine.initialized);
 
     engine.initialized = true;
     return true;
 }
 
 // you can use this instead of making your own loop.
-game_loop :: () {
-    update_system :: ($name: string) #expand {
-        #insert #run tprint("if engine.settings.pre_%_update then engine.settings.pre_%_update();", name, name);
-        #insert #run tprint("update_%();", name);
-        #insert #run tprint("if engine.settings.post_%_update then engine.settings.post_%_update();", name, name);
-    }
-
-    update_clock :: () {
-        update_clock(*engine.clock);
-    }
-
+game_engine_loop :: () {
     if !engine.initialized {
         engine_log("engine uninitialized. exiting loop");
         return;
@@ -124,12 +118,12 @@ game_loop :: () {
 
     while !engine.settings.quit {
         reset_temporary_storage();
-        update_system("input");
+        update_game_system(engine.settings.input_update);
         // if the window is already closed, then we need to quit right away
         if engine.settings.quit then break;
-        // update_system("physics");
-        update_system("renderer");
-        update_system("clock");
+        update_game_system(engine.settings.physics_update);
+        update_game_system(engine.settings.render_update);
+        update_game_system(engine.settings.clock_update);
     }
 }
 
@@ -170,22 +164,22 @@ Game_Engine :: struct {
     initialized: bool;
 }
 
+All_Game_System_Updates :: struct {
+    // before and after reading system input and calling input bindings
+    input_update   := Game_System_Update.{update=update_input};
+    // before and after calcucs
+    physics_update := Game_System_Update.{update=update_physics};
+    // before and after rendering
+    render_update  := Game_System_Update.{update=update_renderer};
+    // before and after updating engine.clock
+    clock_update   := Game_System_Update.{update=update_clock};
+}
+
 Engine_Settings :: struct {
     // updatable during loop
     quit: bool;
     auto_sync_frame_time := true;
-    // before and after reading system input and calling input bindings
-    pre_input_update: ();
-    post_input_update: ();
-    // before and after calculting physics
-    pre_physics_update: ();
-    post_physics_update: ();
-    // before and after rendering
-    pre_renderer_update: ();
-    post_renderer_update: ();
-    // before and after updating engine.clock
-    pre_clock_update: ();
-    post_clock_update: ();
+    using update_procedures: All_Game_System_Updates;
 }
 
 Project_Info :: struct {
@@ -193,6 +187,22 @@ Project_Info :: struct {
     project_path: string;
     // all other paths are project path-relative
     shaders_path := "shaders";
+}
+
+Game_System_Update :: struct {
+    pre_update: ();
+    update: ();
+    post_update: ();
+}
+
+update_game_system :: (system: Game_System_Update) {
+    if system.pre_update  != null then system.pre_update();
+    if system.update      != null then system.update();
+    if system.post_update != null then system.post_update();
+}
+
+update_clock :: () {
+    update_clock(*engine.clock);
 }
 
 // -----------------------------------------------------------------------------------------------

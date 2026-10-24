@@ -10,12 +10,8 @@ layout(location=9) in flat int  entity_id;
 
 layout(location=0) out vec4 color;
 
-layout(set=4, binding=0, scalar) readonly buffer Mesh_Section_Data {
-    Mesh_Section_Shader_Data array[];
-} mesh_sections;
-
 void main() {
-    Material mat = material_block.materials[in_material_id]; 
+    Material mat = pc.materials.m[in_material_id];
     vec2 uvs[2] = vec2[2](in_uv_0, in_uv_1);
 
     if (mat.albedo_tex != -1) {
@@ -51,5 +47,5 @@ void main() {
 
     color += add_color;
 
-    ## entity_click_selection
+    // todo: entity click selection (## entity_click_selection) needs a writable per-frame buffer
 }

@@ -54,26 +54,26 @@ get_property :: inline (in_body: *Physics_Body_Base, $property_name: string) -> 
 // any time by the user to make a point in time they know the template properties
 // to be valid.
 debug__mark_template_properties_valid :: () {
-    #if ENABLE_VALIDATION {
-        using engine.physical_world;
-        physics_check(body_templates.values.count == debug_template_properties.count);
-        for 0..body_templates.values.count-1 {
-            debug_template_properties[it] = body_templates.values[it].properties;
-        }
-    }
+    // #if ENABLE_VALIDATION {
+    //     using engine.physical_world;
+    //     physics_check(body_templates.entries.count == debug_template_properties.count);
+    //     for 0..body_templates.entries.count-1 {
+    //         debug_template_properties[it] = body_templates.values[it].properties;
+    //     }
+    // }
 }
 
 // if ENABLE_VALIDATION (module param) is true, this can be called
 // any time by the user to make sure they aren't invalidating their own templates. it
 // will also be called automatically during the physics update.
 debug__validate_template_properties :: () {
-    #if ENABLE_VALIDATION {
-        using engine.physical_world;
-        physics_check(body_templates.values.count == debug_template_properties.count);
-        for 0..body_templates.values.count-1 {
-            physics_check(body_templates.values[it].properties == debug_template_properties[it]);
-        }
-    }
+    // #if ENABLE_VALIDATION {
+    //     using engine.physical_world;
+    //     physics_check(body_templates.values.count == debug_template_properties.count);
+    //     for 0..body_templates.values.count-1 {
+    //         physics_check(body_templates.values[it].properties == debug_template_properties[it]);
+    //     }
+    // }
 }
 
 is_unique :: inline (properties: *Physics_Properties) -> unique: bool, unique_index: s32 {

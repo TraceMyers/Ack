@@ -14,8 +14,10 @@ physics_delta_time :: () -> float #expand {
 }
 
 // returns how many steps ran
-update_physics :: () -> int {
+update_physics :: () {
     using engine.physical_world;
+
+    last_step_delta = 0;
 
     if start_time == 0 {
         start_time = seconds_since_init();
@@ -27,7 +29,7 @@ update_physics :: () -> int {
     run_steps_this_frame   := total_simulation_steps - step_count;
 
     if run_steps_this_frame <= 0 {
-        return 0;
+        return;
     }
 
     if step_state == .STEP_ONCE {
@@ -39,14 +41,14 @@ update_physics :: () -> int {
     step_count = total_simulation_steps;
 
     if step_state == .PAUSED {
-        return 0;
+        return;
     }
 
     for 0..run_steps_this_frame-1 {
         run_physics_step(it);
     }
 
-    return run_steps_this_frame;
+    last_step_delta = run_steps_this_frame;
 }
 
 // if consecutive_step_index is 0, some extra initialization is done, as well

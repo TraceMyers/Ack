@@ -301,7 +301,7 @@ read_utf8 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf8_
 
 read_utf16 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf16_symbol: u32, symbol_size: u8, success: bool {
     out: num32;
-    out._u16[0] = (cast(*u16, force) (stream.*)).*;
+    out._u16[0] = (cast,force(*u16) (stream.*)).*;
     high_surrogate := out._u16[0];
     if high_surrogate < UTF16_HIGH_SURROGATE_MIN || high_surrogate > UTF16_HIGH_SURROGATE_MAX {
         if read_max < 2 {
@@ -315,7 +315,7 @@ read_utf16 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf1
         if read_max < 4 {
             return 0, 0, false;
         }
-        out._u16[1] = (cast(*u16, force) (stream.* + 2)).*;
+        out._u16[1] = (cast,force(*u16) (stream.* + 2)).*;
         stream.* += 4;
         return out._u32, 4, true;
     }
@@ -325,11 +325,11 @@ read_utf32 :: (stream: **u8, read_max: int, $advance_past_null := false) -> utf3
     if read_max < 4 {
         return 0, 0, false;
     }
-    out_u32 := (cast(*u32, force) (stream.*)).*;
+    out_u32 := (cast,force(*u32) (stream.*)).*;
     if out_u32 != 0 || advance_past_null {
         stream.* += 4;
     }
-    return out_u32;
+    return out_u32, 4, true;
 }
 
 read_ansi :: (stream: **u8, read_max: int, $advance_past_null := false) -> ansi_symbol: u32, symbol_size: u8, success: bool {
@@ -340,7 +340,7 @@ read_ansi :: (stream: **u8, read_max: int, $advance_past_null := false) -> ansi_
     if out_u32 != 0 || advance_past_null {
         stream.* += 1;
     }
-    return out._u32, 1, true;
+    return out_u32, 1, true;
 }
 
 rewind_utf8 :: (stream: **u8, rewind_max: int) -> utf8_symbol: u32, symbol_size: u8, success: bool {
@@ -353,19 +353,20 @@ rewind_utf8 :: (stream: **u8, rewind_max: int) -> utf8_symbol: u32, symbol_size:
     }
 
     while is_valid_utf8_trailing_byte(temp_stream.*) {
-        valid_header_bits |= (cast(u8) 0xc0 >> trailing_byte_ct);
+        // 1 trailing byte -> header 110xxxxx, 2 -> 1110xxxx, 3 -> 11110xxx
+        valid_header_bits |= (cast(u8) 0xc0 >> trailing_byte_count);
+        trailing_byte_count += 1;
         temp_stream -= 1;
-        trailing_byte_ct := stream.* - temp_stream;
 
-        if rewind_max < trailing_byte_ct + 1 {
+        if rewind_max < trailing_byte_count + 1 {
             return 0, 0, false;
         }
-        if trailing_byte_ct >= 4 { // this module only handles up to 4 byte utf8. 4 trailing bytes means >= 5 bytes.
+        if trailing_byte_count >= 4 { // this module only handles up to 4 byte utf8. 4 trailing bytes means >= 5 bytes.
             return 0, 0, false;
         }
     }
 
-    total_byte_ct := trailing_byte_ct + 1;
+    total_byte_ct := trailing_byte_count + 1;
 
     if total_byte_ct == 1 {
         if (temp_stream.* & 0x80) != 0 {
@@ -383,7 +384,7 @@ rewind_utf8 :: (stream: **u8, rewind_max: int) -> utf8_symbol: u32, symbol_size:
     stream.* = temp_stream;
     
     out: num32;
-    for 0..total_cyte_ct - 1 {
+    for 0..total_byte_ct - 1 {
         out._u8[it] = (stream.* + it).*;
     }
 
@@ -391,12 +392,12 @@ rewind_utf8 :: (stream: **u8, rewind_max: int) -> utf8_symbol: u32, symbol_size:
 }
 
 rewind_utf16 :: (stream: **u8, rewind_max: int) -> utf16_symbol: u32, symbol_size: u8, success: bool {
-    back_once := (cast(*u16, force) (stream.* - 2)).*;
-    if back_once >= UTF16_LOW_SURROGATE_MIN && low_surrogate <= UTF16_LOW_SURROGATE_MAX {
+    back_once := (cast,force(*u16) (stream.* - 2)).*;
+    if back_once >= UTF16_LOW_SURROGATE_MIN && back_once <= UTF16_LOW_SURROGATE_MAX {
         if rewind_max < 4 {
             return 0, 0, false;
         }
-        back_twice := (cast(*u16, force) (stream.* - 4)).*;
+        back_twice := (cast,force(*u16) (stream.* - 4)).*;
         if back_twice < UTF16_HIGH_SURROGATE_MIN || back_twice > UTF16_HIGH_SURROGATE_MAX {
             return 0, 0, false;
         }
