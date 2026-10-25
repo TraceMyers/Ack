@@ -12,6 +12,7 @@
 #load "transform.jai";
 #load "trigonometry_and_exponentials.jai";
 #load "vector.jai";
+#load "frustum.jai";
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

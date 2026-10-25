@@ -109,6 +109,8 @@ is_host_visible_type :: (heap_type: GPU_Heap_Type) -> bool {
         return true;
     case .HOST_VISIBLE_IMAGE;
         return true;
+    case .STAGING_BUFFER;
+        return true;
     }
     return false;
 }
@@ -129,7 +131,7 @@ memory_property_preferences :: (heap_type: GPU_Heap_Type) -> []VkMemoryPropertyF
         return HOST_VISIBLE_BUFFER_PREFERENCES;
     } else if is_host_visible_type(heap_type) {
         return HOST_VISIBLE_PREFERENCES;
-    }
+    } 
     return DEVICE_LOCAL_PREFERENCES;
 }
 

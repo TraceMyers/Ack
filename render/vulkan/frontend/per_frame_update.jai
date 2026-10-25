@@ -186,7 +186,7 @@ write_frame_data :: (frame: *GPU_Frame, viewport: Vector2) -> GPU_Buffer {
 
 layer_has_draws :: (layer: Draw_Layer, mesh_draws: *Mesh_Draws, line_draws: *Line_Draws) -> bool {
     for mesh_draws.buckets {
-        if it.layer == layer && it.count > 0 return true;
+        if it.layer == layer && it.draw_count > 0 return true;
     }
     for line_draws.batches {
         if it.layer == layer return true;
@@ -206,7 +206,7 @@ draw_mesh_buckets :: (cmd: VkCommandBuffer, mesh_draws: *Mesh_Draws, layer: Draw
     bound := false;
 
     for mesh_draws.buckets {
-        if it.layer != layer || it.type != type || it.count == 0 continue;
+        if it.layer != layer || it.type != type || it.draw_count == 0 continue;
 
         if !bound {
             vkCmdBindPipeline(cmd, .GRAPHICS, pipeline);
@@ -219,7 +219,7 @@ draw_mesh_buckets :: (cmd: VkCommandBuffer, mesh_draws: *Mesh_Draws, layer: Draw
 
         vkCmdBindIndexBuffer(cmd, it.index_buffer, 0, .UINT32);
         commands_buffer, commands_offset := gpu_vk_buffer(it.commands);
-        vkCmdDrawIndexedIndirect(cmd, commands_buffer, commands_offset, it.count, size_of(VkDrawIndexedIndirectCommand));
+        vkCmdDrawIndexedIndirect(cmd, commands_buffer, commands_offset, it.draw_count, size_of(VkDrawIndexedIndirectCommand));
     }
 }
 

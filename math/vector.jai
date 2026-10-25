@@ -11,11 +11,23 @@ project_vector_onto_plane :: inline (vector: Vector3, plane_normal: Vector3) -> 
 }
 
 project_point_onto_plane :: inline (point: Vector3, point_on_plane: Vector3, plane_normal: Vector3) -> pos: Vector3, signed_dist: float {
+    signed_dist_along_normal := signed_point_plane_distance(point, point_on_plane, plane_normal);
+    return point - plane_normal * signed_dist_along_normal, signed_dist_along_normal;
+}
+
+signed_point_plane_distance :: inline (point: Vector3, point_on_plane: Vector3, plane_normal: Vector3) -> signed_dist: float {
     engine_check(is_normalized(plane_normal, SMALL_NUMBER), level=.HIGH);
     diff := point - point_on_plane;
     // distance along the plane normal
-    signed_dist_along_normal := dot_product(plane_normal, diff);
-    return point - plane_normal * signed_dist_along_normal, signed_dist_along_normal;
+    return dot_product(plane_normal, diff);
+}
+
+project_point_onto_plane :: inline (point: Vector3, plane: Vector4) -> pos: Vector3, signed_dist: float {
+    return project_point_onto_plane(point, plane.xyz * plane.w, plane.xyz);
+}
+
+signed_point_plane_distance :: inline (point: Vector3, plane: Vector4) -> float {
+    return signed_point_plane_distance(point, plane.xyz * plane.w, plane.xyz);
 }
 
 reflection_component :: inline (vector: Vector3, normal: Vector3) -> float {

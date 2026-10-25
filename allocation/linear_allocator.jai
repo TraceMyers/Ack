@@ -80,7 +80,7 @@ linear_allocator_startup :: (using allocator: *Linear_Allocator) -> *void {
     }
     
     pages.allocator = books_allocator;
-    return add_page(allocator, default_page_size);
+    return null;
 }
 
 linear_allocator_allocate :: (using allocator: *Linear_Allocator, size: s64) -> *void {

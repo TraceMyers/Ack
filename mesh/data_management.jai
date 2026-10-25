@@ -4,89 +4,20 @@ Mesh_Type :: enum u8 { STATIC; SKELETAL; }
 
 Instanced_Mesh :: struct {
     mesh: Mesh;
+    centroid_offset: Vector3;
+    cull_radius: float;
     instances: union type: Mesh_Type {
         .STATIC   ,, static:   Component_Storage(Static_Mesh_Instance);
         .SKELETAL ,, skeletal: Component_Storage(Skeletal_Mesh_Instance);
     };
 }
 
+// lives on the renderer (engine.renderer.meshes)
 Managed_Meshes :: struct {
     path_lookup_table: Table(string, Mesh_Ref);
-    instanced_meshes: Pool(Instanced_Mesh);
+    instanced_meshes: Pool(Instanced_Mesh) = .{track_generation = true};
     animation_instances: Pool(Skeletal_Mesh_Animation_Instance);
-    specializations: Pool(Mesh_Specialization);
-}
-
-// per-instance tweaks to how a mesh is shaded. mirrored by Mesh_Specialization in
-// shaders/src/header.glsl, which mesh_specialization.glsl applies.
-Mesh_Specialization :: struct {
-    flags: Mesh_Specialization_Flags;
-    flash: Mesh_Specialization_Flash;
-    tint:  Mesh_Specialization_Tint;
-}
-
-// one flag per Mesh_Specialization field, named the same in upper case
-Mesh_Specialization_Flags :: enum_flags u32 {
-    FLASH;
-    TINT;
-}
-
-Mesh_Specialization_Flash :: struct {
-    rate: float = -1; // < 0: no flash. 0: constant brightening by value.
-    value: float;
-    begin_time: float;
-}
-
-Mesh_Specialization_Tint :: struct {
-    using color: Color3f = .{1, 1, 1};
-}
-
-// sets one field of the instance's specialization (e.g. "flash", "tint") and turns it on
-add_specialization :: (inst: *Mesh_Instance, $name: string, specialization: $T)
-#modify {
-    T = deduce_specialization_type(name);
-    return T != void;
-} {
-    if inst.specialization_params == -1 {
-        inst.specialization_params = xx pool_borrow(*managed.specializations);
-        managed.specializations[inst.specialization_params] = .{};
-    }
-    add_specialization_to_params(*managed.specializations[inst.specialization_params], name, specialization);
-}
-
-remove_specialization :: (inst: *Mesh_Instance, $name: string) {
-    if inst.specialization_params == -1 {
-        return;
-    }
-    params := *managed.specializations[inst.specialization_params];
-    #insert #run tprint("params.flags &= ~.%;\n", to_upper(name));
-    if params.flags == 0 {
-        pool_return(*managed.specializations, inst.specialization_params);
-        inst.specialization_params = -1;
-    }
-}
-
-get_specialization :: (inst: *Mesh_Instance) -> Mesh_Specialization {
-    if inst.specialization_params == -1 {
-        return .{};
-    }
-    return managed.specializations[inst.specialization_params];
-}
-
-add_specialization_to_params :: (params: *Mesh_Specialization, $name: string, specialization: $T) {
-    #insert #run tprint("params.% = specialization;\n", name);
-    #insert #run tprint("params.flags |= .%;\n", to_upper(name));
-}
-
-deduce_specialization_type :: (name: string) -> Type {
-    tinfo := cast(*Type_Info_Struct) type_info(Mesh_Specialization);
-    for member : tinfo.members {
-        if member.name == "flags" then continue;
-        if member.name == name {
-            return (cast(*Type) *member.type).*;
-        }
-    }
-    return void;
+    draw_fxs: Pool(Draw_FX);
 }
 
 Skeletal_Animation_Playback_Control :: struct {
@@ -94,16 +25,7 @@ Skeletal_Animation_Playback_Control :: struct {
     speed: float;
 }
 
-set_managed_mesh_data :: (in_managed: *Managed_Meshes) {
-    managed = in_managed;
-    managed.instanced_meshes.track_generation = true;
-}
-
-get_managed_mesh_data :: () -> *Managed_Meshes {
-    return managed;
-}
-
-create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_type, component_or_array: *$T) -> *Skeletal_Mesh_Instance 
+create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_id: user_types.entity_id_type, component_or_array: *$T) -> *Skeletal_Mesh_Instance 
 #modify { 
     return T == *Skeletal_Mesh_Instance || T == [..]*Skeletal_Mesh_Instance;
 } {
@@ -115,17 +37,17 @@ create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_ty
 
     #if T == {
     case *Skeletal_Mesh_Instance;
-        inst = create_component(*instanced.instances.skeletal, entity_ref, component_or_array);
+        inst = create_component(*instanced.instances.skeletal, entity_id, component_or_array);
     case [..]*Skeletal_Mesh_Instance;
         engine_check(component_or_array != null);
-        inst = create_component_in_array(*instanced.instances.skeletal, entity_ref, component_or_array);
+        inst = create_component_in_array(*instanced.instances.skeletal, entity_id, component_or_array);
     }
 
     inst.ref = mesh_ref;
     return inst;
 }
 
-create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_type, component_or_array: *$T) -> *Static_Mesh_Instance 
+create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_id: user_types.entity_id_type, component_or_array: *$T) -> *Static_Mesh_Instance 
 #modify { 
     return T == *Static_Mesh_Instance || T == [..]*Static_Mesh_Instance;
 } {
@@ -137,30 +59,30 @@ create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_ref: user_types.entity_id_ty
 
     #if T == {
     case *Static_Mesh_Instance;
-        inst = create_component(*instanced.instances.static, entity_ref, component_or_array);
+        inst = create_component(*instanced.instances.static, entity_id, component_or_array);
     case [..]*Static_Mesh_Instance;
         engine_check(component_or_array != null);
-        inst = create_component_in_array(*instanced.instances.static, entity_ref, component_or_array);
+        inst = create_component_in_array(*instanced.instances.static, entity_id, component_or_array);
     }
 
     inst.ref = mesh_ref;
     return inst;
 }
 
-destroy_mesh_instance :: (entity_ref: user_types.entity_id_type, inst: **$T/Mesh_Instance, auto_shrink_instance_storage := false, reset_array_on_entity_if_empty := true) {
+destroy_mesh_instance :: (entity_id: user_types.entity_id_type, inst: **$T/Mesh_Instance, auto_shrink_instance_storage := false, reset_array_on_entity_if_empty := true) {
     instanced := get_instanced_mesh(inst.*.ref);
 
-    if inst.*.specialization_params != -1 {
-        pool_return(*managed.specializations, inst.*.specialization_params);
-        inst.*.specialization_params = -1;
+    if inst.*.draw_fx != -1 {
+        pool_return(*engine.renderer.meshes.draw_fxs, inst.*.draw_fx);
+        inst.*.draw_fx = -1;
     }
 
     if instanced.instances.type == .STATIC {
         engine_check(is_static_mesh(*instanced.mesh));
-        destroy_component(*instanced.instances.static, entity_ref, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
+        destroy_component(*instanced.instances.static, entity_id, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
     } else { // .SKELETAL
         engine_check(is_skeletal_mesh(*instanced.mesh));
-        destroy_component(*instanced.instances.skeletal, entity_ref, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
+        destroy_component(*instanced.instances.skeletal, entity_id, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
     }
 }
 
@@ -173,8 +95,9 @@ get_mesh :: inline (ref: Mesh_Ref) -> mesh: *Mesh {
 }
 
 get_instanced_mesh :: (ref: Mesh_Ref) -> mesh: *Instanced_Mesh {
-    instanced := *managed.instanced_meshes[ref.index];
-    engine_check(ref.generation == pool_get_item_generation(*managed.instanced_meshes, ref.index));
+    meshes := *engine.renderer.meshes;
+    instanced := *meshes.instanced_meshes[ref.index];
+    engine_check(ref.generation == pool_get_item_generation(*meshes.instanced_meshes, ref.index));
     return instanced;
 }
 
@@ -182,7 +105,8 @@ get_instanced_mesh :: (ref: Mesh_Ref) -> mesh: *Instanced_Mesh {
 load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) -> Mesh_Ref {
     engine_check(path.count > 0);
 
-    ref, newly_added := find_or_add(*managed.path_lookup_table, path);
+    meshes := *renderer.meshes;
+    ref, newly_added := find_or_add(*meshes.path_lookup_table, path);
     engine_check((ref.generation == 0) == newly_added);
 
     if !newly_added {
@@ -193,11 +117,11 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
     engine_check(context.allocator.proc != temp.proc);
     auto_release_temp();
 
-    inst_index := pool_borrow(*managed.instanced_meshes);
-    instanced := *managed.instanced_meshes[inst_index];
+    inst_index := pool_borrow(*meshes.instanced_meshes);
+    instanced := *meshes.instanced_meshes[inst_index];
 
     ref.index      = xx inst_index;
-    ref.generation = xx pool_get_item_generation(*managed.instanced_meshes, inst_index);
+    ref.generation = xx pool_get_item_generation(*meshes.instanced_meshes, inst_index);
 
     mesh := *instanced.mesh;
     mesh.* = {allocator = context.allocator};
@@ -259,8 +183,10 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
             if vertex_buffer_type == {
             case .STATIC_VERTEX;
                 section.vertices.type = .STATIC;
+                expand_cull_radius(*instanced.cull_radius, section.vertices.static);
             case .SKELETAL_VERTEX;
                 section.vertices.type = .SKELETAL;
+                expand_cull_radius(*instanced.cull_radius, section.vertices.skinned);
             case;
                 engine_check(false, "invalid vertex buffer type %", vertex_buffer_type);
             }
@@ -389,10 +315,11 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
     return ref;
 }
 
-// there is no free_mesh / destroy_mesh procedure because that would require general
-// purpose gpu allocation. since that adds complexity to the renderer, I'm going to
-// leave that feature out for now.
-
-#scope_file
-
-managed: *Managed_Meshes;
+expand_cull_radius :: (radius: *float, vertices: []$T) {
+    greatest_dist_sq: float;
+    for v : vertices {
+        dist_sq := length_squared(v.position);
+        greatest_dist_sq = max(dist_sq, greatest_dist_sq);
+    }
+    radius.* = max(sqrt(greatest_dist_sq), radius.*);
+}

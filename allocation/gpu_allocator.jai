@@ -28,6 +28,7 @@ GPU_Heap_Type :: enum u8 {
     NONE;
     DEVICE_LOCAL_BUFFER; // if this isn't the first buffer type, update is_buffer_type
     HOST_VISIBLE_BUFFER;
+    STAGING_BUFFER;
     VERTEX_BUFFER;
     SKINNED_VERTEX_BUFFER;
     INDEX_BUFFER; // if this isn't the last buffer type, update is_buffer_type
@@ -218,6 +219,12 @@ gpu_linear_allocator_startup :: (using allocator: *GPU_Linear_Allocator) -> *voi
     return null;
 }
 
+gpu_linear_allocator_reset :: (allocator: *GPU_Linear_Allocator) {
+    for *allocator.lanes {
+        if it.proc != null then linear_allocator_reset(it);
+    }
+}
+
 gpu_linear_allocator_reset_keeping_memory :: (allocator: *GPU_Linear_Allocator) {
     for *allocator.lanes {
         if it.proc != null then linear_allocator_reset_keeping_memory(it);
@@ -230,6 +237,7 @@ gpu_linear_allocator_shutdown :: (allocator: *GPU_Linear_Allocator) {
     }
     allocator.* = {};
 }
+
 
 // -----------------------------------------------------------------------------------
 // ------------------------------------------------------------------ :general lanes

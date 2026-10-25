@@ -1,142 +1,5 @@
 /*
-this is an implementation of an "entity component system", or at least the "component system"
-part. the main idea is that the components of a type are stored together, tightly packed. the
-database-like behavior of a typical ecs is not present. the primary performance
-benefit of an ecs comes from iterating over and uniformly processing tightly packed data,
-which is the part that is made convenient here.
-
-destroy_component results in a swap-back within the component array, so the components are partially
-unordered. the entity that points to the final component would then be pointing to the wrong spot,
-but during destroy_component, that entity's pointer is corrected.
-
-components are stored in chunks, so calling create_component never causes pointer-corrupting
-allocations.
-
-if you want to use this feature as well as some others, when importing the engine, you need to pass
-information about how to interact with your entities.
-
-#import "Ack!"(
-    user_types = struct {
-        entity_type :: Your_Entity_Type;
-        // your entity id data type
-        entity_id_type :: Your_Entity_ID;       
-        // your procedure, type: (*Your_Entity_Type) -> Your_Entity_ID
-        entity_to_id_proc :: your_entity_to_id; 
-        // your procedure, type: (Your_Entity_ID) -> *Your_Entity_Type
-        id_to_entity_proc :: your_id_to_entity;
-        // optional. your procedure, type: (Your_Entity_ID) -> Matrix4. the entity's world transform,
-        // which the renderer combines with each mesh instance's attachment.
-        entity_transform_proc :: your_entity_transform;
-    }
-);
-
-'entity' in this case just means a struct that has a pointer to an instance of the relevant
-component type. the first pointer of the component's type on said entity struct is assumed to be
-the relevant component pointer, unless the pointer is explicitly provided. your entity type can 
-either be your base or only entity type. the component pointer may only exist on a 
-subtype of your entity type, but in that case you must provide a pointer to the component 
-field when when creating the component.
-
-e.g. 
-{
-     entity_cheeks: Component_Storage(Entity_Cheek);
-
-     Entity :: struct {
-         id: u64;
-         left_cheek:  *Entity_Cheek; <----------- only the first pointer will be valid
-         right_cheek: *Entity_Cheek;              after the first create_component() call
-     }                                              |
-                                                    |
-     e := Entity.{id=1};                            |
-                                                    |
-     create_component(*entity_cheeks, e.id); o------+
-     create_component(*entity_cheeks, e.id, *e.right_cheek); <-- turning the other cheek
-
-     Entity_Subtype :: struct {
-         using base: Entity;
-         freak_cheek: *Entity_Cheek;
-     }
-     
-     es := Entity_Subtype.{id=2};
-     
-     // this only sets 'left_cheek', since create_component is not aware of the subtype.
-     create_component(*entity_cheeks, es.id);
-
-     // if we want to initialize 'freak_cheek' and 'right_cheek', we must pass pointers.
-     create_component(*entity_cheeks, es.id, *es.freak_cheek);
-     create_component(*entity_cheeks, es.id, *es.right_cheek);
-}
-
-the intended way to use this module:
- 
-Entity_Components :: struct {
-     hair_components: Component_Storage(Hair);
-     personality_components: Component_Storage(Personality);
-     thought_components: Component_Storage(Thought);
-}
-
-Entity :: struct {
-    hair: *Hair;
-    personality: *Personality;
-    thoughts: [..]Thought;
-}
-
-World :: struct {
-    using entity_components: Entity_Components;
-}
-
-spawn_entity :: (num_thoughts: int) -> *Entity {
-    new_entity := make_entity();
-    create_component(*world.hair_components, new_entity.id);
-    create_component(*world.personality_components, new_entity.id);
-    for 0..num_thoughts-1 {
-         create_component(*world.thought_components, new_entity.id, *new_entity.thoughts);
-    }
-}
-
-style_entity_hairs :: () {
-     for world.hair_components {
-         entity := your_id_to_entity(it.entity_id); // get associated entity if you want
-         style_hair(it.component);
-     }
-}
-
-destroy_entity :: (entity: *Entity) {
-     destroy_component(*world.hair_components, entity.id, *entity.hair);
-     destroy_component(*world.personality_components, entity.id, *entity.personality);
-
-     // each iteration of the loop both destroys the component and removes pointer from array.
-     // the last iteration also frees the array allocation by default.
-     for < *thought : entity.thoughts {
-         destroy_component(*world.thought_components, entity.id, thought);
-     }
-
-     // alternatively you can also just call destroy_component_array, which is a convenience
-     // procedure that does the above.
-}
-
-you can also store multiple components together in a single Multi_Component_Storage
-
-combined: Multi_Component_Storage(struct {
-     hair: Hair;
-     personality: Personality;
-     thoughts: Thoughts;
-});
-
-when you do this, only the first component ('hair') will set & manage the *Hair on an entity.
-the extra components are just along for the ride, and can be gotten with generated getters, like
-combined.get_personality_component(*combined, index). the components are stored in parallel
-arrays.
-
-if you go this route, it's recommended you store the entity's component index on either the
-entity or the primary (in this case, hair) component, because getting the index from the
-component is expensive. note that the index may go stale during a destroy_component call, unless
-you pass a procedure to re-set the index.
-
-e.g.
-    replacer_callback :: (entity: *Entity, hair: *Hair, new_index: Index_2D) {
-       entity.combined_component_index = new_index;
-   }
+todo: rewrite docs
 */
 
 Component_Storage :: struct($component_type: Type, $in_components_per_chunk := 64) {
@@ -252,9 +115,9 @@ shrink :: (using storage: *Multi_Component_Storage) {
     }
 }
 
-create_component :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component: **storage.first_component_type = null) -> *storage.first_component_type {
+create_component :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component_ptr: **storage.first_component_type) -> *storage.first_component_type {
     entity := user_types.id_to_entity_proc(id);
-    component_ptr, component_ptr_offset := get_component_pointer_and_offset(storage, entity, component);
+    component_ptr_offset := get_component_pointer_offset(storage, entity, component_ptr);
 
     add_new_component(storage, component_ptr, id, entity, component_ptr_offset, -1);
     return component_ptr.*;
@@ -288,7 +151,7 @@ create_component_in_array :: (storage: *Multi_Component_Storage, id: user_types.
 // of the component pointer that need to be corrected. in the params of replacement_entity_callback,
 // 'replacer' is entity_b, 'replacer_component' is the component entity_b now points to, 
 // and 'new_index' is the 2d index of the component, represented in this example by the 1d index, 0.
-destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component: **storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *user_types.entity_type, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
+destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component: **storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *Ack_Entity, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
     removing_component := get_component_indexer(storage, component);
     engine_check(removing_component.first >= 0);
 
@@ -369,7 +232,7 @@ destroy_component :: (storage: *Multi_Component_Storage, id: user_types.entity_i
     if auto_shrink then shrink(storage);
 }
 
-destroy_component_array :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component_array: [..]storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *user_types.entity_type, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
+destroy_component_array :: (storage: *Multi_Component_Storage, id: user_types.entity_id_type, component_array: [..]storage.first_component_type, auto_shrink := false, reset_array_on_entity_if_empty := true, replacement_entity_callback: (replacer: *Ack_Entity, replacer_component: *storage.first_component_type, new_index: Index_2D) = null) {
     for < *storage {
         destroy_component(storage, id, it, auto_shrink, reset_array_on_entity_if_empty, replacement_entity_callback);
     }
@@ -469,23 +332,8 @@ debug__validate_component_pointers :: (storage: *Multi_Component_Storage, compon
 
 #scope_file
 
-get_component_pointer_and_offset :: (storage: *Multi_Component_Storage, entity: *$Entity_Type, component_ptr_override: **storage.first_component_type) -> **storage.first_component_type, int {
-    first_component_ptr_offset :: #run get_first_component_pointer_offset(storage.first_component_type);
-
-    component_ptr_offset: int = -1;
-    component_ptr: **storage.first_component_type;
-
-    if component_ptr_override {
-        component_ptr_offset = cast(*u8) component_ptr_override - cast(*u8) entity;
-        component_ptr        = component_ptr_override;
-    } else {
-        assert(first_component_ptr_offset >= 0);
-        component_ptr_offset = first_component_ptr_offset;
-        component_ptr = cast(**storage.first_component_type) ((cast(*u8) entity) + component_ptr_offset);
-    }
-
-    engine_check(component_ptr_offset >= 0 && component_ptr_offset < size_of(type_of(entity.*)), level=.HIGH);
-    return component_ptr, component_ptr_offset;
+get_component_pointer_offset :: inline (storage: *Multi_Component_Storage, entity: *$Entity_Type, in_component_ptr: **storage.first_component_type) -> int {
+    return cast(*u8) in_component_ptr - cast(*u8) entity;
 }
 
 entity_type :: #run -> Type {

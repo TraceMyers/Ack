@@ -14,6 +14,7 @@ Camera_Info :: struct {
     far_plane  := 10_000.0;
 }
 
+
 get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which := enum { X_OVER_Y; Y_OVER_X; }.X_OVER_Y) -> float {
     if which == .X_OVER_Y {
         engine_check(viewport.y > 0);
@@ -242,6 +243,7 @@ get_point_on_draw_plane :: (draw_plane: Draw_Plane, camera: Camera_Info, camera_
     camera_right := cross(camera_up, camera_fore);
     return camera_center + camera_fore * draw_plane.centerline_distance - camera_right * ((norm_point.x-0.5) * 2 * draw_plane.half_plane_width) + camera_up * ((norm_point.y-0.5) * 2 * draw_plane.half_plane_height);
 }
+
 
 #scope_module
 

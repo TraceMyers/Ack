@@ -69,7 +69,7 @@ end_upload :: () -> bool {
     if !render_evaluate(vkWaitForFences(logical_device.obj, 1, *uploads.fence, VK_TRUE, U64_MAX), "failed waiting for uploads") then return false;
     vkResetFences(logical_device.obj, 1, *uploads.fence);
 
-    gpu_linear_allocator_reset_keeping_memory(*uploads.staging_allocator);
+    gpu_linear_allocator_reset(*uploads.staging_allocator);
     return true;
 }
 
@@ -87,7 +87,7 @@ upload_buffer :: (dst: GPU_Buffer, data: *void, size: int, dst_offset := 0) {
     }
 
     render_check(uploads.recording, "uploads to device local buffers go between begin_upload and end_upload");
-    staging := create_gpu_buffer(uploads.staging_allocator, .HOST_VISIBLE_BUFFER, size, .TRANSFER_SRC_BIT);
+    staging := create_gpu_buffer(uploads.staging_allocator, .STAGING_BUFFER, size, .TRANSFER_SRC_BIT);
     memcpy(gpu_mapped(staging), data, size);
 
     src_buffer, src_offset := gpu_vk_buffer(staging);
@@ -111,7 +111,7 @@ upload_image :: (image: *GPU_Image, pixels: *void, size: int) {
     render_check(image.format == .R8G8B8A8_UNORM || image.format == .R8G8B8A8_SRGB, "upload_image only handles 4 byte rgba formats");
     render_check(size == image.extent.width * image.extent.height * 4, "upload of % bytes doesn't match a %x% rgba image", size, image.extent.width, image.extent.height);
 
-    staging := create_gpu_buffer(uploads.staging_allocator, .HOST_VISIBLE_BUFFER, size, .TRANSFER_SRC_BIT);
+    staging := create_gpu_buffer(uploads.staging_allocator, .STAGING_BUFFER, size, .TRANSFER_SRC_BIT);
     memcpy(gpu_mapped(staging), pixels, size);
     src_buffer, src_offset := gpu_vk_buffer(staging);
 

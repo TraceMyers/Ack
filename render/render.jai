@@ -3,8 +3,6 @@ case "VULKAN";
     #load "vulkan/vulkan.jai";
 }
 
-#load "draw.jai";
-
 Renderer :: struct {
     // modify data here and the renderer will react on update.
     config: Renderer_Config;
@@ -14,9 +12,9 @@ Renderer :: struct {
 
     // copied here at the beginning of per-frame update. modifying it has no consequences to
     // rendering except under race conditions.
-    using last_per_frame_input: Renderer_Per_Frame_Input;
+    using per_frame_input: Renderer_Per_Frame_Input;
 
-    // immediate draws (debug lines, one-off meshes) submitted for the next frame. see draw.jai.
+    // immediate draws (debug lines) submitted for the next frame. see draw.jai.
     draws: Frame_Draws;
 
     // backend isn't opaque because it doesn't seem necessary. backend is just separated so 
@@ -46,8 +44,6 @@ Renderer_Creation_Settings :: struct {
     max_static_mesh_instances   : u32 = 32_768;
     max_skeletal_mesh_instances : u32 = 16_384;
 
-    // only need to do once/initially, or after in-engine shaders have been updated
-    copy_shaders_from_engine                    := true;
     // only need to do when shaders are updated (todo: file watching)
     compile_shaders                             := true;
     // use the getrect-based developer ui (may want to turn off for shipping builds)
@@ -147,7 +143,7 @@ HERE,
         user_flags = xx Ack_Log_Flags.ADD_NEWLINE
     );
 
-    if settings.copy_shaders_from_engine && !copy_shaders_from_engine() {
+    if copy_engine_files_to_project && !copy_shaders_from_engine() {
         render_error("renderer creation failed");
         return false;
     }
@@ -159,6 +155,11 @@ HERE,
 
     if !backend_create_renderer() {
         render_error("renderer creation failed");
+        return false;
+    }
+
+    if !init_render_text() {
+        render_error("text rendering initialization failed");
         return false;
     }
     
@@ -194,29 +195,21 @@ copy_shaders_from_engine :: () -> success: bool {
         `return false;
     }
 
-    working_directory := get_working_directory();
-    defer set_working_directory(working_directory);
-
     renderer_path := ack_renderer_path();
 
     src_path := parse_path_ext(renderer_path);
-    if !move_down_directory(*src_path, "shaders") {
+    if !extend_path(*src_path, "shaders") {
         report_copy_error("no shaders directory in engine (renderer path=%)", src_path);
         return false;
     }
     src_path_str := path_to_string_ext(*src_path);
 
-    dst_path := parse_path_ext(engine.project_info.project_path);
-    dst_path_str := path_to_string_ext(*dst_path);
-    if !move_down_directories(*dst_path, engine.project_info.shaders_path) {
-        dst_path_str = path_to_string_ext(*dst_path);
-        if !make_directory_if_it_does_not_exist(dst_path_str) {
-            report_copy_error("failed to make or find project shader path %", dst_path_str);
-            return false;
-        }
+    dst_path_str := engine.project_info.shaders_path;
+    if !file_exists(dst_path_str) {
+        report_copy_error("failed to make or find project shader path %", engine.project_info.shaders_path);
+        return false;
     }
 
-    dst_path_str = path_to_string_ext(*dst_path);
     render_log("copy source = %, dest = %", src_path_str, dst_path_str, flags=.VERY_VERBOSE_ONLY);
     
     copy_success := copy_directory(src_path_str, dst_path_str,, temp);
@@ -233,29 +226,26 @@ compile_shaders :: () -> success: bool {
     using engine;
     render_log("compiling shaders", flags=.VERBOSE_ONLY);
 
-    // shaders are loaded from project_path/shaders_path, so compile them there too
-    shaders_path := parse_path_ext(project_info.project_path);
-    move_down_directories(*shaders_path, project_info.shaders_path, false);
-    shaders_path_str := path_to_string_ext(*shaders_path);
-    if !file_exists(shaders_path_str) {
-        render_error("did not find path %", shaders_path_str);
+    shaders_path := project_info.shaders_path;
+    if !file_exists(shaders_path) {
+        render_error("did not find path %", shaders_path);
         return false;
     }
 
-    scope_set_working_directory(shaders_path_str);
+    scope_set_working_directory(shaders_path);
 
     if !file_exists("glslc.exe") {
-        render_error("did not find glslc.exe at %", shaders_path_str);
+        render_error("did not find glslc.exe at %", shaders_path);
         return false;
     }
     if !file_exists("src") {
-        render_error("did not find 'src' directory at %", shaders_path_str);
+        render_error("did not find 'src' directory at %", shaders_path);
         return false;
     }
 
     // relative to the shaders directory, which is now the working directory
     if !make_directory_if_it_does_not_exist("spirv") {
-        render_error("failed to make the spirv directory at %", shaders_path_str);
+        render_error("failed to make the spirv directory at %", shaders_path);
         return false;
     }
 
@@ -387,6 +377,7 @@ Renderer_Backend_Base :: struct {
     materials:     Pool(Material);
     meshes:        Managed_Meshes;
 
+    text: Render_Text;
 }
 
 NANOSECONDS_PER_SECOND      :: 1_000_000_000;

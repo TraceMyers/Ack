@@ -195,10 +195,16 @@ Mesh_Attachment :: struct {
 Mesh_Instance :: struct {
     ref: Mesh_Ref;
     attachment: Mesh_Attachment;
-    // index into the managed meshes' specializations. see add_specialization.
-    specialization_params: s32 = -1;
-    visible := true;
+    // index into the managed meshes' fx. see add_draw_fx.
+    draw_fx: s32 = -1;
     layer: Draw_Layer;
+
+    // options
+    visible          := true;
+    frustum_cull     := true;
+
+    // internal
+    should_draw_this_frame := true;
 }
 
 Static_Mesh_Instance :: Mesh_Instance;

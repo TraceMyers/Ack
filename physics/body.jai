@@ -95,7 +95,7 @@ destroy_physics_body :: (in_body: **Physics_Body_Base) {
         pool_return(*unique_colliders, unique_index);
     }
 
-    replacer_callback :: (replacer: *user_types.entity_type, body: *Physics_Body_Internal, new_body_index: Index_2D) {
+    replacer_callback :: (replacer: *Ack_Entity, body: *Physics_Body_Internal, new_body_index: Index_2D) {
         body.index = new_body_index;
     }
 

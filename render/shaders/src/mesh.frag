@@ -6,7 +6,7 @@ layout(location=5) in      vec4 in_color;
 layout(location=6) in      vec4 add_color;
 layout(location=7) in      vec4 tint;
 layout(location=8) in flat int  in_material_id;
-layout(location=9) in flat int  entity_id;
+layout(location=9) in flat uint64_t entity_id;
 
 layout(location=0) out vec4 color;
 

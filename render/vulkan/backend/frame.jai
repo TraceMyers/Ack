@@ -44,6 +44,7 @@ create_frames :: () -> bool {
         if !render_evaluate(vkCreateSemaphore(logical_device.obj, *semaphore_info, null, *it.image_available_semaphore), "failed to create a frame semaphore") then return false;
 
         it.temp_allocator.heap_allocator = *heap_allocator;
+        it.temp_allocator.heap_size = 20 * 1024 * 1024;
         gpu_linear_allocator_startup(*it.temp_allocator);
     }
 

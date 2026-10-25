@@ -144,6 +144,23 @@ type_2_is_pointer_to_type_1 :: (T1: Type, T2: Type) -> bool {
     return tinfo_ptr.pointer_to == cast(*Type_Info) T1;
 }
 
+// true if 'type' is 'base', or reaches 'base' through a chain of '#as' struct members.
+is_subtype_of :: (type: Type, base: Type) -> bool {
+    walk :: (info: *Type_Info, base: *Type_Info) -> bool {
+        if info == base return true;
+        if info.type != .STRUCT return false;
+
+        struct_info := cast(*Type_Info_Struct) info;
+        for member : struct_info.members {
+            if !(member.flags & .AS) || (member.flags & .CONSTANT) continue;
+            if walk(member.type, base) return true;
+        }
+        return false;
+    }
+
+    return walk(cast(*Type_Info) type, cast(*Type_Info) base);
+}
+
 Struct_Visit_Item :: struct {
     data: *u8;
     info: *Type_Info;

@@ -16,6 +16,8 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "frontend/mesh_upload.jai";
 #load "frontend/gather.jai";
 #load "frontend/lines.jai";
+#load "frontend/draw.jai";
+#load "frontend/draw_fx.jai";
 
 #scope_module
 
@@ -30,4 +32,4 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "backend/commands.jai";
 #load "backend/upload.jai";
 #load "backend/descriptors.jai";
-
+#load "backend/render_text.jai";

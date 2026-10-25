@@ -152,7 +152,7 @@ build_pipeline :: (name: string, vertex_shader: string, fragment_shader: string,
 create_shader_module :: (name: string) -> VkShaderModule {
     using engine.renderer;
 
-    file_path := tprint("%/%/spirv/%.spv", engine.project_info.project_path, engine.project_info.shaders_path, name);
+    file_path := tprint("%/spirv/%.spv", engine.project_info.shaders_path, name);
     spirv, success := read_entire_file(file_path, true,, temp);
     if !render_evaluate(success, "failed to load shader binary %. if it's an engine shader, set copy_shaders_from_engine and compile_shaders in the renderer creation settings.", file_path) then return null;
 

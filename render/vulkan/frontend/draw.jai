@@ -1,18 +1,10 @@
-// immediate draws: things drawn for one frame only, on top of the retained mesh instances.
-// call these any time before the renderer updates. they're cleared after each rendered frame
-// (except timed lines, which last until their time runs out).
+// immediate draws: things drawn for one frame only. call these any time before the renderer 
+// updates. they're cleared after each rendered frame (except timed lines, which last until their 
+// time runs out).
 
 Frame_Draws :: struct {
-    meshes:      [..]Immediate_Mesh_Draw;
     lines:       [..]Line_Draw;
     timed_lines: [..]Timed_Line_Draw;
-}
-
-Immediate_Mesh_Draw :: struct {
-    ref:            Mesh_Ref;
-    transform:      Matrix4;
-    layer:          Draw_Layer;
-    specialization: Mesh_Specialization;
 }
 
 Line_Draw :: struct {
@@ -31,35 +23,6 @@ Timed_Line_Draw :: struct {
 // draw_in_front puts a debug draw in LAYER_1, so it draws over everything
 in_front_layer :: inline (draw_in_front: bool) -> Draw_Layer {
     return ifx draw_in_front then .LAYER_1 else .GAME;
-}
-
-// -----------------------------------------------------------------------------------
-// ---------------------------------------------------------------------------- meshes
-
-draw_static_mesh :: (ref: Mesh_Ref, transform: Matrix4, layer := Draw_Layer.GAME) {
-    using engine.renderer;
-    render_check(!currently_updating_renderer, level=.HIGH);
-    render_check(is_static_mesh(get_mesh(ref)), "immediate draws only support static meshes");
-    array_add(*draws.meshes, .{ref = ref, transform = transform, layer = layer});
-}
-
-draw_static_mesh :: inline (ref: Mesh_Ref, position: Vector3, scale := 1.0, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
-    draw_static_mesh(ref, make_transform_matrix(position, orientation, .{scale, scale, scale}), layer);
-}
-
-draw_static_mesh :: inline (ref: Mesh_Ref, position: Vector3, scale := Vector3.{1, 1, 1}, orientation := Quaternion.{}, layer := Draw_Layer.GAME) {
-    draw_static_mesh(ref, make_transform_matrix(position, orientation, scale), layer);
-}
-
-// sets one field of the last draw_static_mesh's specialization (e.g. "flash", "tint")
-add_draw_specialization :: ($name: string, specialization: $T)
-#modify {
-    T = deduce_specialization_type(name);
-    return T != void;
-} {
-    using engine.renderer;
-    render_check(draws.meshes.count > 0, "add_draw_specialization applies to the last draw_static_mesh, but there is none");
-    add_specialization_to_params(*draws.meshes[draws.meshes.count-1].specialization, name, specialization);
 }
 
 // -----------------------------------------------------------------------------------
@@ -317,7 +280,6 @@ draw_particle :: (draw: Particle_Draw) {
 // called after each rendered frame
 reset_frame_draws :: () {
     using engine.renderer;
-    array_reset_keeping_memory(*draws.meshes);
     array_reset_keeping_memory(*draws.lines);
     for *draws.timed_lines {
         it.time_remaining -= unscaled_delta_time;

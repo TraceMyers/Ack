@@ -10,7 +10,8 @@
 
 // ------------------------------------------------------------ types
 // every struct here mirrors a jai struct, and blocks use scalar layout, which matches jai's
-// packing as long as every field is a 4 byte scalar or made of them.
+// packing as long as every field is a 4 byte scalar or made of them. 8 byte scalars also match,
+// as long as they're placed at 8 byte aligned offsets and the struct's size stays a multiple of 8.
 
 // mirrors Frame_Data
 struct Frame_Data {
@@ -69,9 +70,9 @@ struct Draw_Section {
     int      _pad;
 };
 
-// mirrors Mesh_Specialization
-struct Mesh_Specialization {
-    int   flags;            // 0x1 = flash, 0x2 = tint
+// mirrors Draw_FX
+struct Draw_FX {
+    int   flags;            // 0x1 = flash, 0x2 = tint (Draw_FX_Flags, in Draw_FX member order)
     float flash_rate;
     float flash_value;
     float flash_begin_time;
@@ -81,9 +82,10 @@ struct Mesh_Specialization {
 // mirrors Instance_Data. indexed by gl_InstanceIndex.
 struct Instance_Data {
     mat4 transform;
-    int  joint_offset; // -1 if not skinned
-    int  entity_id;
-    Mesh_Specialization specialization;
+    mat4 inverse_transpose_transform;
+    uint64_t entity_id; // user_types.entity_id_to_u64 of the instance's entity
+    int  joint_offset;  // -1 if not skinned
+    Draw_FX draw_fx;
 };
 
 // mirrors Line_Vertex

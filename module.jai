@@ -30,22 +30,20 @@
     MIN_PHYSICS_BODY_SPEED_ALONG_AXIS := 0.000001,
     FLIP_VECTOR_2D_Y_AXIS             := false // origin at upper left? flip it
 ) {
-    Entity_ID_Default :: u64;
     Collision_Channels_Default :: enum_flags u32 { DEFAULT; };
     Raycast_Channels_Default :: enum_flags u32 { DEFAULT; };
     Extra_Body_Data_Default :: struct {};
-    Entity_Type_Default :: struct { id: u64; };
+    Entity_ID_Type_Default :: u64;
 
     Type_Provider_Default :: struct {
-        entity_type         :: Entity_Type_Default;
-        entity_id_type      :: Entity_ID_Default;
+        entity_id_type      :: Entity_ID_Type_Default;
         extra_body_data     :: Extra_Body_Data_Default;
         collision_channels  :: Collision_Channels_Default;
         raycast_channels    :: Raycast_Channels_Default;
-        entity_to_id_proc   :: (ent: *Entity_Type_Default) -> u64 { return 0; };
-        id_to_entity_proc   :: (id: u64) -> *Entity_Type_Default { return null; };
-        // the renderer places an entity's mesh instances with this
-        entity_transform_proc :: (id: u64) -> Matrix4 { return Matrix4_Identity; };
+        entity_to_id_proc   :: (ent: *Ack_Entity) -> Entity_ID_Type_Default { return 0; };
+        id_to_entity_proc   :: (id: Entity_ID_Type_Default) -> *Ack_Entity { return null; };
+        entity_id_to_u64    :: (id: Entity_ID_Type_Default) -> u64 { return id; };
+        u64_to_entity_id    :: (id: u64) -> Entity_ID_Type_Default { return id; };
         null_entity_id      : u64 : 0;
     }
 
@@ -71,6 +69,7 @@ engine: Game_Engine;
 
 // this can be called instead of doing manual init
 game_engine_init :: (
+    initialize_project: bool, // only need to set this to true once, or when engine is updated
     engine_settings         := Engine_Settings.{},
     window_settings         := Window_Creation_Settings.{}, 
     renderer_settings       := Renderer_Creation_Settings.{}, 
@@ -82,6 +81,8 @@ game_engine_init :: (
     engine_check(!engine.initialized);
     engine_check(engine.physical_world == null);
     engine_check(engine.renderer == null);
+
+    copy_engine_files_to_project = initialize_project;
 
     engine = {settings=engine_settings};
 
@@ -95,6 +96,17 @@ game_engine_init :: (
         engine.project_info.project_path = get_final_path(get_working_directory());
     } else {
         engine.project_info.project_path = get_final_path(engine.project_info.project_path);
+    }
+
+    build_path_success: bool;
+    engine.project_info.shaders_path, build_path_success = build_path_string(engine.project_info.project_path, engine.project_info.shaders_path, carve_path=initialize_project);
+    if !build_path_success {
+        engine_error("unable to find or make shaders path %", engine.project_info.shaders_path);
+    }
+
+    engine.project_info.fonts_path,   build_path_success = build_path_string(engine.project_info.project_path, engine.project_info.fonts_path,   carve_path=initialize_project);
+    if !build_path_success {
+        engine_error("unable to find or make fonts path %", engine.project_info.fonts_path);
     }
 
     egi_run_or_return_failure :: #bake_arguments engine_run_or_return_failure(flags=.VERBOSE_ONLY);
@@ -127,7 +139,7 @@ game_engine_loop :: () {
     }
 }
 
-engine_path :: () -> string {
+ack_engine_path :: () -> string {
     return get_final_path(#filepath,, temp);
 }
 
@@ -187,6 +199,7 @@ Project_Info :: struct {
     project_path: string;
     // all other paths are project path-relative
     shaders_path := "shaders";
+    fonts_path   := "fonts";
 }
 
 Game_System_Update :: struct {
@@ -219,6 +232,7 @@ update_clock :: () {
 // #load "animation/animation.jai";
 
 // single-file loads
+#load "entity.jai";
 #load "array.jai";
 #load "camera.jai";
 #load "color.jai";
@@ -269,6 +283,10 @@ Window_Creation :: #import "Window_Creation";
 #import "Process";
 #import "Input";
 #import "Gamepad";
+
+#scope_module
+
+copy_engine_files_to_project: bool;
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

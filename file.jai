@@ -26,21 +26,41 @@ path_to_string_ext :: (path: *Path, subtract_count := 0) -> string {
     return path_to_string(path.*, path.words.count - subtract_count,, temp);
 }
 
-// temp, assumes path is temp-allocated to it's all temp
-// directory_traversal can be one directory or multiple, e.g. "shaders" or "shaders/vulkan"
-move_down_directory :: (path: *Path, directory: string, path_must_exist := true) -> path_exists: bool {
-    return move_down_directories(path, directory, path_must_exist);
+build_path :: (parts: ..string, path_must_exist := true, carve_path := false) -> path: Path, path_exists: bool {
+    if parts.count == 0 {
+        return {}, false;
+    }
+    path: Path;
+    path_exists := extend_path(*path, ..parts, path_must_exist, carve_path);
+    return path, path_exists;
+}
+
+build_path_string :: (parts: ..string, path_must_exist := true, carve_path := false) -> path: string, path_exists: bool {
+    if parts.count == 0 {
+        return {}, false;
+    }
+    path: Path;
+    path_exists := extend_path(*path, ..parts, path_must_exist, carve_path);
+    return path_to_string_ext(*path), path_exists;
 }
 
 // temp, assumes path is temp-allocated to it's all temp
 // directory_traversal can be one directory or multiple, e.g. "shaders" or "shaders/vulkan"
-move_down_directories :: (path: *Path, directory_traversal: string, path_must_exist := true) -> path_exists: bool {
-    traversal_with_forward_slashes := copy_string(directory_traversal,, temp);
-    convert_to_forward_slashes(traversal_with_forward_slashes,, temp);
-    path_parts := split(traversal_with_forward_slashes, #char "/",, temp);
-    for directory : path_parts {
-        array_add(*path.words, directory);
+extend_path :: (path: *Path, extensions: ..string, path_must_exist := true, make_directories_if_nonexistent := false) -> path_exists: bool {
+    for extension : extensions {
+        extension_with_forward_slashes := copy_string(extension,, temp);
+        convert_to_forward_slashes(extension_with_forward_slashes,, temp);
+        extension_parts := split(extension_with_forward_slashes, #char "/",, temp);
+
+        for part : extension_parts {
+            array_add(*path.words, part);
+            if make_directories_if_nonexistent {
+                path_str_partial := path_to_string_ext(path);
+                make_directory_if_it_does_not_exist(path_str_partial);
+            }
+        }
     }
+
     // not how_much_of_path_exists_on_the_local_filesystem: it reports nothing existing for absolute
     // paths that start with a drive letter
     return ifx path_must_exist then file_exists(path_to_string_ext(path)) else true;

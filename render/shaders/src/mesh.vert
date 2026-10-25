@@ -6,7 +6,7 @@ layout(location=5) out      vec4 out_color;
 layout(location=6) out      vec4 add_color;
 layout(location=7) out      vec4 tint;
 layout(location=8) out flat int  out_material_id;
-layout(location=9) out flat int  out_entity_id;
+layout(location=9) out flat uint64_t out_entity_id;
 
 void main() {
     // vertices are pulled from this draw's section. the index buffer gives gl_VertexIndex.
@@ -27,7 +27,7 @@ void main() {
 
     gl_Position = vec4(vertex.position, 1.0) * model * frame.view_projection;
 
-    ## mesh_specialization
+    ## mesh_draw_fx
 
     out_tbn         = mat3(T, B, N);
     out_uv_0        = vertex.uv_0;

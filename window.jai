@@ -40,6 +40,10 @@ update_window :: () {
     }
 }
 
+get_window_viewport :: () -> Vector2 {
+    return {xx window_width, xx window_height};
+}
+
 update_cached_window_position_and_dimensions :: () -> bool {
     success: bool;
     window_x, window_y, window_width, window_height, success = get_dimensions(window, true);
