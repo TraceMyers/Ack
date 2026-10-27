@@ -93,24 +93,26 @@ align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
     return align;
 }
 
-run_or_return_failure :: ($proc_call: Code, success: *bool = null, do_log := true, flags: Log_Flags=0, loc := #caller_location) #expand {
+run_or_return_failure :: ($proc_call: Code, do_log := true, do_log_error := true, flags: Log_Flags=0, loc := #caller_location) #expand {
     proc_name :: #run code_string(proc_call);
     if do_log then log("calling %", proc_name, flags=flags, loc=loc);
     run_success := #insert proc_call;
-    if success then success.* = run_success;
     if !run_success {
-        if do_log then log("failed while calling %", proc_name, flags=flags|.ERROR, loc=loc);
+        if do_log_error then log("failed while calling %", proc_name, flags=flags|.ERROR, loc=loc);
         `return false;
     }
 }
 
-engine_run_or_return_failure :: ($proc_call: Code, success: *bool = null, flags: Log_Flags=0, log_proc: Engine_Log_Procedure = engine_log, fail_log_proc: Engine_Log_Procedure = engine_error, loc := #caller_location) #expand #no_debug {
+engine_run_or_return_failure :: ($proc_call: Code, flags: Log_Flags=0, $log_proc: Engine_Log_Procedure = engine_log, $fail_log_proc: Engine_Log_Procedure = engine_error, loc := #caller_location) #expand #no_debug {
     proc_name :: #run code_string(proc_call);
-    if log_proc then log_proc("calling %", proc_name, flags=flags, loc=loc);
+    #if log_proc {
+        log_proc("calling %", proc_name, flags=flags, loc=loc);
+    }
     run_success := #insert proc_call;
-    if success then success.* = run_success;
     if !run_success {
-        if fail_log_proc then fail_log_proc("failed while calling %", proc_name, flags=flags, loc=loc);
+        #if fail_log_proc {
+            fail_log_proc("% failed.", proc_name, flags=flags, loc=loc);
+        }
         `return false;
     }
 }

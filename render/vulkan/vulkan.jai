@@ -18,6 +18,7 @@ render_evaluate :: inline (result: VkResult, fmt := "", args: ..Any, level := Ac
 #load "frontend/lines.jai";
 #load "frontend/draw.jai";
 #load "frontend/draw_fx.jai";
+#load "frontend/render_text.jai";
 
 #scope_module
 

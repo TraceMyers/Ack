@@ -143,25 +143,12 @@ HERE,
         user_flags = xx Ack_Log_Flags.ADD_NEWLINE
     );
 
-    if copy_engine_files_to_project && !copy_shaders_from_engine() {
-        render_error("renderer creation failed");
-        return false;
-    }
+    cr_try :: #bake_arguments engine_run_or_return_failure(log_proc=render_log, fail_log_proc=render_error, flags=.VERBOSE_ONLY);
 
-    if settings.compile_shaders && !compile_shaders() {
-        render_error("renderer creation failed");
-        return false;
-    }
-
-    if !backend_create_renderer() {
-        render_error("renderer creation failed");
-        return false;
-    }
-
-    if !init_render_text() {
-        render_error("text rendering initialization failed");
-        return false;
-    }
+    cr_try(maybe_copy_files_to_project(engine.project_info.shaders_path, "render", "copying shaders to project", .RENDER));
+    cr_try(compile_shaders_if_called_for());
+    cr_try(backend_create_renderer());
+    cr_try(init_render_text()); 
     
     render_log("renderer creation success");
     return true;
@@ -187,40 +174,6 @@ update_renderer :: () {
     reset_frame_draws();
 }
 
-copy_shaders_from_engine :: () -> success: bool {
-    render_log("copying shaders from engine", flags=.VERBOSE_ONLY);
-
-    report_copy_error :: (error_fmt: string, args: ..Any) #expand {
-        render_error("failed to copy shaders from the engine to the project: %", tprint(error_fmt, ..args));
-        `return false;
-    }
-
-    renderer_path := ack_renderer_path();
-
-    src_path := parse_path_ext(renderer_path);
-    if !extend_path(*src_path, "shaders") {
-        report_copy_error("no shaders directory in engine (renderer path=%)", src_path);
-        return false;
-    }
-    src_path_str := path_to_string_ext(*src_path);
-
-    dst_path_str := engine.project_info.shaders_path;
-    if !file_exists(dst_path_str) {
-        report_copy_error("failed to make or find project shader path %", engine.project_info.shaders_path);
-        return false;
-    }
-
-    render_log("copy source = %, dest = %", src_path_str, dst_path_str, flags=.VERY_VERBOSE_ONLY);
-    
-    copy_success := copy_directory(src_path_str, dst_path_str,, temp);
-    if !copy_success {
-        report_copy_error("failed to copy shaders from % to %", src_path_str, dst_path_str);
-        return false;
-    }
-
-    render_log("success copying shaders from engine", flags=.VERBOSE_ONLY);
-    return true;
-}
 
 compile_shaders :: () -> success: bool {
     using engine;
@@ -382,6 +335,12 @@ Renderer_Backend_Base :: struct {
 
 NANOSECONDS_PER_SECOND      :: 1_000_000_000;
 NANOSECONDS_PER_MILLISECOND :: 1_000_000;
+
+compile_shaders_if_called_for :: () -> bool {
+    if engine.renderer.creation_settings.compile_shaders {
+        return compile_shaders();
+    } else return true;
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

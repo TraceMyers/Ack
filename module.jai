@@ -84,7 +84,7 @@ game_engine_init :: (
 
     copy_engine_files_to_project = initialize_project;
 
-    engine = {settings=engine_settings};
+    engine = {settings=engine_settings, initialized=false};
 
     if use_ack_logger {
         context.logger = ack_log;
@@ -109,11 +109,11 @@ game_engine_init :: (
         engine_error("unable to find or make fonts path %", engine.project_info.fonts_path);
     }
 
-    egi_run_or_return_failure :: #bake_arguments engine_run_or_return_failure(flags=.VERBOSE_ONLY);
+    egi_try :: #bake_arguments engine_run_or_return_failure(flags=.VERBOSE_ONLY);
 
-    egi_run_or_return_failure(create_window(window_settings),                 *engine.initialized);
-    egi_run_or_return_failure(create_renderer(renderer_settings),             *engine.initialized);
-    egi_run_or_return_failure(create_physical_world(physical_world_settings), *engine.initialized);
+    egi_try(create_window(window_settings));
+    egi_try(create_renderer(renderer_settings));
+    egi_try(create_physical_world(physical_world_settings));
 
     engine.initialized = true;
     return true;
@@ -287,6 +287,40 @@ Window_Creation :: #import "Window_Creation";
 #scope_module
 
 copy_engine_files_to_project: bool;
+
+maybe_copy_files_to_project :: (project_path: string, engine_relative_path: string, initial_log: string, system := enum { ENGINE; PHYSICS; RENDER; }.ENGINE) -> bool {
+    if copy_engine_files_to_project {
+        report_copy_error :: (error_fmt: string, args: ..Any) #expand {
+            error_proc := ifx `system == .ENGINE then engine_error
+                else ifx `system == .PHYSICS then physics_error
+                else render_error;
+            error_proc("failed to copy fonts from the engine to the project: %", tprint(error_fmt, ..args));
+            `return false;
+        }
+
+        log_proc := ifx system == .ENGINE then engine_log
+            else ifx system == .PHYSICS then physics_log
+            else render_log;
+
+        log_proc(initial_log, flags=.VERBOSE_ONLY);
+
+        src_path, src_success := build_path_string(ack_engine_path(), engine_relative_path);
+        if !src_success {
+            report_copy_error("unable to find engine source path %", engine_relative_path);
+        }
+
+        log_proc("copy source = %, dest = %", src_path, project_path, flags=.VERY_VERBOSE_ONLY);
+        
+        copy_success := copy_directory(src_path, project_path,, temp);
+        if !copy_success {
+            report_copy_error("failed to copy fonts from % to %", src_path, project_path);
+        }
+
+        log_proc("success copying files from %", engine_relative_path, flags=.VERBOSE_ONLY);
+    }
+
+    return true;
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

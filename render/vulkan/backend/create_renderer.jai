@@ -2,23 +2,25 @@ backend_create_renderer :: () -> bool {
     using engine.renderer;
     auto_release_temp();
 
-    bcr_run_or_return_failure :: #bake_arguments engine_run_or_return_failure(flags=.VERBOSE_ONLY, log_proc=render_log, fail_log_proc=render_error);
-    
     pool_init(*materials, creation_settings.max_materials, true);
 
-    init_success = true; 
-    
-    bcr_run_or_return_failure(create_vk_instance(),               *init_success);
-    bcr_run_or_return_failure(create_surface(),                   *init_success);
-    bcr_run_or_return_failure(select_physical_device(),           *init_success);
-    bcr_run_or_return_failure(create_logical_device(),            *init_success);
-    bcr_run_or_return_failure(initialize_allocators(),            *init_success);
-    bcr_run_or_return_failure(create_swapchain_and_attachments(), *init_success);
-    bcr_run_or_return_failure(create_frames(),                    *init_success);
-    bcr_run_or_return_failure(create_upload_state(),              *init_success);
-    bcr_run_or_return_failure(create_texture_descriptors(),       *init_success);
-    bcr_run_or_return_failure(create_materials_buffer(),          *init_success);
-    bcr_run_or_return_failure(create_pipelines(),                 *init_success);
+    bcr_try :: #bake_arguments engine_run_or_return_failure(log_proc=render_log, fail_log_proc=render_error, flags=.VERBOSE_ONLY);
+
+    init_success = false;
+
+    bcr_try(create_vk_instance());
+    bcr_try(create_surface());
+    bcr_try(select_physical_device());
+    bcr_try(create_logical_device());
+    bcr_try(initialize_allocators());
+    bcr_try(create_swapchain_and_attachments());
+    bcr_try(create_frames());
+    bcr_try(create_upload_state());
+    bcr_try(create_texture_descriptors());
+    bcr_try(create_materials_buffer());
+    bcr_try(create_pipelines());
+
+    init_success = true;
 
     return true;
 }
