@@ -50,7 +50,6 @@ Serializer_Align_Mode :: enum u8 {
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :Init
 
-// avoid calling this repeatedly unless you're certain it's the right call
 initialize :: (using buffer: *Serializer, init_rw_mode: Rw_Mode, static_memory := "", use_checksum := false, reverse_primitive_byte_order := false) {
     rw_mode = init_rw_mode;
     pad_for_checksum = use_checksum;

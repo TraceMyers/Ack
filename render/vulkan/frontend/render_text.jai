@@ -1,5 +1,11 @@
 Font :: struct {
     path: string;
+    code_point_to_glyph: Table(u32, Glyph);
+}
+
+
+Glyph :: struct {
+
 }
 
 load_ttf_font :: (fonts_relative_path: string) -> *Font {
@@ -22,3 +28,11 @@ load_ttf_font :: (fonts_relative_path: string) -> *Font {
     return font_ptr.*;
 }
 
+get_glyph :: (font: *Font, code_point: u32) -> Glyph {
+    glyph := table_find(*font.code_point_to_glyph, code_point);
+    if glyph == null {
+        // code point 0 maps to the special glyph representing a missing character.
+        glyph = table_find(*font.code_point_to_glyph, 0);
+    }
+    return glyph.*;
+}

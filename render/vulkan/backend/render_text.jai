@@ -18,6 +18,8 @@ init_render_text :: () -> bool {
     return true;
 }
 
+// great primary sournce for the ttf file format (old, not including otf):
+// http://hackipedia.org/browse.cgi/File%20formats/TrueType%20font%20format/TrueType%201%2e0%20Font%20Files%20Technical%20Specification%20v1%2e66%20%281995%2d08%29/Chapter%202%20%2d%20The%20TrueType%20Font%20File%2epdf
 load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
     auto_release_temp();
 
@@ -52,17 +54,29 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
     // each directory entry corresponds to a table within the table data section.
     // my directory leaves a lot of optional tables out. not using them, kay?
     table_directory := Table_Directory_Entry.[
+        // character to glyph mapping
         {tag="cmap", proc=read_ttf_table_cmap, required=true},
+        // glyph data
         {tag="glyf", proc=read_ttf_table_glyf, required=true},
+        // font header
         {tag="head", proc=read_ttf_table_head, required=true},
+        // horizontal header
         {tag="hhea", proc=read_ttf_table_hhea, required=true},
+        // horizontal metrics
         {tag="hmtx", proc=read_ttf_table_hmtx, required=true},
+        // index to location
         {tag="loca", proc=read_ttf_table_loca, required=true},
+        // maximum profile
         {tag="maxp", proc=read_ttf_table_maxp, required=true},
+        // naming table
         {tag="name", proc=read_ttf_table_name, required=true},
+        // PostScript information
         {tag="post", proc=read_ttf_table_post, required=true},
+        // OS/2 and Windows specific metrics
         {tag="OS/2", proc=read_ttf_table_OS_2, required=true},
+        // kerning
         {tag="kern", proc=read_ttf_table_kern, required=false},
+        // also kerning?
         {tag="GPOS", proc=read_ttf_table_GPOS, required=false},
     ];
 
@@ -78,9 +92,13 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
         ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.offset));
         ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.length));
 
-        found_table: bool;
         for *table : table_directory {
             if table.tag == tag_str {
+                if table.exists_in_file {
+                    engine_warning("found multiple tables with the same tag, which is considered invalid in a ttf file. to be permissive in the hopes that it's a minor error, the duplicate table is being skipped.", flags=.VERY_VERBOSE_ONLY);
+                    break;
+                }
+
                 table.checksum       = dummy_entry.checksum;
                 table.offset         = dummy_entry.offset;
                 table.length         = dummy_entry.length;
@@ -106,6 +124,9 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
 
     loading_font := Loading_Font.{font=font};
 
+    init(*loading_font.code_point_to_glyph_index, 1024,, temp);
+    defer deinit(*loading_font.code_point_to_glyph_index);
+
     for table : table_directory {
         if !table.exists_in_file {
             if table.required {
@@ -130,7 +151,8 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
 ttf_try :: #bake_arguments engine_run_or_return_failure(log_proc=null, flags=.VERBOSE_ONLY);
 
 Loading_Font :: struct {
-    font: *Font;
+    using font: *Font;
+    code_point_to_glyph_index: Table(u32, u32);
 }
 
 Table_Directory_Entry :: struct {
@@ -165,6 +187,76 @@ TTF_Number :: enum u8 {
 }
 
 read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
+    s: Serializer;
+    initialize(*s, .READ, as_string(table_data), true);
+
+    table_version_number, table_count: u16;
+
+    ttf_try(read_ttf_number(*s, .USHORT, *table_version_number));
+    if table_version_number != 0 {
+        engine_error("ttf parser does not support cmap table version number > 0. seeing version %", table_version_number, flags=.VERBOSE_ONLY);
+        return false;
+    }
+    ttf_try(read_ttf_number(*s, .USHORT, *table_count);
+
+    if table_count == 0 {
+        engine_error("cmap table count = 0. no mappings.", flags=.VERBOSE_ONLY);
+        return false;
+    }
+
+    Subtable_Directory_Entry :: struct {
+        platform_id:          u16;
+        platform_encoding_id: u16;
+        offset_to_subtable:   u32;
+    }
+
+    subtables := make_static_array(Subtable_Directory_Entry, table_count,, temp);
+    unicode_subtable_index := -1;
+
+    for 0..table_count-1 {
+        subtable := *subtables[it];
+
+        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_id);
+        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_encoding_id);
+        ttf_try(read_ttf_number(*s, .ULONG,  *subtable.offset_to_subtable);
+
+        if subtable.platform_id == 3 && subtable.encoding_id == 0 {
+            unicode_subtable_index = it;
+            break;
+        }
+    }
+
+    // todo: support more? ever necessary?
+    if unicode_subtable_index == -1 {
+        engine_error("did not find a unicode subtable within cmap. only unicode supported.");
+        return false;
+    }
+
+    unicode_subtable := *subtables[unicode_subtable_index];
+    format, length, version: u16 = ---;
+    
+    ttf_try(read_ttf_number(*s, .USHORT, *format));
+    ttf_try(read_ttf_number(*s, .USHORT, *length));
+    ttf_try(read_ttf_number(*s, .USHORT, *version));
+
+    if format == {
+    case 0;
+        glyph_id_array: [256]u8 = ---;
+        ttf_try(read_bytes(*s, glyph_id_array.data, 256));
+        for glyph_id_array {
+            loading_font.code_point_to_glyph_index[cast(u32) it_index] = it;
+        }
+    case 2;
+
+    case 4;
+
+    case 6;
+
+    case;
+        engine_error("unicode subtable format % encountered. only 0, 2, 4, 6 are supported.", format);
+        return false;
+    }
+    
     return false;
 }
 
