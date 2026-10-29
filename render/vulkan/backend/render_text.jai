@@ -204,40 +204,107 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         return false;
     }
 
+    CMAP_Coverage :: enum u32 {
+        FULL_UNICODE;
+        BMP_ONLY;
+        BMP;
+        SYMBOL_FONT;
+        MAC_ROMAN;
+    }
+
     Subtable_Directory_Entry :: struct {
         platform_id:          u16;
         platform_encoding_id: u16;
         offset_to_subtable:   u32;
+        expected_format:      s32;
+        coverage:             CMAP_Coverage;
     }
 
-    subtables := make_static_array(Subtable_Directory_Entry, table_count,, temp);
+    unicode_subtables := make_dynamic_array(Subtable_Directory_Entry, table_count,, temp);
     unicode_subtable_index := -1;
 
     for 0..table_count-1 {
-        subtable := *subtables[it];
+        subtable: Subtable_Directory_Entry = ---;
 
         ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_id);
         ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_encoding_id);
         ttf_try(read_ttf_number(*s, .ULONG,  *subtable.offset_to_subtable);
+        subtable.expected_format = -1;
 
-        if subtable.platform_id == 3 && subtable.encoding_id == 0 {
-            unicode_subtable_index = it;
-            break;
+        // todo: check
+        if subtable.platform_id == {
+        case 0;
+            if subtable.encoding_id == {
+            case 0; #through;
+            case 1; #through;
+            case 2;
+                subtable.expected_format = 4;
+                subtable.coverage = .BMP;
+            case 3;
+                subtable.expected_format = 4;
+                subtable.coverage = .BMP_ONLY;
+            case 4;
+                subtable.expected_format = 12;
+                subtable.coverage = .FULL_UNICODE;
+            }
+        case 1;
+            if subtable.encoding_id == 0 {
+                subtable.expected_format = 0; // or 6
+                subtable.coverage = .MAC_ROMAN;
+            }
+        case 3;
+            if subtable.encoding_id == {
+            case 0;
+                subtable.expected_format = 4;
+                subtable.coverage = .SYMBOL_FONT;
+            case 1;
+                subtable.expected_format = 4;
+                subtable.coverage = .BMP_ONLY;
+            case 10;
+                subtable.expected_format = 12;
+                subtable.coverage = .FULL_UNICODE;
+            }
+        }
+
+        if subtable.expected_format != -1 {
+            array_add(*unicode_subtables, subtable);
         }
     }
 
     // todo: support more? ever necessary?
-    if unicode_subtable_index == -1 {
+    if unicode_subtables.count == 0 {
         engine_error("did not find a unicode subtable within cmap. only unicode supported.");
         return false;
     }
 
-    unicode_subtable := *subtables[unicode_subtable_index];
+    quick_sort(unicode_subtables, (a: Subtable_Directory_Entry, b: Subtable_Directory_Entry) -> int {
+        if a.expected_format == b.expected_format {
+            return a.coverage - b.coverage; // lower enum values better
+        } else return b.expected_format - a.expected_format; // 12 > 4 > 0
+    });
+
+    best_subtable := *subtables[0];
+
+    s.memory.data  = table_data.data + best_subtable.offset_to_subtable;
+    s.memory.count = max(s.memory.count - best_subtable.offset_to_subtable, 0);
+    s.head         = 0;
+
     format, length, version: u16 = ---;
     
     ttf_try(read_ttf_number(*s, .USHORT, *format));
     ttf_try(read_ttf_number(*s, .USHORT, *length));
     ttf_try(read_ttf_number(*s, .USHORT, *version));
+
+    if length > s.memory.count {
+        engine_error("cmap subtable length % greater than remaining byte count %", length, s.memory.count);
+        return false;
+    }
+
+    if format != best_subtable.expected_format {
+        engine_warning("format in subtable doesn't match expected format in cmap subtable header % but maybe it's because I'm a dingus.", format, fmt_verbose(best_subtable.*));
+    }
+
+    s.memory.count = length;
 
     if format == {
     case 0;
@@ -246,14 +313,58 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         for glyph_id_array {
             loading_font.code_point_to_glyph_index[cast(u32) it_index] = it;
         }
-    case 2;
-
     case 4;
+        segment_count_x2, search_range, entry_selector, range_shift: u16 = ---;
+        ttf_try(read_ttf_number(*s, .USHORT, *segment_count_x2));
+        ttf_try(read_ttf_number(*s, .USHORT, *search_range));
+        ttf_try(read_ttf_number(*s, .USHORT, *entry_selector));
+        ttf_try(read_ttf_number(*s, .USHORT, *range_shift));
+        
+        segment_count := segment_count_x2 / 2;
+        if segment_count == 0 {
+            engine_error("invalid segment count 0 in cmap subtable format 4");
+            return false;
+        }
+
+        end_codes := make_static_array(u16, segment_count,, temp);
+        for 0..segment_count - 1 {
+            ttf_try(read_ttf_number(*s, .USHORT, *end_codes[it]);
+        }
+
+        if end_codes[end_codes.count-1] != 0xffff {
+            engine_warning("final end code in cmap subtable format 4 should be 0xffff but was %", end_codes[end_codes.count-1]);
+        }
+
+        reserved_padding: u16 = ---;
+        ttf_try(read_ttf_number(*s, .USHORT, *reserved_padding));
+
+        if reserved_padding != 0 {
+            engine_warning("padding in cmap subtable format 4 should be 0 but was %", reserved_padding);
+        }
+
+        start_codes := make_static_array(u16, segment_count,, temp);
+        for 0..segment_count - 1 {
+            ttf_try(read_ttf_number(*s, .USHORT, *start_codes[it]));
+        }
+
+        code_deltas := make_static_array(u16, segment_count,, temp);
+        for 0..segment_count - 1 {
+            ttf_try(read_ttf_number(*s, .USHORT, *code_deltas[it]));
+        }
+
+        glyph_offsets := make_static_array(u16, segment_count,, temp);
+        for 0..segment_count - 1 {
+            ttf_try(read_ttf_number(*s, .USHORT, *glyph_offsets[it]));
+        }
+
+
 
     case 6;
 
+    case 12;
+
     case;
-        engine_error("unicode subtable format % encountered. only 0, 2, 4, 6 are supported.", format);
+        engine_error("unicode subtable format % encountered. only 0, 4, 6, 12, 14 are supported.", format);
         return false;
     }
     
