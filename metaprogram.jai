@@ -5,6 +5,19 @@
 // -----------------------------------------------------------------------------------
 // -------------------------------------------------------------- Misc Metaprogramming
 
+aligned_offset :: inline (base_offset: int, size: int, count: int, align_after: int) -> int {
+    total_size := base_offset + size * count;
+    return ((total_size - 1) / align_after + 1) * align_after;
+}
+
+get_virtual_meminit :: (T: Type) -> (*void) {
+    ini := initializer_of(T);
+    if ini {
+        return (mem: *void) { ini(cast(*T)mem); };
+    } {
+        return (mem: *void) { memset(mem, 0, size_of(T)); };
+    }
+}
 
 meminit :: inline (component: *$T) {
     ini :: initializer_of(T);
@@ -26,6 +39,7 @@ align_of :: inline ($T: Type) -> int {
 }
 
 align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
+    auto_release_temp();
     engine_check(max_depth >= 1, level=.HIGH);
 
     if max_align <= 1 {

@@ -33,18 +33,11 @@
     Collision_Channels_Default :: enum_flags u32 { DEFAULT; };
     Raycast_Channels_Default :: enum_flags u32 { DEFAULT; };
     Extra_Body_Data_Default :: struct {};
-    Entity_ID_Type_Default :: u64;
 
     Type_Provider_Default :: struct {
-        entity_id_type      :: Entity_ID_Type_Default;
         extra_body_data     :: Extra_Body_Data_Default;
         collision_channels  :: Collision_Channels_Default;
         raycast_channels    :: Raycast_Channels_Default;
-        entity_to_id_proc   :: (ent: *Ack_Entity) -> Entity_ID_Type_Default { return 0; };
-        id_to_entity_proc   :: (id: Entity_ID_Type_Default) -> *Ack_Entity { return null; };
-        entity_id_to_u64    :: (id: Entity_ID_Type_Default) -> u64 { return id; };
-        u64_to_entity_id    :: (id: u64) -> Entity_ID_Type_Default { return id; };
-        null_entity_id      : u64 : 0;
     }
 
     Ack_Validation_Level :: enum u8 {
@@ -62,6 +55,12 @@
 }
 
 ACK_VERSION :: Version.{0,1,0};
+
+Gen_ID :: struct {
+    index: s32 = -1;
+    generation: u32;
+}
+
 
 // -----------------------------------------------------------------------------------------------
 
@@ -81,6 +80,8 @@ game_engine_init :: (
     engine_check(!engine.initialized);
     engine_check(engine.physical_world == null);
     engine_check(engine.renderer == null);
+
+    init_engine_default_entity_components();
 
     copy_engine_files_to_project = initialize_project;
 
@@ -173,6 +174,10 @@ Game_Engine :: struct {
     input: Game_Input;
     renderer: *Renderer;
     physical_world: *Physical_World;
+
+    components: [..]Component_Storage;
+    type_to_component_handle: Table(*Type_Info, u32);
+
     initialized: bool;
 }
 

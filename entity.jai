@@ -1,15 +1,63 @@
-Ack_Entity :: struct {
+
+Entity_Ref :: #type,isa Component_Ref;
+
+Entity_Flags :: enum u64 {
+
+}
+
+Entity :: struct {
+    id: Gen_ID;
+    entity_flags: Entity_Flags;
+    components: Table(*Type_Info, Component_Instance);
+}
+
+Transform :: struct {
     position:    Vector3;
     orientation: Quaternion;
-    scale      := Vector3.{1,1,1};
+    scale := Vector3.{1,1,1};
 }
 
-is_null_entity_id :: inline (id: user_types.entity_id_type) -> bool {
-    return user_types.entity_id_to_u64(id) == user_types.null_entity_id;
+make_entity :: () -> *Entity {
+    return add_component(Entity, null_entity_ref());
 }
 
-NULL_ENTITY_ID :: #run user_types.u64_to_entity_id(user_types.null_entity_id);
+make_spatial_entity :: () -> *Entity {
+    e := make_entity();
+    find_or_add_component(e, Transform);
+    return e;
+}
 
-// the user_types interface doesn't check signatures
-#assert type_of(user_types.entity_id_to_u64) == #type (user_types.entity_id_type) -> u64;
-#assert type_of(user_types.u64_to_entity_id) == #type (u64) -> user_types.entity_id_type;
+get_entity :: (ref: Entity_Ref) -> *Entity {
+    engine_check(ref.handle == entity_handle);
+    return get_component(ref, Entity);
+}
+
+get_entity_ref :: (e: *Entity) -> Entity_Ref {
+    return {entity_handle, e.id};
+}
+
+null_entity_ref :: inline () -> Entity_Ref {
+    return {entity_handle, {}};
+}
+
+get_component_data :: inline (e: *Entity, info: *Type_Info) -> *void {
+    return cast(*T) e.components[info].data;
+}
+
+get_component :: inline (e: *Entity, $T: Type) -> *T {
+    return cast(*T) get_component(e, type_info(T));
+}
+
+find_component :: (entity: *Entity, $T: Type) -> *T {
+    inst := table_find(*entity.components, type_info(T));
+    return ifx inst == null then cast(*T) null else cast(*T) inst.data;
+}
+
+find_or_add_component :: (entity: *Entity, $T: Type) -> *T {
+    inst, just_added := find_or_add(*entity.components, type_info(T));
+    if just_added {
+        inst.* = add_component(T, {entity_handle, entity.id});
+    }
+    return (T*) inst.data;
+}
+
