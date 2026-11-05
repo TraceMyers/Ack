@@ -1,23 +1,19 @@
 // external type made to avoid changing shared properties on accident.
-Physics_Body :: Physics_Body_Base(void, void);
+Physics_Body :: Physics_Body_Base(void);
 // cast to this type for easy access to physics properties.
-Physics_Body_Internal :: Physics_Body_Base(Physics_Properties, Physics_Collider);
+Physics_Body_Internal :: Physics_Body_Base(Physics_Properties);
 
-Physics_Body_Base :: struct($properties_type: Type, $collider_type: Type) {
+Physics_Body_Base :: struct($properties_type: Type) {
     using transform: Physics_Body_Transform;
 
+    axes: [3]u64;
     properties: *properties_type;
-    collider: *collider_type;
-    index: Index_2D;
 
+    collider: Physics_Collider;
     contact_grid_min_x: s16;
     contact_grid_min_y: s16;
     contact_grid_max_x: s16;
     contact_grid_max_y: s16;
-    
-    move_input: Vector2;
-
-    extra_data: user_types.extra_body_data;
 }
 
 Physics_Body_Transform :: struct {
@@ -56,23 +52,27 @@ Physics_Body_Flags :: enum_flags u32 {
     PLACED_INTO_CONTACT_GRID;
 }
 
-create_physics_body :: (template_name: string, entity_id: user_types.entity_id_type, body_ptr: **Physics_Body) -> *Physics_Body {
+add_physics :: (entity: *Entity, template_name: string) -> *Physics_Body {
     template := table_find_pointer(*engine.physical_world.body_templates, template_name);
-    return create_physics_body(template, entity_id, body_ptr);
+    engine_check(template != null);
+    return create_physics_body(entity, template);
 }
 
-create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.entity_id_type, body_ptr: **Physics_Body) -> *Physics_Body {
+add_physics :: (entity: *Entity, template: *Physics_Body_Template) -> *Physics_Body {
     using engine.physical_world;
 
-    body := create_component(*body_data, entity_id, cast(**Physics_Body_Internal) body_ptr);
-    i    := get_component_indexer(*body_data, body_data.component_count - 1);
-    body.index = i;
+    flags := add_component(entity, Physics_Body_Flags);
+    body  := add_component(entity, Physics_Body);
 
-    // todo: making everything awake all the time for now, but that needs to change.
-    body.properties                                             = *template.properties;
-    body.collider                                               = *template.collider;
-    body_data.get_flags_component(*body_data, i).*              = template.flags | .AWAKE;
-    body_data.get_collision_channels_component(*body_data, i).* = xx template.collision_channels;
+    // physics components must be aligned
+    flags_inst := get_component_instance(entity, Physics_Body_Flags);
+    body_inst  := get_component_instance(entity, Physics_Body);
+    engine_check(flags_inst.ref.id.index == body_inst.ref.id.index);
+
+    flags.* = template.flags | .AWAKE;
+    body.properties = *template.properties;
+    body.collider = template.collider;
+    body.collider.collision_channels = template.collision_channels;
 
     // todo: only if the template calls for it
     place_into_contact_grid(body);
@@ -80,31 +80,18 @@ create_physics_body :: (template: *Physics_Body_Template, entity_id: user_types.
     return xx body;
 }
 
-destroy_physics_body :: (in_body: **Physics_Body_Base) {
+remove_physics :: (entity: *Entity) {
     using engine.physical_world;
 
-    body := (cast(*Physics_Body_Internal) in_body.*);
+    body := get_component(entity, Physics_Body);
 
     props_are_unique, unique_index := is_unique(body.properties);
     if props_are_unique {
         pool_return(*unique_properties, unique_index);
     }
 
-    collider_is_unique:, unique_index = is_unique(body.collider);
-    if collider_is_unique {
-        pool_return(*unique_colliders, unique_index);
-    }
-
-    replacer_callback :: (replacer: *Ack_Entity, body: *Physics_Body_Internal, new_body_index: Index_2D) {
-        body.index = new_body_index;
-    }
-
-    destroy_component(
-        *body_data, 
-        body_data.chunks[body.index.first].ids[body.index.second],
-        xx in_body,
-        replacement_entity_callback = replacer_callback
-    );
+    remove_component(entity, Physics_Body_Flags);
+    remove_component(entity, Physics_Body);
 }
 
 create_physics_body_template :: (name: string, template: Physics_Body_Template) {
@@ -120,8 +107,7 @@ create_physics_body_template :: (name: string, template: Physics_Body_Template) 
 
     table_add(*body_templates, name, template_copy);
 
-    // todo: probably should make it so the tables have hash collision resolution...
-    #if ENABLE_VALIDATION {
+    #if do_physics_validation(.HIGH)
         array_add(*debug_template_properties, template_copy.properties);
     }
 }
@@ -197,7 +183,7 @@ z_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
 calc_axes :: inline (body: *Physics_Body_Base) -> Vector3, Vector3, Vector3 {
     x := x_axis(body);
     y := y_axis(body);
-    z := cross(x, y);
+    z := z_axis(body);
     return x, y, z;
 }
 
@@ -224,7 +210,6 @@ get_position :: (_body: *Physics_Body_Base) -> Vector3 {
 }
 
 calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := false) -> AABB {
-
     body := cast(*Physics_Body_Internal) _body;
     using body.collider;
 

@@ -35,7 +35,6 @@
     Extra_Body_Data_Default :: struct {};
 
     Type_Provider_Default :: struct {
-        extra_body_data     :: Extra_Body_Data_Default;
         collision_channels  :: Collision_Channels_Default;
         raycast_channels    :: Raycast_Channels_Default;
     }
@@ -61,6 +60,17 @@ Gen_ID :: struct {
     generation: u32;
 }
 
+do_general_validation :: (level: Ack_Validation_Level) -> Ack_Validation_Level #expand {
+    return ENABLE_VALIDATION && level <= GENERAL_VALIDATION_LEVEL;
+}
+
+do_physics_validation :: (level: Ack_Validation_Level) -> Ack_Validation_Level #expand {
+    return ENABLE_VALIDATION && level <= PHYSICS_VALIDATION_LEVEL;
+}
+
+do_render_validation :: (level: Ack_Validation_Level) -> Ack_Validation_Level #expand {
+    return ENABLE_VALIDATION && level <= RENDER_VALIDATION_LEVEL;
+}
 
 // -----------------------------------------------------------------------------------------------
 
@@ -177,6 +187,7 @@ Game_Engine :: struct {
 
     components: [..]Component_Storage;
     type_to_component_handle: Table(*Type_Info, u32);
+    component_combinations: [..]Component_Combination;
 
     initialized: bool;
 }
@@ -242,6 +253,7 @@ update_clock :: () {
 #load "camera.jai";
 #load "color.jai";
 #load "component.jai";
+#load "component_loops.jai";
 #load "compression.jai";
 #load "config.jai";
 #load "encode_text.jai";

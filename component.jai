@@ -2,7 +2,9 @@
 todo: rewrite docs
 */
 
-entity_handle: u32;
+// the only default globally-defined component handle, so that engine code can
+// know where entities are stored.
+entity_handle: u32; 
 
 // types
 
@@ -47,6 +49,8 @@ Component_Storage :: struct {
     type_init: (*void);
     handling: Component_Handling_Flags;
 
+    combinations: [..]Component_Combination_Handle;
+
     ITEMS_PER_CHUNK :: 64;
     COMPONENT_ALIGN :: 8;
 
@@ -54,6 +58,14 @@ Component_Storage :: struct {
 }
 
 // interface
+
+component_storage :: ($T: Type) -> *Component_Storage {
+    return component_storage(type_info(T));
+}
+
+component_storage :: (info: *Type_Info) -> *Component_Storage {
+    return *engine.components[engine.type_to_component_handle[info]];
+}
 
 component_handle_to_type :: (handle: u32) -> *Type_Info {
     return engine.components[handle].tinfo;
@@ -79,7 +91,9 @@ init_engine_default_entity_components :: () {
 
     engine_check(null_handle == 0);
 
-    entity_handle = add_component_type(Entity, init_handling = DEFAULT_COMPONENT_HANDLING_FLAGS | .MAY_NOT_HAVE_OWNER);
+    entity_flags := DEFAULT_COMPONENT_HANDLING_FLAGS | .MAY_NOT_HAVE_OWNER;
+    entity_handle = add_component_type(Entity, init_handling=entity_flags);
+
     add_component_type(Transform);
 }
 
@@ -156,11 +170,34 @@ add_component :: (using storage: *Component_Storage, owner_ref: Entity_Ref) -> C
         type_inits[it](slot.component);
     }
 
+    if combinations.count > 0 {
+        owner := get_entity(owner_ref);
+
+        if owner != null then for ci : combinations {
+            combo := *engine.component_combinations[ci];
+            has_all_types := true;
+
+            for type : combo.types {
+                if type == tinfo {
+                    continue;
+                }
+                if find_component_instance(owner, type) == null {
+                    has_all_types = false;
+                    break;
+                }
+            }
+
+            if has_all_types {
+                array_add(*combo.entities_with_combination, owner_ref.id);
+            }
+        }
+    }
+
     index := free_component_index.chunk * ITEMS_PER_CHUNK + free_component_index.index;
     return {slot.component, {type_handle, {xx index, slot.generation.*}}};
 }
 
-remove_component :: (using storage: *Component_Storage, inst: *Component_Instance, allow_shrink := true) {
+remove_component :: (inst: *Component_Instance, allow_shrink := true) {
     // ----------
 
     clear_slot :: (component_index: Component_Index, slot: *Component_Slot) #expand {
@@ -171,9 +208,12 @@ remove_component :: (using storage: *Component_Storage, inst: *Component_Instanc
 
     // ----------
 
+    using storage: *Component_Storage = *engine.components[inst.ref.type_handle];
 
     component_index := to_component_storage_index(inst.id.index);
     slot := get_component_slot(component_index);
+    
+    old_owner_id := slot.owner_id.*;
 
     if (handling & .STABLE_ID) != 0 {
         engine_check(stable_tracking[component_index]);
@@ -191,13 +231,13 @@ remove_component :: (using storage: *Component_Storage, inst: *Component_Instanc
             slot.owner_id.* = last_slot.owner_id.*;
             slot.generation.* += 1;
 
-            swap_slot_owner := get_entity({entity_handle, slot.owner_id});
-            if swap_slot_owner {
+            if slot.owner_id == null_entity_ref().id {
+                engine_check((handling & .MAY_NOT_HAVE_OWNER) != 0);
+            } else {
+                swap_slot_owner := get_entity({entity_handle, slot.owner_id});
                 swap_slot_inst  := swap_slot_owner.components[tinfo];
                 swap_slot_inst.data = slot.component;
                 swap_slot_inst.ref.id = {inst.id.index, slot.generation.*};
-            } else {
-                engine_check((handling & .MAY_NOT_HAVE_OWNER) != 0);
             }
         }
 
@@ -205,54 +245,27 @@ remove_component :: (using storage: *Component_Storage, inst: *Component_Instanc
         free_index -= 1;
     }
 
+    if combinations.count > 0 {
+        owner := get_entity({entity_handle, old_owner_id});
+        if owner != null then for combo : combinations {
+            array_unordered_remove_by_value(*combo.entities_with_combination, old_owner_id, true);
+        }
+    }
+
     inst.* = {};
 }
 
-Component_Storage_Iteration :: struct {
-    data: *void;
-    owner_id: Gen_ID;
-}
-
-for_expansion :: (using storage: *Component_Storage, body: Code, flags: For_Flags) #expand {
-    last_index := -1;
-
-    using_stable_ids := (handling & .STABLE_IDS) != 0;
-
-    if using_stable_ids {
-        for :only_set_bits bit_value, bit_index : stable_tracking {
-            last_index = bit_index;
-            break;
+last_allocated_index :: (using storage: *Component_Storage) {
+    if (handling & .STABLE_IDS) != 0 {
+        for :only_set bit_value, bit_index : stable_tracking {
+            return bit_index;
         }
     } else {
-        last_index = free_index - 1;
+        return free_index - 1;
     }
-
-    if last_index >= 0 {
-        last_component_index := to_component_storage_index(last_index);
-
-        for chunk : 0..last_component_index.chunk {
-            component_mem_list := get_component_list_memory(storage, chunk);
-            owner_id_list := get_owner_id_list(storage, chunk);
-
-            last_item_index := ifx chunk == last_component_index.chunk then last_component_index.index else ITEMS_PER_CHUNK - 1;
-
-            `it_index := chunk * ITEMS_PER_CHUNK;
-            
-            for item : 0..last_item_index {
-                if using_stable_ids && !stable_tracking[`it_index] {
-                    continue;
-                }
-
-                component := component_mem_list + type_size * item;
-
-                `it := Component_Storage_Iteration.{component, owner_id_list[item]};
-                `it_index += 1;
-
-                #insert body;
-            }
-        }
-    }
+    return -1;
 }
+
 
 // component tracking
 

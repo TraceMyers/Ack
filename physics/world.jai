@@ -125,15 +125,5 @@ Physics_Step_State :: enum {
     PAUSE_ON_COLLISION;
 }
 
-Physical_Entity_Components :: Multi_Component_Storage(
-    struct {
-        bodies:              Physics_Body_Internal;
-        flags:               Physics_Body_Flags;
-        collision_channels:  Collision_Channels;
-        axes:                [3]u64;
-    },
-    components_per_chunk=256
-);
-
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

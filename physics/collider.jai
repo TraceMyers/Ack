@@ -26,18 +26,10 @@ Collision_Mesh : struct {
     };
 }
 
-get_collider :: inline (in_body: *Physics_Body_Base) -> Physics_Collider {
-    return (cast(*Physics_Body_Internal) in_body).collider;
-}
-
 set_collider :: (in_body: *Physics_Body_Base, collider: Physics_Collider) {
-    make_collider_unique(in_body);
-
     body := cast(*Physics_Body_Internal) in_body;
     body.collider.* = collider;
     set_collider_data_for_fast_aabb_calculation(body.collider);
-
-    body.collider.initialized = true;
 }
 
 set_collider_data_for_fast_aabb_calculation :: (using collider: *Physics_Collider) {
@@ -70,27 +62,6 @@ set_collider_data_for_fast_aabb_calculation :: (using collider: *Physics_Collide
         array[2] = data.capsule.radius;
     case;
         memset(array.data, 0, size_of(type_of(shape_data)));
-    }
-}
-
-is_unique :: inline (collider: *Physics_Collider) -> unique: bool, unique_index: s32 {
-    using engine.physical_world;
-    unique_index := collider - unique_colliders.items.data;
-    if unique_index >= 0 && unique_index < unique_colliders.items.count {
-        physics_check(is_pool_item_in_use(*unique_colliders, unique_index), level=.HIGH);
-        return true, xx unique_index;
-    }
-    physics_check(is_data_from_template(xx collider), level=.HIGH);
-    return false, -1;
-}
-
-make_collider_unique :: inline (in_body: *Physics_Body_Base) {
-    body := cast(*Physics_Body_Internal) in_body;
-    if !is_unique(body.collider) {
-        new_collider_index := pool_acquire(*engine.physical_world.unique_colliders);
-        new_collider := *engine.physical_world.unique_colliders[new_collider_index];
-        new_collider.* = body.collider.*;
-        body.collider = new_collider;
     }
 }
 
