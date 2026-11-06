@@ -38,16 +38,16 @@ Input_Type :: enum u16 {
 DEFAULT_CONTROLLER :: 0;
 
 button_input_binding_proc              :: #type (key: Key_Code, type: Input_Type);
-button_input_binding_with_entity_proc  :: #type (key: Key_Code, type: Input_Type, entity: *Ack_Entity);
+button_input_binding_with_entity_proc  :: #type (key: Key_Code, type: Input_Type, entity: *Entity);
 axis_1d_input_binding_proc             :: #type (x: float32);
-axis_1d_input_binding_with_entity_proc :: #type (x: float32, entity: *Ack_Entity);
+axis_1d_input_binding_with_entity_proc :: #type (x: float32, entity: *Entity);
 axis_2d_input_binding_proc             :: #type (x: float32, y: float32);
-axis_2d_input_binding_with_entity_proc :: #type (x: float32, y: float32, entity: *Ack_Entity);
+axis_2d_input_binding_with_entity_proc :: #type (x: float32, y: float32, entity: *Entity);
 
 Input_Binding :: struct {
     input_type: Input_Type;
     proc: *void;
-    entity_id: user_types.entity_id_type;
+    entity_id: Gen_ID;
 }
 
 to_key_code :: inline (gamepad_code: Gamepad_Code) -> Key_Code {
@@ -62,19 +62,19 @@ to_gamepad_code :: inline (key_code: Key_Code) -> gamepad_code: Gamepad_Code, is
     }
 }
 
-set_gamepad_input_binding :: (gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := NULL_ENTITY_ID) {
+set_gamepad_input_binding :: (gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
     set_gamepad_input_binding(0, gamepad_code, input_type, proc, entity_id);
 }
 
-set_gamepad_input_binding :: (controller_id: int, gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := NULL_ENTITY_ID) {
+set_gamepad_input_binding :: (controller_id: int, gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
     set_input_binding(controller_id, to_key_code(gamepad_code), input_type, proc, entity_id);
 }
 
-set_input_binding :: (key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := NULL_ENTITY_ID) {
+set_input_binding :: (key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
     set_input_binding(0, key_code, input_type, proc, entity_id);
 }
 
-set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := NULL_ENTITY_ID) {
+set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
     Input_Binding_Argtype :: enum u8 {
         KEY_CODE;
         INPUT_TYPE;
@@ -82,7 +82,7 @@ set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_
         FLOAT;
     }
 
-    if !is_null_entity_id(entity_id) {
+    if entity_id.index >= 0 {
         tinfo := cast(*Type_Info_Procedure)proc_type;
         INPUT_BINDING_MAX :: 3;
         argtypes := make_local_static_array(Input_Binding_Argtype, INPUT_BINDING_MAX);
@@ -96,7 +96,7 @@ set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_
                 ptr_tinfo := cast(*Type_Info_Pointer) argtype;
                 assert(ptr_tinfo.pointer_to.type == .STRUCT);
                 arg_tinfo := cast(*Type_Info_Struct) ptr_tinfo.pointer_to;
-                is_entity_type := is_subtype_of((cast(*Type) *arg_tinfo).*, Ack_Entity);
+                is_entity_type := is_subtype_of((cast(*Type) *arg_tinfo).*, Entity);
                 assert(is_entity_type);
                 static_array_add(*argtypes, .ENTITY, INPUT_BINDING_MAX);
             } else if argtype.type == .ENUM {
@@ -144,7 +144,7 @@ set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_
     }
 }
 
-set_input_binding_impl :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := NULL_ENTITY_ID) {
+set_input_binding_impl :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
     assert(proc != null);
 
     if engine.input.controllers.items.count == 0 {
@@ -159,7 +159,7 @@ set_input_binding_impl :: (controller_id: int, key_code: Key_Code, input_type: I
     input_id := get_input_id(key_code, input_type);
     binding  := Input_Binding.{input_type=input_type, proc=xx proc, entity_id=entity_id};
 
-    if !is_null_entity_id(entity_id) {
+    if entity_id.index >= 0 {
         if input_type == {
         case .BUTTON_PRESSED;  #through;
         case .BUTTON_RELEASED; #through;
@@ -209,8 +209,8 @@ call_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input
     }
     assert(binding.proc != null);
 
-    if !is_null_entity_id(binding.entity_id) {
-        entity := user_types.id_to_entity_proc(binding.entity_id);
+    if binding.entity_id.index >= 0 {
+        entity := get_entity(binding.entity_id);
         if entity == null {
             engine_warning("input binding for input % was cleared because entity % was invalid", key_code, binding.entity_id);
             clear_input_binding(controller_id, key_code, input_type);

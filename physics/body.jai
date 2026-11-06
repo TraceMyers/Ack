@@ -8,6 +8,8 @@ Physics_Body_Base :: struct($properties_type: Type) {
 
     axes: [3]u64;
     properties: *properties_type;
+    flags: Physics_Body_Flags;
+    index: s32; // stable component index (Physics_Body storage uses .STABLE_ID). used by the contact grid.
 
     collider: Physics_Collider;
     contact_grid_min_x: s16;
@@ -52,27 +54,26 @@ Physics_Body_Flags :: enum_flags u32 {
     PLACED_INTO_CONTACT_GRID;
 }
 
-add_physics :: (entity: *Entity, template_name: string) -> *Physics_Body {
+// this or the other version must be called explicitly after adding a physics body component
+// and before using the component.
+init_physics_body :: (entity: *Entity, template_name: string) -> *Physics_Body {
     template := table_find_pointer(*engine.physical_world.body_templates, template_name);
     engine_check(template != null);
-    return create_physics_body(entity, template);
+    return init_physics_body(entity, template);
 }
 
-add_physics :: (entity: *Entity, template: *Physics_Body_Template) -> *Physics_Body {
+// this or the other version must be called explicitly after adding a physics body component
+// and before using the component.
+init_physics_body :: (entity: *Entity, template: *Physics_Body_Template) -> *Physics_Body {
     using engine.physical_world;
 
-    flags := add_component(entity, Physics_Body_Flags);
-    body  := add_component(entity, Physics_Body);
+    body := get_component(entity, Physics_Body);
+    body.index = get_component_instance(entity, type_info(Physics_Body)).ref.id.index;
 
-    // physics components must be aligned
-    flags_inst := get_component_instance(entity, Physics_Body_Flags);
-    body_inst  := get_component_instance(entity, Physics_Body);
-    engine_check(flags_inst.ref.id.index == body_inst.ref.id.index);
-
-    flags.* = template.flags | .AWAKE;
+    body.flags = template.flags | .AWAKE;
     body.properties = *template.properties;
     body.collider = template.collider;
-    body.collider.collision_channels = template.collision_channels;
+    body.collider.channels = template.collision_channels;
 
     // todo: only if the template calls for it
     place_into_contact_grid(body);
@@ -80,18 +81,19 @@ add_physics :: (entity: *Entity, template: *Physics_Body_Template) -> *Physics_B
     return xx body;
 }
 
-remove_physics :: (entity: *Entity) {
+// this is called automatically when a physics body component is removed (and
+// all components are removed when an entity is destroyed). it's the storage's type_deinit,
+// so it receives the component itself.
+deinit_physics_body :: (body: *Physics_Body) {
     using engine.physical_world;
 
-    body := get_component(entity, Physics_Body);
+    // stable ids get reused, so stale grid entries would alias the next body at this index
+    remove_from_contact_grid(body);
 
     props_are_unique, unique_index := is_unique(body.properties);
     if props_are_unique {
         pool_return(*unique_properties, unique_index);
     }
-
-    remove_component(entity, Physics_Body_Flags);
-    remove_component(entity, Physics_Body);
 }
 
 create_physics_body_template :: (name: string, template: Physics_Body_Template) {
@@ -107,7 +109,7 @@ create_physics_body_template :: (name: string, template: Physics_Body_Template) 
 
     table_add(*body_templates, name, template_copy);
 
-    #if do_physics_validation(.HIGH)
+    #if ENABLE_VALIDATION && PHYSICS_VALIDATION_LEVEL >= .HIGH {
         array_add(*debug_template_properties, template_copy.properties);
     }
 }
@@ -132,40 +134,41 @@ push :: inline (_body: *Physics_Body_Base, force: Vector3) {
 }
 
 get_flags :: inline (body: *Physics_Body_Base) -> Physics_Body_Flags {
-    using engine.physical_world;
-    return body_data.get_flags_component(*body_data, body.index).*;
+    return body.flags;
 }
 
 set_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    using engine.physical_world;
-    body_data.get_flags_component(*body_data, body.index).* = flags;
+    body.flags = flags;
 }
 
 add_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    using engine.physical_world;
-    body_data.get_flags_component(*body_data, body.index).* |= flags;
+    body.flags |= flags;
 }
 
 has_any_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
-    using engine.physical_world;
-    return (body_data.get_flags_component(*body_data, body.index).* & flags) != 0;
+    return (body.flags & flags) != 0;
 }
 
 has_all_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) -> bool {
-    using engine.physical_world;
-    return (body_data.get_flags_component(*body_data, body.index).* & flags) == flags;
+    return (body.flags & flags) == flags;
 }
 
 has_flags :: has_all_flags;
 
 remove_flags :: inline (body: *Physics_Body_Base, flags: Physics_Body_Flags) {
-    using engine.physical_world;
-    body_data.get_flags_component(*body_data, body.index).* &= ~flags;
+    body.flags &= ~flags;
 }
 
 can_translate :: inline (body: *Physics_Body_Base) -> bool {
-    using engine.physical_world;
-    return (body_data.get_flags_component(*body_data, body.index).* & .LOCK_TRANSLATION) == 0;
+    return (body.flags & .LOCK_TRANSLATION) == 0;
+}
+
+get_body_storage :: inline () -> *Component_Storage {
+    return *engine.components[physics_body_handle];
+}
+
+get_body_by_index :: inline (i: int) -> *Physics_Body_Internal {
+    return cast(*Physics_Body_Internal) get_slot_component_memory(get_body_storage(), to_component_storage_index(i));
 }
 
 x_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
@@ -181,10 +184,7 @@ z_axis :: inline (body: *Physics_Body_Base) -> Vector3 {
 }
 
 calc_axes :: inline (body: *Physics_Body_Base) -> Vector3, Vector3, Vector3 {
-    x := x_axis(body);
-    y := y_axis(body);
-    z := z_axis(body);
-    return x, y, z;
+    return x_axis(body), y_axis(body), z_axis(body);
 }
 
 // teleport a body to a location
@@ -219,8 +219,7 @@ calculate_aabb :: inline (_body: *Physics_Body_Base, $use_compressed_axes := fal
         aabb.extent = splat(shape_data.array[0], 3);
     } else {
         #if use_compressed_axes {
-            using engine.physical_world;
-            axes := body_data.get_axes_component(*body_data, body.index);
+            axes := *body.axes;
             x := linear_decompress_vector3(axes.*[0], -1, 1);
             y := linear_decompress_vector3(axes.*[1], -1, 1);
             z := linear_decompress_vector3(axes.*[2], -1, 1);

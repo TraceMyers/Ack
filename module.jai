@@ -24,6 +24,7 @@
     ADD_TEXT_ENCODINGS:  []string = string.[], // see 'how to add text encodings' section
     ADD_ENCODE_FAILURES: []string = string.[], // see 'how to add text encodings' section
     ADD_CONTROL_MODES:   []string = string.[],
+    ENTITY_FLAGS:        []string = string.[],
 
     ENCODE_TEXT_MAX_WRITE_SIZE := 8,
     PHYSICS_DELTA_TIME                := 1.0 / 100.0,
@@ -60,15 +61,15 @@ Gen_ID :: struct {
     generation: u32;
 }
 
-do_general_validation :: (level: Ack_Validation_Level) -> Ack_Validation_Level #expand {
+do_general_validation :: (level: Ack_Validation_Level) -> bool #expand {
     return ENABLE_VALIDATION && level <= GENERAL_VALIDATION_LEVEL;
 }
 
-do_physics_validation :: (level: Ack_Validation_Level) -> Ack_Validation_Level #expand {
+do_physics_validation :: (level: Ack_Validation_Level) -> bool #expand {
     return ENABLE_VALIDATION && level <= PHYSICS_VALIDATION_LEVEL;
 }
 
-do_render_validation :: (level: Ack_Validation_Level) -> Ack_Validation_Level #expand {
+do_render_validation :: (level: Ack_Validation_Level) -> bool #expand {
     return ENABLE_VALIDATION && level <= RENDER_VALIDATION_LEVEL;
 }
 
@@ -91,11 +92,11 @@ game_engine_init :: (
     engine_check(engine.physical_world == null);
     engine_check(engine.renderer == null);
 
-    init_engine_default_entity_components();
-
     copy_engine_files_to_project = initialize_project;
 
     engine = {settings=engine_settings, initialized=false};
+
+    init_engine_default_entity_components();
 
     if use_ack_logger {
         context.logger = ack_log;
@@ -188,6 +189,8 @@ Game_Engine :: struct {
     components: [..]Component_Storage;
     type_to_component_handle: Table(*Type_Info, u32);
     component_combinations: [..]Component_Combination;
+
+    entities_queued_for_destruction: [..]Gen_ID;
 
     initialized: bool;
 }

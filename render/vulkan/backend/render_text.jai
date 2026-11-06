@@ -197,7 +197,7 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         engine_error("ttf parser does not support cmap table version number > 0. seeing version %", table_version_number, flags=.VERBOSE_ONLY);
         return false;
     }
-    ttf_try(read_ttf_number(*s, .USHORT, *table_count);
+    ttf_try(read_ttf_number(*s, .USHORT, *table_count));
 
     if table_count == 0 {
         engine_error("cmap table count = 0. no mappings.", flags=.VERBOSE_ONLY);
@@ -226,9 +226,9 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
     for 0..table_count-1 {
         subtable: Subtable_Directory_Entry = ---;
 
-        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_id);
-        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_encoding_id);
-        ttf_try(read_ttf_number(*s, .ULONG,  *subtable.offset_to_subtable);
+        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_id));
+        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_encoding_id));
+        ttf_try(read_ttf_number(*s, .ULONG,  *subtable.offset_to_subtable));
         subtable.expected_format = -1;
 
         // todo: check
@@ -328,7 +328,7 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
 
         end_codes := make_static_array(u16, segment_count,, temp);
         for 0..segment_count - 1 {
-            ttf_try(read_ttf_number(*s, .USHORT, *end_codes[it]);
+            ttf_try(read_ttf_number(*s, .USHORT, *end_codes[it]));
         }
 
         if end_codes[end_codes.count-1] != 0xffff {

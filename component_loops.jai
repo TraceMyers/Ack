@@ -35,20 +35,19 @@ Component_Storage_Iteration :: struct($T: Type, $using_data: bool) {
 
 // if 'using_data' is true, then the per-iteration component pointer 'data' will be declared
 // with 'using', meaning that instead of typing it.data.bar += 1 you can just type it.bar += 1.
-component_loop :: ($T: Type, $using_data := true) -> *Component_Storage_Loop(T, using_data) {
-    return {*engine.components[engine.type_to_component_handle[info]]};
+component_loop :: ($T: Type, $using_data := true) -> Component_Storage_Loop(T, using_data) {
+    return .{component_storage(T)};
 }
 
 component_loop :: (info: *Type_Info) -> Component_Storage_Loop(void, false) {
-    return {*engine.components[engine.type_to_component_handle[info]]};
+    return .{component_storage(info)};
 }
 
-for_expansion :: (loop: *Component_Storage_Loop, body: Code, flags: For_Flags) #expand {
-    using loop.storage;
+for_expansion :: (loop: $L/Component_Storage_Loop, body: Code, flags: For_Flags) #expand {
+    storage := loop.storage;
+    using storage;
 
-    last_index := -1;
-
-    using_stable_ids := (handling & .STABLE_IDS) != 0;
+    using_stable_ids := (handling & .STABLE_ID) != 0;
     last_index := last_allocated_index(storage);
 
     if last_index >= 0 {
@@ -60,19 +59,19 @@ for_expansion :: (loop: *Component_Storage_Loop, body: Code, flags: For_Flags) #
 
             last_item_index := ifx chunk == last_component_index.chunk then last_component_index.index else ITEMS_PER_CHUNK - 1;
 
-            `it_index := chunk * ITEMS_PER_CHUNK;
-            
             for item : 0..last_item_index {
-                if using_stable_ids && !stable_tracking[`it_index] {
+                slot_index := chunk * ITEMS_PER_CHUNK + item;
+                if using_stable_ids && !stable_tracking[slot_index] {
                     continue;
                 }
 
-                component := component_mem_list + type_size * item;
+                component := component_mem_list + cast(int) type_size * item;
 
-                `it := Component_Storage_Iteration(loop.T, loop.using_data).{get_entity(owner_id_list[item]), xx component};
-                `it_index += 1;
+                `it := Component_Storage_Iteration(L.T, L.using_data).{get_entity(owner_id_list[item]), xx component};
+                `it_index := slot_index;
 
-                #insert body;
+                // when the user uses the 'break' keyword, it breaks outside of both loops
+                #insert (break = break chunk) body;
             }
         }
     }
@@ -117,31 +116,31 @@ Component_Combination_Loop_Item :: struct {
     type: Type;
 }
 
-Component_Combination_Loop :: struct (items: ..Component_Combination_Loop_Item) {
+Component_Combination_Loop :: struct (items: []Component_Combination_Loop_Item) {
     handle: u16;
 }
 
 // the 'it' of a for_expansion when looping over a Component_Combination_Loop.
 // expands the fields of the loop to a pointer per component + the entity, for example:
 // Component_Combination_Loop({"transform", Transform}, {"move", Movement})
-// gives 'it.entity', 'it.transform' and 'it.move' pointers.
-Component_Combination_Iteration :: struct(items: ..Component_Combination_Loop_Item) {
+// gives 'it.entity', 'it.transform' and 'it.move' pointers in the loop body.
+Component_Combination_Iteration :: struct(items: []Component_Combination_Loop_Item) {
     entity: *Entity;
 
     #insert -> string {
         builder: String_Builder;
         for items {
-            print(*builder, "%: *%;\n", it.name, it.type);
+            print(*builder, "%: *#run items[%].type;\n", it.name, it_index);
         }
         return builder_to_string(*builder);
     }
 }
 
-make_component_combination_loop :: (items: ..Component_Combination_Loop_Item) -> Component_Combination_Loop(..items) {
-    engine_check(Ts.count > 1);
+make_component_combination_loop :: ($items: ..Component_Combination_Loop_Item) -> Component_Combination_Loop(items) {
+    engine_check(items.count > 1);
 
     new_combo := array_add(*engine.component_combinations);
-    new_combo.handle = engine.component_combinations.count - 1;
+    new_combo.handle = xx (engine.component_combinations.count - 1);
     new_combo.types = make_static_array(*Type_Info, items.count);
 
     entities := *engine.components[entity_handle];
@@ -151,55 +150,55 @@ make_component_combination_loop :: (items: ..Component_Combination_Loop_Item) ->
 
     init_bit_array(*entity_has_component[0], entity_max + 1,, temp);
     init_bit_array(*entity_has_component[1], entity_max + 1,, temp);
-    slot_count := entity_has_components[0].slots.count;
+    slot_count := entity_has_component[0].slots.count;
 
     for item, i : items {
-        component_handle := engine.type_to_component_handle[type_info(item.type)].*;
-        storage := *engine.components[component_handle];
-        array_add(*storage.combinations, xx new_combo.handle);
+        info := cast(*Type_Info) item.type;
+        storage := component_storage(info);
+        array_add(*storage.combinations, new_combo.handle);
 
-        new_combo.types[i] = type_info(T);
+        new_combo.types[i] = info;
 
-        if i == 0 then for storage {
-            entity_has_component[0][it.owner_id.index] = true;
+        if i == 0 then for component_loop(info) {
+            entity_has_component[0][it.entity.id.index] = true;
         } else {
-            for storage {
-                entity_has_component[1][it.owner_id.index] = true;
+            for component_loop(info) {
+                entity_has_component[1][it.entity.id.index] = true;
             }
             for 0..slot_count-1 {
                 entity_has_component[0].slots[it] &= entity_has_component[1].slots[it];
             }
-            clear_all_bits(*entity_has_component[1];
+            clear_all_bits(*entity_has_component[1]);
         }
     }
 
-    for :only_set entity_has_component[0] {
+    for :only_set_bits entity_has_component[0] {
         component_index := to_component_storage_index(it_index);
-        entity_id := {xx it_index, get_slot_generation(entities, component_index).*};
+        entity_id := Gen_ID.{xx it_index, get_slot_generation(entities, component_index).*};
         array_add(*new_combo.entities_with_combination, entity_id);
     }
 
     return { new_combo.handle };
 }
 
-for_expansion :: (loop: Component_Combination_Loop, body: Code, flags: For_Flags) #expand {
+for_expansion :: (loop: $L/Component_Combination_Loop, body: Code, flags: For_Flags) #expand {
     #assert((flags & .POINTER) == 0);
 
     combo := *engine.component_combinations[loop.handle];
-    engine_check(combo.types.count == loop.items.count);
+    engine_check(combo.types.count == L.items.count);
 
     entities := *engine.components[entity_handle];
 
     for <=((flags & .REVERSE) != 0) id, i : combo.entities_with_combination {
         `it_index := i;
 
-        `it: Component_Combination_Iteration(..loop.items);
+        `it: Component_Combination_Iteration(L.items);
         `it.entity = get_component(entities, id, Entity);
 
         #insert -> string {
             builder: String_Builder;
-            for item : loop.items {
-                print(*builder, "`it.% = get_component(`it.entity, %);\n", item.name, item.type);
+            for item, item_index : L.items {
+                print(*builder, "`it.% = get_component(`it.entity, #run L.items[%].type);\n", item.name, item_index);
             }
             return builder_to_string(*builder);
         };

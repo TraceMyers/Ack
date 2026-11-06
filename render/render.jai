@@ -124,6 +124,7 @@ create_renderer :: (settings: Renderer_Creation_Settings) -> bool {
 
     engine.renderer = New(Renderer);
     engine.renderer.creation_settings = settings;
+
     engine.renderer.config = settings.config;
 
     render_log(
@@ -145,7 +146,7 @@ HERE,
 
     cr_try :: #bake_arguments engine_run_or_return_failure(log_proc=render_log, fail_log_proc=render_error, flags=.VERBOSE_ONLY);
 
-    cr_try(maybe_copy_files_to_project(engine.project_info.shaders_path, "render", "copying shaders to project", .RENDER));
+    cr_try(maybe_copy_files_to_project(engine.project_info.shaders_path, "render/shaders", "copying shaders to project", .RENDER));
     cr_try(compile_shaders_if_called_for());
     cr_try(backend_create_renderer());
     cr_try(init_render_text()); 

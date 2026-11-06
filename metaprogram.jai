@@ -10,11 +10,13 @@ aligned_offset :: inline (base_offset: int, size: int, count: int, align_after: 
     return ((total_size - 1) / align_after + 1) * align_after;
 }
 
-get_virtual_meminit :: (T: Type) -> (*void) {
-    ini := initializer_of(T);
-    if ini {
-        return (mem: *void) { ini(cast(*T)mem); };
-    } {
+Virtual_Meminit_Proc :: #type (mem: *void);
+
+get_virtual_meminit :: ($T: Type) -> Virtual_Meminit_Proc {
+    ini :: initializer_of(T);
+    #if ini {
+        return (mem: *void) { ini :: initializer_of(T); ini(cast(*T)mem); };
+    } else {
         return (mem: *void) { memset(mem, 0, size_of(T)); };
     }
 }
@@ -70,7 +72,7 @@ align_of :: (info: *Type_Info, max_depth := 50, max_align := S64_MAX) -> int {
         case .PROCEDURE;    #through;
         case .ENUM;         #through;
         case .BOOL;
-            align = max(align, info.runtime_size);
+            align = max(align, top.info.runtime_size);
         case .STRING;
             align = max(align, size_of(*u8));
         case .STRUCT;

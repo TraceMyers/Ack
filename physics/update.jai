@@ -1,14 +1,3 @@
-// example physics update:
-// my_physics_update :: () {
-    // update_physics(); // uses engine.settings.time_scale
-    // physical_entity_transform_update(#code {
-    //     e := get_entity(entity_id);
-    //     e.orientation = interp_rotate_with_alpha(body.prev_orientation, body.next_orientation, physics_transform_alpha);
-    //     // setting position at the entity's feet
-    //     e.position = get_position(body) - get_collider(body).half_height * get_up_direction(e.orientation);
-    // });
-// }
-
 physics_delta_time :: () -> float #expand {
     return PHYSICS_DELTA_TIME * engine.physical_world.time_scale;
 }
@@ -16,6 +5,7 @@ physics_delta_time :: () -> float #expand {
 // returns how many steps ran
 update_physics :: () {
     using engine.physical_world;
+    defer update_entity_transforms();
 
     last_step_delta = 0;
 
@@ -69,10 +59,10 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
     using engine.physical_world;
     // todo: warm starting
 
-    for body_data {
+    for component_loop(Physics_Body, false) {
 
-        body := it.component;
-        flags := body_data.get_flags_component(*body_data, it.index).*;
+        body := cast(*Physics_Body_Internal) it.data;
+        flags := body.flags;
 
         if (flags & .SKIP_UPDATE) != 0 {
             continue;
@@ -85,7 +75,7 @@ run_physics_step_pre_contact :: (consecutive_step_index: int) {
 
         if body.collider.shape != .SPHERE {
             x, y, z := calc_axes(body);
-            axes := body_data.get_axes_component(*body_data, it.index);
+            axes := *body.axes;
             axes.*[0] = linear_compress_vector3(x, -1, 1);
             axes.*[1] = linear_compress_vector3(y, -1, 1);
             axes.*[2] = linear_compress_vector3(z, -1, 1);
@@ -122,25 +112,25 @@ run_physics_step_post_contact :: () {
 
 }
 
-physical_entity_transform_update :: (loop_body: Code) #expand {
+update_entity_transforms :: () {
     LOCK_TRANSLATE_AND_ROTATE : Physics_Body_Flags : .LOCK_TRANSLATION | .LOCK_YAW | .LOCK_PITCH |.LOCK_ROLL;
 
-    `physics_transform_alpha := get_physical_entity_transform_alpha();
+    physics_transform_alpha := get_physical_entity_transform_alpha();
 
-    for b_iter, bi : engine.physical_world.body_data {
-        using engine.physical_world;
-        `flags := body_data.get_flags_component(*body_data, b_iter.index).*;
-        // if (`flags & .AWAKE) == 0 {
-        //     continue;
-        // }
-        if (`flags & LOCK_TRANSLATE_AND_ROTATE) == LOCK_TRANSLATE_AND_ROTATE {
+    for component_loop(Physics_Body, false) {
+        body := it.data;
+
+        if (body.flags & .AWAKE) == 0 {
             continue;
         }
-        `body      := cast(*Physics_Body) b_iter.component;
-        `it_index  := bi;
-        `entity_id := b_iter.entity_id;
 
-        #insert loop_body;
+        if (body.flags & LOCK_TRANSLATE_AND_ROTATE) == LOCK_TRANSLATE_AND_ROTATE {
+            continue;
+        }
+
+        t := get_component(it.entity, Transform);
+        t.orientation = interp_rotate_with_alpha(body.prev_orientation, body.next_orientation, physics_transform_alpha);
+        t.position = get_position(body) - body.collider.half_height * get_up_direction(t.orientation);
     }
 }
 

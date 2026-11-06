@@ -28,8 +28,8 @@ Collision_Mesh : struct {
 
 set_collider :: (in_body: *Physics_Body_Base, collider: Physics_Collider) {
     body := cast(*Physics_Body_Internal) in_body;
-    body.collider.* = collider;
-    set_collider_data_for_fast_aabb_calculation(body.collider);
+    body.collider = collider;
+    set_collider_data_for_fast_aabb_calculation(*body.collider);
 }
 
 set_collider_data_for_fast_aabb_calculation :: (using collider: *Physics_Collider) {

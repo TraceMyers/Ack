@@ -6,10 +6,9 @@ Instanced_Mesh :: struct {
     mesh: Mesh;
     centroid_offset: Vector3;
     cull_radius: float;
-    instances: union type: Mesh_Type {
-        .STATIC   ,, static:   Component_Storage(Static_Mesh_Instance);
-        .SKELETAL ,, skeletal: Component_Storage(Skeletal_Mesh_Instance);
-    };
+    // instances live in the Static_Mesh_Instance / Skeletal_Mesh_Instance component storages.
+    // they're grouped by mesh at gather time (see prepare_mesh_draws).
+    type: Mesh_Type;
 }
 
 // lives on the renderer (engine.renderer.meshes)
@@ -25,64 +24,45 @@ Skeletal_Animation_Playback_Control :: struct {
     speed: float;
 }
 
-create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_id: user_types.entity_id_type, component_or_array: *$T) -> *Skeletal_Mesh_Instance 
-#modify { 
-    return T == *Skeletal_Mesh_Instance || T == [..]*Skeletal_Mesh_Instance;
-} {
-    inst: *Skeletal_Mesh_Instance;
-
+// one mesh instance per entity. for a skeletal mesh, the skeletal fields are reached with
+// get_component(entity, Skeletal_Mesh_Instance).
+add_mesh :: (entity: *Entity, mesh_ref: Mesh_Ref) -> *Mesh_Instance {
     instanced := get_instanced_mesh(mesh_ref);
-    engine_check(is_skeletal_mesh(*instanced.mesh));
-    engine_check(instanced.instances.type == .SKELETAL);
 
-    #if T == {
-    case *Skeletal_Mesh_Instance;
-        inst = create_component(*instanced.instances.skeletal, entity_id, component_or_array);
-    case [..]*Skeletal_Mesh_Instance;
-        engine_check(component_or_array != null);
-        inst = create_component_in_array(*instanced.instances.skeletal, entity_id, component_or_array);
-    }
-
-    inst.ref = mesh_ref;
-    return inst;
-}
-
-create_mesh_instance :: (mesh_ref: Mesh_Ref, entity_id: user_types.entity_id_type, component_or_array: *$T) -> *Static_Mesh_Instance 
-#modify { 
-    return T == *Static_Mesh_Instance || T == [..]*Static_Mesh_Instance;
-} {
-    inst: *Static_Mesh_Instance;
-
-    instanced := get_instanced_mesh(mesh_ref);
-    engine_check(is_static_mesh(*instanced.mesh));
-    engine_check(instanced.instances.type == .STATIC);
-
-    #if T == {
-    case *Static_Mesh_Instance;
-        inst = create_component(*instanced.instances.static, entity_id, component_or_array);
-    case [..]*Static_Mesh_Instance;
-        engine_check(component_or_array != null);
-        inst = create_component_in_array(*instanced.instances.static, entity_id, component_or_array);
-    }
-
-    inst.ref = mesh_ref;
-    return inst;
-}
-
-destroy_mesh_instance :: (entity_id: user_types.entity_id_type, inst: **$T/Mesh_Instance, auto_shrink_instance_storage := false, reset_array_on_entity_if_empty := true) {
-    instanced := get_instanced_mesh(inst.*.ref);
-
-    if inst.*.draw_fx != -1 {
-        pool_return(*engine.renderer.meshes.draw_fxs, inst.*.draw_fx);
-        inst.*.draw_fx = -1;
-    }
-
-    if instanced.instances.type == .STATIC {
+    inst: *Mesh_Instance;
+    if instanced.type == .STATIC {
         engine_check(is_static_mesh(*instanced.mesh));
-        destroy_component(*instanced.instances.static, entity_id, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
+        inst = add_component(entity, Static_Mesh_Instance);
     } else { // .SKELETAL
         engine_check(is_skeletal_mesh(*instanced.mesh));
-        destroy_component(*instanced.instances.skeletal, entity_id, xx inst, auto_shrink_instance_storage, reset_array_on_entity_if_empty);
+        inst = add_component(entity, Skeletal_Mesh_Instance);
+    }
+
+    inst.ref = mesh_ref;
+    return inst;
+}
+
+get_mesh_instance :: (entity: *Entity) -> *Mesh_Instance {
+    inst := get_component(entity, Static_Mesh_Instance);
+    if inst == null {
+        inst = get_component(entity, Skeletal_Mesh_Instance);
+    }
+    return inst;
+}
+
+remove_mesh :: (entity: *Entity) {
+    inst := get_mesh_instance(entity);
+    engine_check(inst != null, "entity has no mesh instance");
+
+    if inst.draw_fx != -1 {
+        pool_return(*engine.renderer.meshes.draw_fxs, inst.draw_fx);
+        inst.draw_fx = -1;
+    }
+
+    if get_instanced_mesh(inst.ref).type == .STATIC {
+        remove_component(entity, Static_Mesh_Instance);
+    } else { // .SKELETAL
+        remove_component(entity, Skeletal_Mesh_Instance);
     }
 }
 
@@ -300,13 +280,7 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
         mesh.path = copy_string(path);
     }
 
-    if is_static_mesh(mesh) {
-        instanced.instances.type = .STATIC;
-        engine_check(instanced.instances.static.chunks.count == 0 && instanced.instances.static.chunks.data == null);
-    } else {
-        instanced.instances.type = .SKELETAL;
-        engine_check(instanced.instances.skeletal.chunks.count == 0 && instanced.instances.skeletal.chunks.data == null);
-    }
+    instanced.type = ifx is_static_mesh(mesh) then Mesh_Type.STATIC else .SKELETAL;
 
     upload_mesh_to_gpu(renderer, mesh);
 

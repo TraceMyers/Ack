@@ -13,21 +13,22 @@ run_contacts_broad_phase :: () {
     }
     array_reset_keeping_memory(*color_groups);
 
-    seen_body       := make_bit_array(body_data.component_count,, temp);
+    body_count      := last_allocated_index(get_body_storage()) + 1;
+    seen_body       := make_bit_array(body_count,, temp);
 
     // todo: rotation being ignored because it's annoying. don't do that.
     SHOULD_VISIT_QUESTION : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE | .LOCK_TRANSLATION; 
     SHOULD_VISIT_ANSWER   : Physics_Body_Flags : .PLACED_INTO_CONTACT_GRID | .AWAKE;
 
     start_index: int;
-    body_color_group_flags := make_static_array(u64, body_data.component_count,, temp);
+    body_color_group_flags := make_static_array(u64, body_count,, temp);
 
     array_resize(*color_groups, 8);
 
-    for body_data {
-        body  := it.component;
-        flags := body_data.get_flags_component(*body_data, it.index).*;
-        bi    := it_index;
+    for component_loop(Physics_Body, false) {
+        body  := cast(*Physics_Body_Internal) it.data;
+        flags := body.flags;
+        bi    := body.index;
 
         if (flags & SHOULD_VISIT_QUESTION) != SHOULD_VISIT_ANSWER {
             continue;
@@ -41,7 +42,7 @@ run_contacts_broad_phase :: () {
             for obi : cell {
                 // only visit bodies with indexes higher than this one...
                 if obi < bi {
-                    other_flags := body_data.get_flags_component(*body_data, obi).*;
+                    other_flags := get_body_by_index(obi).flags;
                     // ... but only as long as the other body already iterated
                     if (other_flags & SHOULD_VISIT_QUESTION) == SHOULD_VISIT_ANSWER {
                         continue;
@@ -53,7 +54,7 @@ run_contacts_broad_phase :: () {
                 }
                 seen_body[obi] = true;
                 
-                body := get_component(*body_data, obi);
+                body := get_body_by_index(obi);
                 other_body_aabb := calculate_aabb(body, true);
 
                 if is_overlap_aabb_aabb(body_aabb, other_body_aabb) {
@@ -181,7 +182,7 @@ place_into_contact_grid :: (_body: *Physics_Body_Base) {
 
     physics_check(!has_flags(_body, .PLACED_INTO_CONTACT_GRID));
 
-    body_index: u16 = xx index_2d_to_1d(_body.index, body_data.components_per_chunk);
+    body_index: u16 = xx _body.index;
 
     if !for_cells_in_overlap(_body, true, false, #code array_add(cell, body_index)) {
         return;
@@ -202,7 +203,7 @@ remove_from_contact_grid :: (_body: *Physics_Body_Base) {
         return;
     }
 
-    body_index: u16 = xx index_2d_to_1d(_body.index, body_data.components_per_chunk);
+    body_index: u16 = xx _body.index;
 
     for_cells_in_overlap(_body, false, true, #code array_unordered_remove_by_value(cell, body_index));
 
@@ -234,7 +235,7 @@ diff_place_into_contact_grid :: (_body: *Physics_Body_Base) {
         return;
     }
 
-    body_index: u16 = xx index_2d_to_1d(_body.index, body_data.components_per_chunk);
+    body_index: u16 = xx _body.index;
 
     for y : new_min.y..new_max.y {
         for x : new_min.x..new_max.x {

@@ -36,7 +36,7 @@ Draw_Section :: struct {
 Instance_Data :: struct {
     transform:                   Matrix4;
     inverse_transpose_transform: Matrix4;
-    entity_id:                   u64; // user_types.entity_id_to_u64 of the instance's entity
+    entity_id:                   u64; // Gen_ID.index of the instance's entity (generation dropped, must fit in 32 bits)
     joint_offset:                s32 = -1;
     draw_fx:                     Draw_FX;
 }
@@ -64,92 +64,59 @@ prepare_mesh_draws :: (frame: *GPU_Frame) -> Mesh_Draws {
     mesh_draws: Mesh_Draws;
     mesh_draws.buckets.allocator = temp;
 
-    // first pass: count, so every array can be allocated at its exact size
+    // instances live in one component storage per type, so they're grouped by (mesh, layer) here
+    // with a counting sort. each group's visible instances become one contiguous range of
+    // Instance_Data, which is what each section's indirect draw points at.
+    range_count := (meshes.instanced_meshes.top + 1) * DRAW_LAYER_COUNT;
+    if range_count <= 0 {
+        return mesh_draws;
+    }
+    counts := NewArray(range_count, s32,, temp); // visible instances per range
+    starts := NewArray(range_count, s32,, temp); // first instance per range, then the fill cursor
+
+    // first pass: cull and count, so every array can be allocated at its exact size
     instance_count, joint_count: int;
     view_frustum := make_view_frustum(camera_info, camera_position, camera_orientation, get_window_viewport());
 
-    for *instanced, mesh_index : meshes.instanced_meshes {
-        if !is_mesh_uploaded(*instanced.mesh) {
-            continue;
-        }
-
-        layer_counts := count_instances_per_layer(instanced, *view_frustum);
-
-        for count, layer_index : layer_counts {
-            if count == 0 {
-                continue;
-            }
-
-            instance_count += count;
-
-            if instanced.instances.type == .SKELETAL {
-                joint_count += count * instanced.mesh.skeleton.joints.count;
-            }
-
-            for *section : instanced.mesh.sections {
-                bucket := get_draw_bucket(*mesh_draws, xx layer_index, instanced.instances.type, section);
-                bucket.draw_count += 1;
-            }
-        }
-    }
+    count_visible_instances(Static_Mesh_Instance,   counts, *view_frustum, *instance_count, *joint_count);
+    count_visible_instances(Skeletal_Mesh_Instance, counts, *view_frustum, *instance_count, *joint_count);
 
     if instance_count == 0 {
         return mesh_draws;
     }
 
+    for *instanced, mesh_index : meshes.instanced_meshes {
+        for layer_index : 0..DRAW_LAYER_COUNT-1 {
+            if counts[range_index(mesh_index, layer_index)] == 0 {
+                continue;
+            }
+            for *section : instanced.mesh.sections {
+                bucket := get_draw_bucket(*mesh_draws, xx layer_index, instanced.type, section);
+                bucket.draw_count += 1;
+            }
+        }
+    }
+
     allocate_mesh_draws(frame, *mesh_draws, instance_count, joint_count);
 
-    // second pass: fill
-    instance_data := cast(*Instance_Data) gpu_mapped(mesh_draws.instances);
-    joint_data    := ifx joint_count > 0 then cast(*Matrix4) gpu_mapped(mesh_draws.joints) else null;
-    instance_cursor, joint_cursor: s32;
+    // second pass: prefix sum. every range's first instance and count are known now, so the
+    // draw commands can be written before any instance data.
+    running_first_instance: s32;
 
     for *instanced, mesh_index : meshes.instanced_meshes {
-        if !is_mesh_uploaded(*instanced.mesh) {
-            continue;
-        }
-
         for layer_index : 0..DRAW_LAYER_COUNT-1 {
-            layer : Draw_Layer = xx layer_index;
-            first_instance := instance_cursor;
+            ri := range_index(mesh_index, layer_index);
+            first_instance := running_first_instance;
+            visible_count  := counts[ri];
+            starts[ri] = first_instance;
+            running_first_instance += visible_count;
 
-            if instanced.instances.type == .STATIC {
-                for instanced.instances.static {
-                    inst := it.component;
-
-                    if !should_draw_instance_on_layer(inst, layer) then continue;
-
-                    instance_data[instance_cursor] = make_instance_data(inst, it.entity_id);
-                    instance_cursor += 1;
-                }
-            } else {
-                joints_per_instance := instanced.mesh.skeleton.joints.count;
-                for instanced.instances.skeletal {
-                    inst := it.component;
-
-                    if !should_draw_instance_on_layer(inst, layer) then continue;
-
-                    data := make_instance_data(inst, it.entity_id);
-                    skinning_joints := inst.pose.skinning_joints;
-
-                    render_check(skinning_joints.count == joints_per_instance, "skeletal mesh instance pose has % joints, its mesh has %", skinning_joints.count, joints_per_instance, level=.HIGH);
-
-                    memcpy(joint_data + joint_cursor, skinning_joints.data, skinning_joints.count * size_of(Matrix4));
-                    data.joint_offset = joint_cursor;
-                    joint_cursor += xx skinning_joints.count;
-
-                    instance_data[instance_cursor] = data;
-                    instance_cursor += 1;
-                }
-            }
-
-            visible_count := instance_cursor - first_instance;
             if visible_count == 0 {
                 continue;
             }
 
             for *section : instanced.mesh.sections {
-                bucket   := get_draw_bucket(*mesh_draws, layer, instanced.instances.type, section);
+                bucket   := get_draw_bucket(*mesh_draws, xx layer_index, instanced.type, section);
                 sections := cast(*Draw_Section)                 gpu_mapped(bucket.sections);
                 commands := cast(*VkDrawIndexedIndirectCommand) gpu_mapped(bucket.commands);
 
@@ -170,37 +137,75 @@ prepare_mesh_draws :: (frame: *GPU_Frame) -> Mesh_Draws {
         }
     }
 
+    // third pass: fill. instance writes are in order within a range but jump between ranges.
+    // joints don't need grouping (joint_offset is per instance), so they're written sequentially.
+    instance_data := cast(*Instance_Data) gpu_mapped(mesh_draws.instances);
+    joint_data    := ifx joint_count > 0 then cast(*Matrix4) gpu_mapped(mesh_draws.joints) else null;
+    joint_cursor: s32;
+
+    for component_loop(Static_Mesh_Instance) {
+        inst := it.data;
+        if !inst.should_draw_this_frame then continue;
+
+        ri := range_index(inst.ref.index, xx inst.layer);
+        instance_data[starts[ri]] = make_instance_data(inst, it.entity);
+        starts[ri] += 1;
+    }
+
+    for component_loop(Skeletal_Mesh_Instance) {
+        inst := it.data;
+        if !inst.should_draw_this_frame then continue;
+
+        data := make_instance_data(inst, it.entity);
+        skinning_joints := inst.pose.skinning_joints;
+
+        joints_per_instance := get_instanced_mesh(inst.ref).mesh.skeleton.joints.count;
+        render_check(skinning_joints.count == joints_per_instance, "skeletal mesh instance pose has % joints, its mesh has %", skinning_joints.count, joints_per_instance, level=.HIGH);
+
+        memcpy(joint_data + joint_cursor, skinning_joints.data, skinning_joints.count * size_of(Matrix4));
+        data.joint_offset = joint_cursor;
+        joint_cursor += xx skinning_joints.count;
+
+        ri := range_index(inst.ref.index, xx inst.layer);
+        instance_data[starts[ri]] = data;
+        starts[ri] += 1;
+    }
+
     return mesh_draws;
 }
 
 #scope_file
 
-count_instances_per_layer :: (instanced: *Instanced_Mesh, view_frustum: *View_Frustum) -> [DRAW_LAYER_COUNT]int {
-    counts: [DRAW_LAYER_COUNT]int;
-    if instanced.instances.type == .STATIC {
-        for instanced.instances.static {
-            it.component.should_draw_this_frame = should_draw_instance(it.component, it.entity_id, view_frustum, instanced.cull_radius);
-            if it.component.should_draw_this_frame {
-                counts[it.component.layer] += 1;
-            }
-        }
-    } else for instanced.instances.skeletal {
-        it.component.should_draw_this_frame = should_draw_instance(it.component, it.entity_id, view_frustum, instanced.cull_radius);
-        if it.component.should_draw_this_frame {
-            counts[it.component.layer] += 1;
-        }
-    }
-    return counts;
+range_index :: inline (mesh_index: int, layer_index: int) -> int {
+    return mesh_index * DRAW_LAYER_COUNT + layer_index;
 }
 
-make_instance_data :: (inst: *Mesh_Instance, entity_id: user_types.entity_id_type) -> Instance_Data {
+count_visible_instances :: ($T: Type, counts: []s32, view_frustum: *View_Frustum, instance_count: *int, joint_count: *int) {
+    for component_loop(T) {
+        inst := it.data;
+        instanced := get_instanced_mesh(inst.ref);
+
+        inst.should_draw_this_frame = is_mesh_uploaded(*instanced.mesh) && should_draw_instance(inst, it.entity, view_frustum, instanced.cull_radius);
+        if !inst.should_draw_this_frame then continue;
+
+        counts[range_index(inst.ref.index, xx inst.layer)] += 1;
+        instance_count.* += 1;
+
+        #if T == Skeletal_Mesh_Instance {
+            joint_count.* += instanced.mesh.skeleton.joints.count;
+        }
+    }
+}
+
+make_instance_data :: (inst: *Mesh_Instance, entity: *Entity) -> Instance_Data {
     using engine.renderer;
     // todo: attaching to another mesh's skeletal joint
     render_check(inst.attachment.skeletal_mesh_joint == NO_JOINT, "mesh instances attached to joints aren't supported yet");
 
-    entity := user_types.id_to_entity_proc(entity_id);
     render_check(entity != null, "mesh instance % has no entity", inst.*);
-    entity_transform := make_transform_matrix(entity.position, entity.orientation, entity.scale);
+    t := get_component(entity, Transform);
+    render_check(t != null, "mesh instance %'s entity has no Transform", inst.*);
+    entity_transform := make_transform_matrix(t.position, t.orientation, t.scale);
 
     attachment := inst.attachment;
     attachment_transform := make_transform_matrix(attachment.translation, attachment.rotation, attachment.scale);
@@ -215,13 +220,14 @@ make_instance_data :: (inst: *Mesh_Instance, entity_id: user_types.entity_id_typ
     }
 
     data.draw_fx = ifx inst.draw_fx == -1 then Draw_FX.{} else meshes.draw_fxs[inst.draw_fx];
-    data.entity_id = user_types.entity_id_to_u64(entity_id);
+    // index only: entity_click_selection.glsl packs (depth << 32) | entity_id, so it must fit in 32 bits
+    data.entity_id = cast(u64) cast(u32) entity.id.index;
 
     return data;
 }
 
 // the bucket for this layer, mesh type, and the index heap this section's indices are in. the
-// counting pass adds buckets and counts their draw_count. the filling pass finds them again and
+// counting pass adds buckets and counts their draw_count. the prefix pass finds them again and
 // uses processed_draw_count as its write cursor.
 get_draw_bucket :: (mesh_draws: *Mesh_Draws, layer: Draw_Layer, type: Mesh_Type, section: *Mesh_Section) -> *Draw_Bucket {
     index_buffer, _ := gpu_vk_buffer(section.indices.gpu_allocation);
@@ -251,19 +257,17 @@ allocate_mesh_draws :: (frame: *GPU_Frame, mesh_draws: *Mesh_Draws, instance_cou
     }
 }
 
-should_draw_instance_on_layer :: inline (inst: *$T, layer: Draw_Layer) -> bool {
-    return inst.layer == layer && inst.should_draw_this_frame;
-}
-
-should_draw_instance :: inline (inst: *$T, entity_id: user_types.entity_id_type, view_frustum: *View_Frustum, mesh_cull_radius: float) -> bool {
+should_draw_instance :: inline (inst: *$T, entity: *Entity, view_frustum: *View_Frustum, mesh_cull_radius: float) -> bool {
     if !inst.visible {
         return false;
     }
     if inst.frustum_cull {
-        entity := user_types.id_to_entity_proc(entity_id);
+        render_check(entity != null, "mesh instance has no entity");
+        t := get_component(entity, Transform);
+        render_check(t != null, "mesh instance's entity has no Transform");
 
-        position  := inst.attachment.translation + entity.position;
-        scale     := inst.attachment.scale * entity.scale;
+        position  := inst.attachment.translation + t.position;
+        scale     := inst.attachment.scale * t.scale;
         scalar    := max(scale);
 
         inst_cull_radius := scalar * mesh_cull_radius;

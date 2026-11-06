@@ -3,7 +3,6 @@ Physical_World :: struct {
     body_templates: Table(string, Physics_Body_Template);
     unique_properties: Pool(Physics_Properties);
     unique_colliders: Pool(Physics_Collider);
-    body_data: Physical_Entity_Components;
 
     step_state: Physics_Step_State;
     collision_iteration_count := 5;
@@ -84,8 +83,6 @@ create_physical_world :: (using settings := Physical_World_Creation_Settings.{})
     pool_init(*engine.physical_world.unique_properties, unique_properties_max, true);
     pool_init(*engine.physical_world.unique_colliders, unique_colliders_max, true);
 
-    reserve(*engine.physical_world.body_data, reserve_bodies);
-
     // note: contact grid allocation is not locked, in case a bug comes of it
     init(*engine.physical_world.contact_grid, 65536);
     allocator_64_startup(*engine.physical_world.contact_grid_cell_allocator);
@@ -108,8 +105,6 @@ destroy_physical_world :: () {
     pool_set_allocator(*engine.physical_world.unique_properties, engine.physical_world.allocator);
     pool_reset(*engine.physical_world.unique_properties);
 
-    reset(*engine.physical_world.body_data);
-    
     free(engine.physical_world,, engine.physical_world.allocator);
     engine.physical_world = null;
 }
