@@ -1,16 +1,4 @@
-Entity :: struct {
-    id: Gen_ID;
-    flags: Entity_Flags;
-    components: Table(*Type_Info, Component_Instance);
-}
-
 Entity_Ref :: #type,isa Component_Ref;
-
-Transform :: struct {
-    position: Vector3;
-    orientation: Quaternion;
-    scale := Vector3.{1,1,1};
-}
 
 Entity_Flags :: enum_flags {
     MARKED_FOR_DESTRUCTION;
@@ -24,28 +12,60 @@ Entity_Flags :: enum_flags {
     }
 }
 
-make_entity :: () -> *Entity {
-    inst := add_component(Entity, null_entity_ref());
+make_entity :: (owner: *Entity = null) -> *Entity {
+    inst: Component_Instance;
+    if owner == null {
+        inst = add_component(Entity, {});
+    } else {
+        owner_ref := Entity_Ref.{entity_handle, owner.id};
+        add_component(owner, Entity);
+        inst = get_component_instance(owner, type_info(Entity));
+    }
     e := cast(*Entity) inst.data;
     e.id = inst.ref.id;
     return e;
 }
 
-destroy_entity :: (e: *Entity) {
-    for * e.components {
-        remove_component(it);
+destroy_entity :: (e: *Entity, component_remove_depth := 0) {
+    engine_check(component_remove_depth < MAX_RECURSION_DEPTH, "potential infinite recursion detected");
+
+    // if this is is a top-level destroy_entity call (not being called in the middle 
+    // of a chain of remove_component calls), and this entity is owned by another entity,
+    // then reroute through remove_component(parent, self) so that the parent
+    // can remove this entity from its table.
+    if component_remove_depth == 0 {
+        owner := get_owner(e);
+        if owner != null {
+            remove_component(owner, e, component_remove_depth + 1);
+            return;
+        }
+    }
+
+    for *e.components {
+        remove_component(e, it, component_remove_depth + 1);
     }
     deinit(*e.components);
 
-    inst: Component_Instance;
-    inst.data = e;
-    inst.ref = {entity_handle, e.id};
+    inst := Component_Instance.{xx e, {entity_handle, e.id}};
     remove_component(*inst);
 }
 
-make_spatial_entity :: () -> *Entity {
-    e := make_entity();
-    get_or_add_component(e, Transform);
+make_spatial_entity :: (owner: *Entity = null) -> *Entity {
+    e := make_entity(owner);
+    add_component(e, Transform);
+    return e;
+}
+
+make_physical_entity :: (physics_template: string, owner: *Entity = null) -> *Entity {
+    e := make_spatial_entity(owner);
+    add_component(e, Physics_Body);
+    init_physics_body(e, physics_template);
+    return e;
+}
+
+make_physical_entity_with_input :: (physics_template: string, owner: *Entity = null) -> *Entity {
+    e := make_physical_entity(owner);
+    add_component(e, Input);
     return e;
 }
 
@@ -59,7 +79,7 @@ get_entity :: (ref: Entity_Ref) -> *Entity {
     return get_component(ref, Entity);
 }
 
-get_ref :: (e: *Entity) -> Entity_Ref {
+get_ref :: inline (e: *Entity) -> Entity_Ref {
     return {entity_handle, e.id};
 }
 
@@ -67,68 +87,8 @@ null_entity_ref :: inline () -> Entity_Ref {
     return {entity_handle, {}};
 }
 
-get_component_data :: inline (e: *Entity, info: *Type_Info) -> *void {
-    inst := table_find_pointer(*e.components, info);
-    return ifx inst == null then null else inst.data;
-}
-
-get_component_instance :: (entity: *Entity, info: *Type_Info) -> *Component_Instance {
-    return table_find_pointer(*entity.components, info);
-}
-
-get_component :: (entity: *Entity, $T: Type) -> *T {
-    inst := table_find_pointer(*entity.components, type_info(T));
-    return ifx inst == null then cast(*T) null else cast(*T) inst.data;
-}
-
-get_or_add_component :: (entity: *Entity, $T: Type) -> *T {
-    inst, just_added := find_or_add(*entity.components, type_info(T));
-    if just_added {
-        inst.* = add_component(T, {entity_handle, entity.id});
-    }
-    return cast(*T) inst.data;
-}
-
-add_component :: (entity: *Entity, $T: Type) -> *T {
-    inst, just_added := find_or_add(*entity.components, type_info(T));
-    engine_check(just_added);
-    inst.* = add_component(T, {entity_handle, entity.id});
-    return cast(*T) inst.data;
-}
-
-remove_component :: (entity: *Entity, $T: Type) {
-    remove_component(entity, type_info(T));
-}
-
-remove_component :: (entity: *Entity, info: *Type_Info) {
-    inst := get_component_instance(entity, info);
-    remove_component(inst);
-    table_remove(*entity.components, info);
-}
-
-// field names are the lowercased type name. note that jai prints an alias as the type it aliases,
-// so e.g. Physics_Body (:: Physics_Body_Base(void)) becomes 'physics_body_base' and
-// Static_Mesh_Instance (:: Mesh_Instance) becomes 'mesh_instance'.
-Component_Collection :: struct($types: []Type) {
-    #insert -> string {
-        builder: String_Builder;
-        for type : types {
-            print(*builder, "%: *#run types[%];\n", component_field_name(type), it_index);
-        }
-        return builder_to_string(*builder);
-    }
-}
-
-collect_components :: (entity: *Entity, $types: ..Type) -> Component_Collection(types) {
-    collection: Component_Collection(types) = ---;
-    #insert -> string {
-        builder: String_Builder;
-        for type : types {
-            print(*builder, "collection.% = get_component(entity, #run types[%]);\n", component_field_name(type), it_index);
-        }
-        return builder_to_string(*builder);
-    }
-    return collection;
+is_null :: inline (id: Gen_ID) -> bool {
+    return id == Gen_ID.{};
 }
 
 queue_destroy_entity :: (entity: *Entity) {
@@ -140,8 +100,9 @@ queue_destroy_entity :: (entity: *Entity) {
 
 execute_destroy_entities :: () {
     for engine.entities_queued_for_destruction {
-        // get the entity type enum and specialize destroy_entity for the given type.
-        destroy_entity(get_entity(it));
+        e := get_entity(it);
+        engine_check((e.flags & .MARKED_FOR_DESTRUCTION) != 0);
+        destroy_entity(e);
     }
     array_reset_keeping_memory(*engine.entities_queued_for_destruction);
 }

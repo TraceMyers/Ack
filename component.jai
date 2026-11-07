@@ -101,6 +101,8 @@ init_engine_default_entity_components :: () {
 
     add_component_type(Static_Mesh_Instance);
     add_component_type(Skeletal_Mesh_Instance);
+    add_component_type(Input);
+    add_component_type(Camera);
 }
 
 init :: (using storage: *Component_Storage, $T: Type, component_handling: Component_Handling_Flags, override_init: (*void), deinit: (*void)) {

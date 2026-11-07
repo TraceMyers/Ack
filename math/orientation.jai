@@ -14,16 +14,16 @@ Direction_2D :: enum u8 {
     LEFT;
 }
 
-is_vertical :: (dir: Direction_2D) -> bool {
+is_vertical :: inline (dir: Direction_2D) -> bool {
     return (dir & 0x1) == 0;
 }
 
-is_horizontal :: (dir: Direction_2D) -> bool {
+is_horizontal :: inline (dir: Direction_2D) -> bool {
     return (dir & 0x1) == 1;
 }
 
-rotate :: (dir: Direction_2D, clockwise := true) -> Direction_2D {
-    if clockwise {
+rotate :: inline (dir: Direction_2D, $clockwise := true) -> Direction_2D {
+    #if clockwise {
         return increment_wrap(dir, Direction_2D.UP, Direction_2D.LEFT);
     } else {
         return decrement_wrap(dir, Direction_2D.UP, Direction_2D.LEFT);
@@ -78,8 +78,8 @@ to_vector3 :: (cardinal: Direction_3D) -> Vector3 {
     }
 }
 
-to_vector3 :: (cardinal: Direction_3D, orientation: Quaternion) -> Vector3 {
-    if #complete cardinal == {
+to_relative_direction_vector :: (orientation: Quaternion, relative_direction: Direction_3D) -> Vector3 {
+    if #complete relative_direction == {
     case .UP;
         return  get_up_direction(orientation);
     case .DOWN;
@@ -115,6 +115,7 @@ get_fore_direction :: inline (q: Quaternion, $do_normalize := true) -> Vector3 {
     }
     return vec;
 }
+get_y_direction :: get_fore_direction;
 
 get_right_direction :: inline (q: Quaternion, $do_normalize := true) -> Vector3 {
     vec := rotate(VECTOR3_RIGHT, q);
@@ -123,6 +124,7 @@ get_right_direction :: inline (q: Quaternion, $do_normalize := true) -> Vector3 
     }
     return vec;
 }
+get_x_direction :: get_right_direction;
 
 get_up_direction :: inline (q: Quaternion, $do_normalize := true) -> Vector3 {
     vec := rotate(VECTOR3_UP, q);
@@ -131,38 +133,55 @@ get_up_direction :: inline (q: Quaternion, $do_normalize := true) -> Vector3 {
     }
     return vec;
 }
+get_z_direction :: get_up_direction;
 
 get_fore_direction_xy :: inline (q: Quaternion) -> Vector3 {
     fore_3d := get_fore_direction(q, false);
     fore_3d.z = 0;
     return normalize(fore_3d);
 }
+get_y_direction_xy :: get_fore_direction_xy;
 
 get_right_direction_xy :: inline (q: Quaternion) -> Vector3 {
     right_3d := get_right_direction(q, false);
     right_3d.z = 0;
     return normalize(right_3d);
 }
+get_x_direction_xy :: get_right_direction_xy;
 
-calculate_axes :: (orientation: Quaternion, fore: *Vector3, right: *Vector3, up: *Vector3) {
-    fore.*  = get_fore_direction(orientation);
-    up.*    = get_up_direction(orientation);
-    right.* = normalize(cross(fore.*, up.*));
+get_fore_direction_on_plane :: inline (q: Quaternion, plane_normal: Vector3) -> Vector3 {
+    fore_3d := get_fore_direction(q, false);
+    fore_3d -= fore_3d * dot(plane_normal, fore_3d);
+    return normalize(fore_3d);
+}
+get_y_direction_on_plane :: get_fore_direction_on_plane;
+
+get_right_direction_on_plane :: inline (q: Quaternion, plane_normal: Vector3) -> Vector3 {
+    right_3d := get_right_direction(q, false);
+    right_3d -= right_3d * dot(plane_normal, right_3d);
+    return normalize(right_3d);
+}
+get_x_direction_on_plane :: get_right_direction_on_plane;
+
+// x, y, z = right, fore, up
+calculate_axes :: (orientation: Quaternion, x: *Vector3, y: *Vector3, z: *Vector3) {
+    x.* = get_right_direction(orientation);
+    y.* = get_fore_direction(orientation);
+    z.* = get_up_direction(orientation);
 }
 
-// e.g. local -> world
-change_basis_forward :: inline (scalars: Vector3, fore: Vector3, right: Vector3, up: Vector3) -> Vector3 {
-    return right * scalars.x + fore * scalars.y + up * scalars.z;
+change_basis_local_to_world :: inline (local: Vector3, world_x: Vector3, world_y: Vector3, world_z: Vector3) -> Vector3 {
+    return world_x * local.x + world_y * local.y + world_z * local.z;
 }
 
 // e.g. world -> local
-change_basis_backward :: inline (vector: Vector3, fore: Vector3, right: Vector3, up: Vector3) -> Vector3 {
-    return {dot(right, vector), dot(fore, vector), dot(up, vector)};
+change_basis_world_to_local :: inline (world: Vector3, local_x: Vector3, local_y: Vector3, local_z: Vector3) -> Vector3 {
+    return {dot(local_x, world), dot(local_y, world), dot(local_z, world)};
 }
 
-change_basis_forward :: (quaternion: Quaternion, basis_change: Matrix3) -> Quaternion {
+change_basis_local_to_world :: (local_orientation: Quaternion, basis_change: Matrix3) -> Quaternion {
     basis_quat := get_rotation(basis_change);
-    return normalize(basis_quat * quaternion * conjugate(basis_quat));
+    return normalize(basis_quat * local_orientation * conjugate(basis_quat));
 }
 
 distance_squared :: inline (q1: Quaternion, q2: Quaternion) -> float {
@@ -185,12 +204,12 @@ distance :: inline (q1: Quaternion, q2: Quaternion) -> float {
     return length(diff);
 }
 
-make_quat :: (fore: Vector3, right: Vector3, up: Vector3) -> Quaternion {
+make_quat :: (x: Vector3, y: Vector3, z: Vector3) -> Quaternion {
     #if GENERAL_VALIDATION_LEVEL == Ack_Validation_Level.HIGH {
-        if !is_normalized(fore,  SMALL_NUMBER) 
-        || !is_normalized(right, SMALL_NUMBER)
-        || !is_normalized(up,    SMALL_NUMBER) {
-            engine_log("one of these vectors isn't normalized: %, %, %", fore, right, up, flags=.VERY_VERBOSE_ONLY);
+        if !is_normalized(x, SMALL_NUMBER) 
+        || !is_normalized(y, SMALL_NUMBER)
+        || !is_normalized(z, SMALL_NUMBER) {
+            engine_log("one of these vectors isn't normalized: %, %, %", x, y, z, flags=.VERY_VERBOSE_ONLY);
             ONE_OVER_ROOT_2 :: #run 1. / sqrt(2.);
             // if any of the vectors isn't normalized, randomly return one of two highly different rotations to make it obvious something is wrong. using % 4 (as opposed to % 2) to try to dodge the cpus that might only return even tsc values. https://community.intel.com/t5/Mobile-and-Desktop-Processors/RDTSC-only-returns-evenly-numbered-values-on-some-chips/m-p/1231812/highlight/true?profile.language=en
             if rdtsc() % 4 == 0 {
@@ -201,49 +220,58 @@ make_quat :: (fore: Vector3, right: Vector3, up: Vector3) -> Quaternion {
         }
     }
     rot_matrix := Matrix3.{
-        right.x, fore.x, up.x,
-        right.y, fore.y, up.y,
-        right.z, fore.z, up.z,
+        x.x, y.x, z.x,
+        x.y, y.y, z.y,
+        x.z, y.z, z.z,
     };
     return get_rotation(rot_matrix);
 }
 
-make_quat :: inline (fore: Vector3, up: Vector3) -> Quaternion {
-    right := normalize(cross(fore, up));
-    return make_quat(fore, right, up);
+make_quat_xz :: inline (x: Vector3, z: Vector3) -> Quaternion {
+    y := normalize(cross(-x, z));
+    return make_quat(x, y, z);
 }
 
-make_quat_with_fore_and_right :: inline (fore: Vector3, right: Vector3) -> Quaternion {
-    up := normalize(cross(fore, -right)); 
-    return make_quat(fore, right, up);
+make_quat_yz :: inline (y: Vector3, z: Vector3) -> Quaternion {
+    x := normalize(cross(y, z));
+    return make_quat(x, y, z);
 }
 
-set_orientation :: (out_orientation: *Quaternion, forward: Vector3, up: Vector3) {
-    out_orientation.* = make_quat(forward, up);
+make_quat_xy :: inline (x: Vector3, y: Vector3) -> Quaternion {
+    z := normalize(cross(y, -x)); 
+    return make_quat(x, y, z);
 }
 
-rotate :: (in_out_orientation: *Quaternion, axis: Vector3, angle: float32) {
+rotate :: inline (orientation: Quaternion, axis: Vector3, angle: float32) -> Quaternion {
+    o_copy := orientation;
+    rotate(*o_copy, axis, angle);
+    return o_copy;
+}
+
+rotate :: (orientation: *Quaternion, axis: Vector3, angle: float32) {
     if angle == 0 then return;
     engine_check(is_normalized(axis), level=.HIGH);
     ht := angle * 0.5;
     sin_ht, cos_ht := sin_cos(ht);
     rot_quat := Quaternion.{xyz=axis*sin_ht, w=cos_ht};
-    in_out_orientation.* = rot_quat * in_out_orientation.*;
-    normalize_or_identity(in_out_orientation);
+    orientation.* = rot_quat * orientation.*;
+    normalize_or_identity(orientation);
 }
 
-rotate :: inline (v: Vector3, axis: Vector3, angle: float32, $do_normalize := true) -> Vector3 {
-    if angle == 0 then return v;
+rotate :: inline (v: Vector3, axis: Vector3, angle: float32) -> Vector3 {
+    v_copy := v;
+    rotate(*v_copy, axis, angle);
+    return v_copy;
+}
+
+rotate :: (v: *Vector3, axis: Vector3, angle: float32) {
+    if angle == 0 then return;
     engine_check(is_normalized(axis), level=.HIGH);
     ht := angle * 0.5;
     sin_ht, cos_ht := sin_cos(ht);
     rot_quat := Quaternion.{xyz=axis*sin_ht, w=cos_ht};
-    out_vec := rotate(v, rot_quat);
-    if do_normalize {
-        return normalize(out_vec);
-    } else {
-        return out_vec;
-    }
+    rotate(v, rot_quat);
+    normalize(v);
 }
 
 interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: float32) -> Quaternion {

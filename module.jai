@@ -29,7 +29,8 @@
     ENCODE_TEXT_MAX_WRITE_SIZE := 8,
     PHYSICS_DELTA_TIME                := 1.0 / 100.0,
     MIN_PHYSICS_BODY_SPEED_ALONG_AXIS := 0.000001,
-    FLIP_VECTOR_2D_Y_AXIS             := false // origin at upper left? flip it
+    FLIP_VECTOR_2D_Y_AXIS             := false, // origin at upper left? flip it
+    MAX_RECURSION_DEPTH               := 300
 ) {
     Collision_Channels_Default :: enum_flags u32 { DEFAULT; };
     Raycast_Channels_Default :: enum_flags u32 { DEFAULT; };
@@ -252,6 +253,7 @@ update_clock :: () {
 
 // single-file loads
 #load "entity.jai";
+#load "entity_components.jai";
 #load "array.jai";
 #load "camera.jai";
 #load "color.jai";
