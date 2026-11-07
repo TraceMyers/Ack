@@ -117,7 +117,7 @@ game_engine_init :: (
         engine_error("unable to find or make shaders path %", engine.project_info.shaders_path);
     }
 
-    engine.project_info.fonts_path,   build_path_success = build_path_string(engine.project_info.project_path, engine.project_info.fonts_path,   carve_path=initialize_project);
+    engine.project_info.fonts_path,   build_path_success = build_path_string(engine.project_info.project_path, engine.project_info.fonts_path, carve_path=initialize_project);
     if !build_path_success {
         engine_error("unable to find or make fonts path %", engine.project_info.fonts_path);
     }

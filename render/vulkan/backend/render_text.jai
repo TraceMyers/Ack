@@ -423,7 +423,7 @@ calculate_ttf_table_checksum :: (table_data: []u8) -> u32 {
             // padding is encouraged but not required, which is annoying because 
             // 1. you might as well not say anything, since a good parser will pad while reading 
             // anyway and 2. probably everybody pads in-file, so you get slower parsers
-            // and slightly bigger files. just tell people to pad with 0's or it's incorrect.
+            // and slightly bigger files. just tell people to pad with 0's or to not do it.
             byte := ifx i + it < table_data.count then table_data[i + it] else 0;
             word = (word << 8) | byte;
         }

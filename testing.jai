@@ -22,7 +22,11 @@ Testing_Plugin :: struct {
 
     include_tests: [..]string;
     exclude_tests: [..]string;
-    run_all_tests: bool;
+
+    run_categories: enum_flags {
+        GAME;
+        ENGINE;
+    };
 
     tests: [..]string;
     ran_tests: bool;
@@ -31,42 +35,58 @@ Testing_Plugin :: struct {
 testing_plugin_init :: (p: *Testing_Plugin, options: []string) -> bool {
     array_reserve(*p.tests, 256);
 
+    p.run_categories = .GAME | .ENGINE;
+
     // parse options
     next_option_is_inclusive: bool;
     next_option_is_exclusive: bool;
-    p.run_all_tests = true;
+    just_set_next_option: bool;
+
+    unset_options :: () #expand {
+        `next_option_is_inclusive = false;
+        `next_option_is_exclusive = false;
+    }
     
     for option : options {
-        if next_option_is_inclusive {
-            assert(could_be_procedure_name(option), "invalid procedure name %", option);
-            array_add_if_unique(*p.include_tests, option);
-            next_option_is_inclusive = false;
-            p.run_all_tests = false;
-        } else if next_option_is_exclusive {
-            assert(could_be_procedure_name(option), "invalid procecure name %", option);
-            array_add_if_unique(*p.exclude_tests, option);
-            next_option_is_exclusive = false;
-            p.run_all_tests = false;
-        } else {
-            if option == "--all" || option == "-a" {
-                p.run_all_tests = true;
-            } else if option == "--exclude" || option == "-e" {
-                next_option_is_exclusive = true;
-            } else if option == "--include" || option == "-i" {
-                next_option_is_inclusive = true;
+        if option == "game" {
+            unset_options();
+            p.run_categories = .GAME;
+            just_set_next_option = true;
+        } else if option == "engine" {
+            unset_options();
+            p.run_categories = .ENGINE;
+            just_set_next_option = true;
+        } else if option == "exclude" {
+            unset_options();
+            next_option_is_exclusive = true;
+            just_set_next_option = true;
+        } else if option == "include" {
+            unset_options();
+            next_option_is_inclusive = true;
+            just_set_next_option = true;
+        }
+        
+        if !just_set_next_option {
+            if next_option_is_inclusive {
+                assert(could_be_procedure_name(option), "invalid procedure name %", option);
+                array_add_if_unique(*p.include_tests, option);
+            } else if next_option_is_exclusive {
+                assert(could_be_procedure_name(option), "invalid procecure name %", option);
+                array_add_if_unique(*p.exclude_tests, option);
+            } else {
+                assert(false, "invalid option parameter %", option);
             }
         }
+
+        just_set_next_option = false;
     }
-    for 0..ENGINE_TESTS.count-1 {
-        array_insert_at(*p.tests, ENGINE_TESTS[it].name, 0);
+
+    if (p.run_categories & .ENGINE) != 0 {
+        for 0..ENGINE_TESTS.count-1 {
+            array_add(*p.tests, ENGINE_TESTS[it].name);
+        }
     }
     
-    assert(!next_option_is_inclusive && !next_option_is_exclusive, "provided a dangling -i or -e argument");
-
-    if p.run_all_tests {
-        p.include_tests.count = 0;
-    }
-
     return true;
 }
 
@@ -76,26 +96,40 @@ testing_plugin_message :: (p: *Testing_Plugin, message: *Message) {
     }
 
     if message.kind == .TYPECHECKED {
-        m_typechecked := cast(*Message_Typechecked) message;
-        for b : m_typechecked.procedure_bodies {
-            body := b.expression;
-            for note : body.header.notes {
-                if note.text == "build_test" {
-                    if !is_runnable_test(body.header) {
-                        continue;
+        if (p.run_categories & .GAME) != 0 {
+            m_typechecked := cast(*Message_Typechecked) message;
+            for b : m_typechecked.procedure_bodies {
+                body := b.expression;
+                for note : body.header.notes {
+                    if note.text == "build_test" {
+                        if !is_runnable_test(body.header) {
+                            continue;
+                        }
+                        array_add_if_unique(*p.tests, body.header.name);
                     }
-                    array_add_if_unique(*p.tests, body.header.name);
                 }
             }
         }
     } else if message.kind == .PHASE {
         m_phase := cast(*Message_Phase) message;
         if m_phase.phase == .TYPECHECKED_ALL_WE_CAN && p.tests.count > 0 {
-            // if p.include_tests.count > 0 {
-            //     for p.include_tests
-            // }
-            // todo: include/exclude
-            // todo: test runner process so build process is insulated from crashes
+
+            if p.include_tests.count > 0 {
+                for *p.tests {
+                    if !array_find(p.include_tests, it.*) {
+                        remove it;
+                    }
+                }
+            }
+
+            if p.exclude_tests.count > 0 {
+                for *p.tests {
+                    if array_find(p.exclude_tests, it.*) {
+                        remove it;
+                    }
+                }
+            }
+
             builder: String_Builder;
             print(*builder, 
             #string END
