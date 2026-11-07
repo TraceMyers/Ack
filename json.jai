@@ -17,7 +17,7 @@
 // these values are meant to be obviously wrong.
 JSON_GET_ERROR_OBJECT : JSON_Object = {.[{JSON_GET_ERROR_STRING_ELEMENT, JSON_GET_ERROR_STRING_ELEMENT}]};
 JSON_GET_ERROR_ARRAY  : JSON_Array  = {.[JSON_GET_ERROR_STRING_ELEMENT]};
-JSON_GET_ERROR_STRING : string      : "TeRM/JSON ERROR: this string is invalid because you used json_get on an element that was not of the assumed type";
+JSON_GET_ERROR_STRING : string      : "Ack!/JSON ERROR: this string is invalid because you used json_get on an element that was not of the assumed type";
 JSON_GET_ERROR_INT    : s64         = S64_MIN + 1;
 JSON_GET_ERROR_FLOAT  : float64     = #run (cast(*float64) *NaN_INT).*; // NaN
 JSON_GET_ERROR_NBOOL  : NBool       = .JSON_GET_ERROR;
@@ -244,7 +244,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
             if type != .OBJECT {
                 return_val = *JSON_GET_ERROR_OBJECT;
                 if log_errors{
-                    module_error("json element is an %, but is being used as a %", type, T);
+                    engine_error("json element is an %, but is being used as a %", type, T);
                 }
             }
         } else {
@@ -255,7 +255,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
             if type != .ARRAY {
                 return_val = *JSON_GET_ERROR_ARRAY;
                 if log_errors{
-                    module_error("json element is an %, but is being used as a %", type, T);
+                    engine_error("json element is an %, but is being used as a %", type, T);
                 }
             }
         } else {
@@ -266,7 +266,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
             if type != .STRING {
                 return_val = *JSON_GET_ERROR_STRING;
                 if log_errors{
-                    module_error("json element is an %, but is being used as a %", type, T);
+                    engine_error("json element is an %, but is being used as a %", type, T);
                 }
             }
         } else {
@@ -277,7 +277,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
             if type != .INT {
                 return_val = *JSON_GET_ERROR_INT;
                 if log_errors{
-                    module_error("json element is an %, but is being used as a %", type, T);
+                    engine_error("json element is an %, but is being used as a %", type, T);
                 }
             }
         } else {
@@ -288,7 +288,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
             if type != .FLOAT {
                 return_val = *JSON_GET_ERROR_FLOAT;
                 if log_errors{
-                    module_error("json element is an %, but is being used as a %", type, T);
+                    engine_error("json element is an %, but is being used as a %", type, T);
                 }
             }
         } else {
@@ -299,7 +299,7 @@ json_get :: (val: $T, $incorrect_type_response := enum {RETURN_ERROR_VALUE; ASSE
             if type != .NBOOL {
                 return_val = *JSON_GET_ERROR_NBOOL;
                 if log_errors{
-                    module_error("json element is an %, but is being used as a %", type, T);
+                    engine_error("json element is an %, but is being used as a %", type, T);
                 }
             }
         } else {
@@ -477,6 +477,8 @@ JSON_Error_Code :: enum u16 {
     UNEXPECTED_END_OF_INPUT;
     IMPROPERLY_FORMED_HEX;
     INVALID_ESCAPE_CODE_IN_STRING;
+    DATA_AFTER_ROOT_VALUE;
+    UNPAIRED_UTF16_LOW_SURROGATE;
     _INTERNAL_ERROR_MARKER_COUNT_DOES_NOT_MATCH_COLLECTION_COUNT;
     _INTERNAL_ERROR_BUILDER_STACK_DEPLETED;
     _INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8;
@@ -553,7 +555,6 @@ Parse_Number_Stage :: enum {
     BASE_NONZERO;
     FRACTION_DIGITS_BEGIN;
     FRACTION_DIGITS;
-    EXPONENT_SIGN; 
     EXPONENT_DIGITS_BEGIN;
     EXPONENT_DIGITS;
 }
@@ -561,16 +562,21 @@ Parse_Number_Stage :: enum {
 JSON_Number_Parser :: struct {
     sign           : s64 = 1;
     exponent_sign  : s64 = 1;
+    // magnitude of the integer part. digits that would overflow s64 are dropped and counted.
     base           : s64;
+    base_dropped_digits : s64;
     exponent       : s64;
     fraction: string;
     stage: Parse_Number_Stage;
 }
 
 JSON_String_Parser :: struct {
+    // the text between the quotes
     input_string: string;
+    // where input_string begins in the json text, for error positions
+    text_offset: int;
     output_string_begin: int;
-    passthrough_byte_count: int;
+    // read position in input_string
     pos: int;
 }
 
@@ -586,6 +592,15 @@ parse_json :: (parser: *JSON_Parser) -> bool {
         if is_space(byte) {
             parser.pos += 1;
             continue;
+        }
+
+        // the root value is complete. only whitespace may follow it.
+        if parser.builder_stack.count == 0 && parser.elements.count > 0 {
+            code := ifx byte == #char "}" then JSON_Error_Code.EXTRA_END_CURLY_BRACE
+                else ifx byte == #char "]" then JSON_Error_Code.EXTRA_END_SQUARE_BRACE
+                else JSON_Error_Code.DATA_AFTER_ROOT_VALUE;
+            add_load_error(code, parser.pos, .FATAL);
+            return false;
         }
 
         if byte == {
@@ -614,7 +629,10 @@ parse_json :: (parser: *JSON_Parser) -> bool {
                 return false;
             }
         case #char ",";
-            if parser.building_collection.state == {
+            if parser.builder_stack.count == 0 {
+                add_load_error(.TRAILING_COMMA, parser.pos, .FATAL);
+                return false;
+            } else if parser.building_collection.state == {
             case .OBJECT_EXPECT_COMMA_OR_END;
                 parser.building_collection.state = .OBJECT_EXPECT_KEY;
             case .ARRAY_EXPECT_COMMA_OR_END;
@@ -625,7 +643,10 @@ parse_json :: (parser: *JSON_Parser) -> bool {
             }
             parser.pos += 1;
         case #char ":";
-            if parser.building_collection.state == {
+            if parser.builder_stack.count == 0 {
+                add_load_error(.UNEXPECTED_COLON, parser.pos, .FATAL);
+                return false;
+            } else if parser.building_collection.state == {
             case .OBJECT_EXPECT_COLON;
                 parser.building_collection.state = .OBJECT_EXPECT_VALUE;
             case;
@@ -634,7 +655,10 @@ parse_json :: (parser: *JSON_Parser) -> bool {
             }
             parser.pos += 1;
         case #char "}";
-            if parser.building_collection.state == {
+            if parser.builder_stack.count == 0 {
+                add_load_error(.EXTRA_END_CURLY_BRACE, parser.pos, .FATAL);
+                return false;
+            } else if parser.building_collection.state == {
             case .OBJECT_EXPECT_KEY_OR_END;
                 #through;
             case .OBJECT_EXPECT_COMMA_OR_END;
@@ -651,7 +675,10 @@ parse_json :: (parser: *JSON_Parser) -> bool {
             }
             parser.pos += 1;
         case #char "]";
-            if parser.building_collection.state == {
+            if parser.builder_stack.count == 0 {
+                add_load_error(.EXTRA_END_SQUARE_BRACE, parser.pos, .FATAL);
+                return false;
+            } else if parser.building_collection.state == {
             case .ARRAY_EXPECT_VALUE_OR_END;
                 #through;
             case .ARRAY_EXPECT_COMMA_OR_END;
@@ -669,7 +696,9 @@ parse_json :: (parser: *JSON_Parser) -> bool {
             parser.pos += 1;
         case;
             if is_digit(byte) || byte == "-" {
-                parse_number(parser);
+                if !parse_number(parser) {
+                    return false;
+                }
             } else {
                 add_load_error(.INVALID_BYTE, parser.pos, .FATAL);
                 return false;
@@ -696,7 +725,7 @@ reserve_allocations :: (using parser: *JSON_Parser) {
     }
 
     // overshoot to avoid reallocations
-    OVERSHOOT_FACTOR :: 1.25;
+    OVERSHOOT_FACTOR :: 1.5;
     elements_est := parser.text.count * elements_per_file_byte     * OVERSHOOT_FACTOR;
     bytes_est    := parser.text.count * string_bytes_per_file_byte * OVERSHOOT_FACTOR;
     strings_est  := parser.text.count * strings_per_file_byte      * OVERSHOOT_FACTOR;
@@ -735,16 +764,20 @@ parse_number :: (parser: *JSON_Parser) -> bool {
     }
 
     if represent_with_integer {
-        if exponent > 0 {
-            base = mul_by_pow10_exponent(base, exponent, exponent_sign);
-        }
         element := push_collection_child(parser, number_begin_pos);
         element.type = .INT;
         element.i64 = base * sign;
     } else {
         element := push_collection_child(parser, number_begin_pos);
         element.type = .FLOAT;
-        element.f64 = compose_float(base * sign, fraction, exponent * exponent_sign);
+        // the sign is applied after, so that it isn't lost when base is 0 (e.g. -0.5)
+        if base_dropped_digits > 0 {
+            // the integer part overflowed. the fraction is far below float64 precision at this size.
+            element.f64 = compose_float(base, "", exponent * exponent_sign + base_dropped_digits);
+        } else {
+            element.f64 = compose_float(base, fraction, exponent * exponent_sign);
+        }
+        if sign < 0 then element.f64 = -element.f64;
         // this can be used for a debug comparison
         // for *number_string {
         //     if it.* == #char "E" then it.* = #char "e"; // string_to_float64 doesn't like 'E'
@@ -763,8 +796,9 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
 
         if byte == {
         case #char "+";
-            if stage == .EXPONENT_SIGN {
-                stage = .EXPONENT_DIGITS; 
+            // a sign is only valid right after the 'e'. the stage stays put so at least one digit is required.
+            if stage == .EXPONENT_DIGITS_BEGIN && is_exponent_marker(parser.text[parser.pos-1]) {
+                // exponent_sign is already 1
             } else {
                 add_load_error(.OUT_OF_PLACE_PLUS_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
@@ -774,9 +808,12 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
             case .SIGN;
                 sign = -1;
                 stage = .BASE_BEGIN;
-            case .EXPONENT_SIGN;
+            case .EXPONENT_DIGITS_BEGIN;
+                if !is_exponent_marker(parser.text[parser.pos-1]) {
+                    add_load_error(.OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
+                    return false;
+                }
                 exponent_sign = -1;
-                stage = .EXPONENT_DIGITS; 
             case;
                 add_load_error(.OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
@@ -792,7 +829,7 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
             #through;
         case #char "e";
             if stage == .BASE_ZERO || stage == .BASE_NONZERO || stage == .FRACTION_DIGITS {
-                stage = .EXPONENT_SIGN;
+                stage = .EXPONENT_DIGITS_BEGIN;
             } else {
                 add_load_error(.OUT_OF_PLACE_E_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                 return false;
@@ -814,7 +851,14 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
                     add_load_error(.EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER, parser.pos, .FATAL);
                     return false;
                 case .BASE_NONZERO;
-                    base = base * 10 + digit;
+                    // the limits are folded at compile time, so this is one compare per digit
+                    MAX_BEFORE_MUL :: S64_MAX / 10;
+                    MAX_LAST_DIGIT :: S64_MAX % 10;
+                    if base_dropped_digits > 0 || base > MAX_BEFORE_MUL || (base == MAX_BEFORE_MUL && digit > MAX_LAST_DIGIT) {
+                        base_dropped_digits += 1;
+                    } else {
+                        base = base * 10 + digit;
+                    }
                 case .FRACTION_DIGITS_BEGIN;
                     fraction.data = parser.text.data + parser.pos;
                     fraction.count = 1;
@@ -825,7 +869,10 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
                     stage = .EXPONENT_DIGITS;
                     #through;
                 case .EXPONENT_DIGITS;
-                    exponent = exponent * 10 + digit;
+                    // anything this large is already infinity or zero. capping keeps compose_float's
+                    // per-exponent loop short and the exponent from overflowing.
+                    MAX_EXPONENT :: 100_000;
+                    exponent = min(exponent * 10 + digit, MAX_EXPONENT);
                 }
             } else {
                 break;
@@ -845,61 +892,23 @@ parse_number_components :: (parser: *JSON_Parser) -> success: bool {
 
 should_represent_number_with_integer :: (parser: *JSON_Parser) -> should_use_int: bool, success: bool {
     using parser.number_parser;
-    
-    maybe_represent_with_float := fraction.count == 0;
 
-    if #complete stage == { 
-    case .SIGN; 
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
-        return false, false;
-    case .BASE_BEGIN;
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
-        return false, false;
-    case .BASE_ZERO;
-        #through;
-    case .BASE_NONZERO;
-        // this may not necessarily be the right call, but if so, critical information
-        // is already gone due to representing the base as a 64 bit integer during parsing
-        maybe_represent_with_float = false;
-    case .FRACTION_DIGITS_BEGIN;
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
-        return false, false;
-    case .FRACTION_DIGITS;
-        // float ok
-    case .EXPONENT_SIGN; 
-        add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
-        return false, false;
+    if #complete stage == {
+    case .SIGN;                  #through;
+    case .BASE_BEGIN;            #through;
+    case .FRACTION_DIGITS_BEGIN; #through;
     case .EXPONENT_DIGITS_BEGIN;
         add_load_error(.IMPROPERLY_FORMED_NUMBER_VALUE, parser.pos, .FATAL);
         return false, false;
+    case .BASE_ZERO; #through;
+    case .BASE_NONZERO;
+        // an integer too big for s64 becomes a float instead of wrapping
+        return base_dropped_digits == 0, true;
+    case .FRACTION_DIGITS; #through;
     case .EXPONENT_DIGITS;
-        // todo: see if it can be represented as an integer
-        // float ok
+        return false, true;
     }
-
-    represent_with_integer := true;
-
-    if maybe_represent_with_float {
-        represent_with_integer = false;
-        // checking if the value can be an int even though a fraction was put in the number
-        // is messy, so I'm going to avoid it for now.
-        // todo: see if numbers with fractions can be represented as integers.
-        if fraction.count == 0 && exponent != 0 {
-            // conservative estimation to see if an integer representation is possible.
-            // if we round the exponent to the nearest power of two, that represents a
-            // bit shift left or right. if we could shift left or right while only losing
-            // zeroes, the number can definitely be an int.
-            exponent_nearest_pow2 := ceil_to_power_of_two(exponent);
-            exponent_shift_size := shift_for_power_of_two_mul_or_div(exponent_nearest_pow2);
-            erasable_zeroes := ifx exponent_sign == 1 then bit_scan_reverse(base) else bit_scan_forward(base);
-
-            if exponent_shift_size <= erasable_zeroes {
-                represent_with_integer = true;
-            }
-        }
-    }
-
-    return represent_with_integer, true;
+    return false, false;
 }
 
 // -----------------------------------------------------------------------------------
@@ -917,8 +926,9 @@ parse_string :: (parser: *JSON_Parser) -> bool {
 
     remaining_bytes := parser.text.count - parser.pos;
     remaining_text  := string.{remaining_bytes, parser.text.data + parser.pos};
-    // collect string including end quote
+    // collect the text between the quotes
     input_string=, _, found_end_quote := consume_until_non_escaped_quote(remaining_text);
+    text_offset = parser.pos;
     parser.pos += input_string.count + 1;
 
     output_string_begin = parser.strings.count;
@@ -932,52 +942,61 @@ parse_string :: (parser: *JSON_Parser) -> bool {
     // jai compiler doesn't recognize \b and \f
     BACKSPACE : u8 : 0x8;
     FORM_FEED : u8 : 0xc;
-    
-    while pos + passthrough_byte_count < input_string.count {
-        if input_string[pos] == #char "\\" {
 
-            if passthrough_byte_count > 0 {
-                push_bytes(parser, {passthrough_byte_count, input_string.data + pos});
-            }
+    // unescaped bytes are copied over in runs. each escape ends the current run.
+    run_begin := 0;
+    while pos < input_string.count {
+        if input_string[pos] != #char "\\" {
             pos += 1;
+            continue;
+        }
 
-            if input_string[pos] == {
-            case #char "\"";
-                push_byte(parser, #char "\"");
-            case #char "\\";
-                push_byte(parser, #char "\\");
-            case #char "/";
-                push_byte(parser, #char "/");
-            case #char "b";
-                push_byte(parser, BACKSPACE);
-            case #char "f";
-                push_byte(parser, FORM_FEED);
-            case #char "n";
-                push_byte(parser, #char "\n");
-            case #char "r";
-                push_byte(parser, #char "\r");
-            case #char "t";
-                push_byte(parser, #char "\t");
-            case #char "u";
-                if !parse_hex_bytes(parser) {
-                    return false;
-                }
-            case;
-                add_load_error(.INVALID_ESCAPE_CODE_IN_STRING, parser.pos, .FATAL);
+        if pos > run_begin {
+            push_bytes(parser, .{pos - run_begin, input_string.data + run_begin});
+        }
+
+        escape_pos := pos;
+        pos += 1; // past the backslash
+        if pos >= input_string.count {
+            // consume_until_non_escaped_quote never ends a string on an unpaired backslash
+            add_load_error(.INVALID_ESCAPE_CODE_IN_STRING, text_offset + escape_pos, .FATAL);
+            return false;
+        }
+
+        escape_code := input_string[pos];
+        pos += 1; // past the escape code
+
+        if escape_code == {
+        case #char "\"";
+            push_byte(parser, #char "\"");
+        case #char "\\";
+            push_byte(parser, #char "\\");
+        case #char "/";
+            push_byte(parser, #char "/");
+        case #char "b";
+            push_byte(parser, BACKSPACE);
+        case #char "f";
+            push_byte(parser, FORM_FEED);
+        case #char "n";
+            push_byte(parser, #char "\n");
+        case #char "r";
+            push_byte(parser, #char "\r");
+        case #char "t";
+            push_byte(parser, #char "\t");
+        case #char "u";
+            if !parse_unicode_escape(parser, text_offset + escape_pos) {
                 return false;
             }
-        } else if input_string[pos] == #char "\"" {
-            // the string within the json stream was pre-parsed above the loop. it should be
-            // bookended by quotes. if not, that's an engine bug.
-            engine_check(pos + passthrough_byte_count + 1 == input_string.count);
-            break;
-        } else {
-            passthrough_byte_count += 1;
+        case;
+            add_load_error(.INVALID_ESCAPE_CODE_IN_STRING, text_offset + escape_pos, .FATAL);
+            return false;
         }
+
+        run_begin = pos;
     }
-    
-    if passthrough_byte_count > 0 {
-        push_bytes(parser, {passthrough_byte_count, input_string.data + pos});
+
+    if pos > run_begin {
+        push_bytes(parser, .{pos - run_begin, input_string.data + run_begin});
     }
 
     new_string_length := parser.strings.count - output_string_begin;
@@ -1002,98 +1021,88 @@ parse_string :: (parser: *JSON_Parser) -> bool {
     element := push_collection_child(parser, string_begin_pos);
     element.type = .INTERNAL_COLLECTION_BUILDER;
     element._internal_collection_builder = {};
-    
+
     {
         using element._internal_collection_builder;
         type                    = .STRING;
-        debug_filepos           = cast,trunc(u16) parser.pos; 
+        debug_filepos           = cast,trunc(u16) parser.pos;
         // informing the post-processing stage where the string begins and ends
         string_begin_element    = xx output_string_begin;
         string_length           = xx new_string_length;
         // for validation during post-processing
-        child_elements_counter  = xx new_string_length; 
+        child_elements_counter  = xx new_string_length;
     }
 
     return true;
 }
 
+// splits text at the first quote that isn't escaped. left excludes the quote, right begins after it.
 consume_until_non_escaped_quote :: inline (text: string) -> left: string, right: string, found_quote: bool {
-    exchange := String_Exchange.{src=text};
-    for exchange {
-        if it == #char "\"" && (it_index == 0 || exchange.src[it_index-1] != #char "\\") {
-            exchange.trim_bytes = 1;
-            break;
+    i := 0;
+    while i < text.count {
+        if text[i] == #char "\\" {
+            // skip the escaped byte, so that "\\" followed by a quote ends the string
+            i += 2;
+        } else if text[i] == #char "\"" {
+            return .{i, text.data}, .{text.count - i - 1, text.data + i + 1}, true;
+        } else {
+            i += 1;
         }
     }
-    return exchange.dst, exchange.src, exchange.broke_out_of_loop;
+    return text, .{}, false;
 }
 
 push_byte :: inline (parser: *JSON_Parser, byte: u8) {
-    using parser.string_parser;
     array_add(*parser.strings, byte);
-    pos += 1;
 }
 
 push_bytes :: inline (parser: *JSON_Parser, bytes: string) {
-    using parser.string_parser;
     old_count := parser.strings.count;
-    new_count := parser.strings.count + bytes.count;
-    array_resize(*parser.strings, new_count);
+    array_resize(*parser.strings, old_count + bytes.count);
     memcpy(parser.strings.data + old_count, bytes.data, bytes.count);
-    pos += bytes.count;
 }
 
-parse_hex_bytes :: (parser: *JSON_Parser) -> bool {
+// reads the hex digits after a "\u", plus a second "\uXXXX" for a surrogate pair, and pushes the code point as utf8.
+// string_parser.pos starts just past the 'u'.
+parse_unicode_escape :: (parser: *JSON_Parser, error_pos: int) -> bool {
     using parser.string_parser;
 
-    // get past 'u' char
-    pos += 1;
-
-    word_count := 1;
-
-    utf16: [2]u16;
-    success: bool;
-    utf16[0], success = parse_utf16_word_from_hex_text(parser);
-
+    first, success := parse_utf16_word_from_hex_text(parser);
     if !success {
         return false;
     }
-    pos += 4;
 
-    if utf16[0] >= UTF16_HIGH_SURROGATE_MIN && utf16[0] <= UTF16_HIGH_SURROGATE_MAX {
-        word_count = 2;
-
-        if input_string[pos] != #char "\\" {
-            add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, parser.pos, .FATAL);
-            return false;
-        }
-        if input_string[pos+1] != #char "u" {
-            add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, parser.pos, .FATAL);
+    code_point := cast(u32) first;
+    if code_point >= UTF16_HIGH_SURROGATE_MIN && code_point <= UTF16_HIGH_SURROGATE_MAX {
+        if pos + 1 >= input_string.count || input_string[pos] != #char "\\" || input_string[pos+1] != #char "u" {
+            add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, error_pos, .FATAL);
             return false;
         }
         pos += 2;
-        
-        utf16[1], success = parse_utf16_word_from_hex_text(parser);
+
+        second:, success = parse_utf16_word_from_hex_text(parser);
         if !success {
             return false;
         }
-        pos += 4;
-    }
-
-    utf8: [6]u8;
-    result := utf16_to_utf8(xx utf16.data, utf8.data, utf16.count*2, utf8.count);
-
-    if result.status != 0 {
-        add_load_error(._INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8, parser.pos, .FATAL);
-        return false;
-    }
-    if result.read_count * 2 != word_count {
-        add_load_error(._INTERNAL_UNEXPECTED_UTF16_READ_BYTE_COUNT, parser.pos, .FATAL);
+        low := cast(u32) second;
+        if low < UTF16_LOW_SURROGATE_MIN || low > UTF16_LOW_SURROGATE_MAX {
+            add_load_error(.FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE, error_pos, .FATAL);
+            return false;
+        }
+        code_point = 0x1_0000 + ((code_point - UTF16_HIGH_SURROGATE_MIN) << 10) + (low - UTF16_LOW_SURROGATE_MIN);
+    } else if code_point >= UTF16_LOW_SURROGATE_MIN && code_point <= UTF16_LOW_SURROGATE_MAX {
+        add_load_error(.UNPAIRED_UTF16_LOW_SURROGATE, error_pos, .FATAL);
         return false;
     }
 
-    utf8_str := string.{result.write_count, utf8.data};
-    push_bytes(parser, utf8_str);
+    utf8: [4]u8;
+    result := utf32_to_utf8(xx *code_point, utf8.data, size_of(u32), utf8.count);
+    if result.status != .SUCCESS {
+        add_load_error(._INTERNAL_FAILED_TRANSLATING_UTF16_TO_UTF8, error_pos, .FATAL);
+        return false;
+    }
+
+    push_bytes(parser, .{result.write_count, utf8.data});
     return true;
 }
 
@@ -1232,7 +1241,9 @@ push_collection_child :: inline (parser: *JSON_Parser, file_pos: int) -> *JSON_E
         array_add(*parser.file_positions, xx file_pos);
         return array_add(*parser.elements);
     } else {
-        // ... the rest of the elements allocate in-place within a collection
+        // ... the rest of the elements allocate in-place within a collection.
+        // only the root is added outside a collection. parse_json rejects anything after the root.
+        engine_check(parser.builder_stack.count > 0);
         using parser.building_collection;
         // child_elements_count was pre-counted. if 'counter' goes over 'count', then either the pre-count was wrong,
         // or we're adding more children than exist.
@@ -1499,23 +1510,8 @@ HERE,
 // -----------------------------------------------------------------------------------
 // ----------------------------------------------------------------------------- :misc
 
-mul_by_pow10_exponent :: (x: s64, exponent: s64, exponent_sign: s64) -> s64 {
-    if exponent <= 0 {
-        return x;
-    }
-    if exponent_sign == -1 {
-        exp_factor := 1; 
-        for 0..exponent-1 {
-            exp_factor *= 10;
-        }
-        return x / exp_factor;
-    } else {
-        exp_factor := 1; 
-        for 0..exponent-1 {
-            exp_factor *= 10;
-        }
-        return x * exp_factor;
-    }
+is_exponent_marker :: inline (byte: u8) -> bool {
+    return byte == #char "e" || byte == #char "E";
 }
 
 to_digit :: inline (byte: u8) -> u8 {
@@ -1525,20 +1521,31 @@ to_digit :: inline (byte: u8) -> u8 {
     return 0xff;
 }
 
+// reads 4 hex digits as a utf16 word. the text is big endian: "00e9" -> 0x00e9.
 parse_utf16_word_from_hex_text :: (parser: *JSON_Parser) -> u16, bool {
     using parser.string_parser;
-    hex_string := string.{min(4, input_string.count - pos), input_string.data + pos};
-    if hex_string.count < 4 {
-        add_load_error(.UNEXPECTED_END_OF_INPUT, parser.pos, .FATAL);
+    if input_string.count - pos < 4 {
+        add_load_error(.UNEXPECTED_END_OF_INPUT, text_offset + pos, .FATAL);
         return 0, false;
     }
-    hex_bytes, success := hex_text_to_bytes(hex_string);
-    if !success {
-        add_load_error(.IMPROPERLY_FORMED_HEX, parser.pos, .FATAL);
-        return 0, false;
+    word: u16;
+    for 0..3 {
+        c := input_string[pos + it];
+        nibble: u16 = ---;
+        if c >= #char "0" && c <= #char "9" {
+            nibble = c - #char "0";
+        } else if c >= #char "a" && c <= #char "f" {
+            nibble = c - #char "a" + 10;
+        } else if c >= #char "A" && c <= #char "F" {
+            nibble = c - #char "A" + 10;
+        } else {
+            add_load_error(.IMPROPERLY_FORMED_HEX, text_offset + pos + it, .FATAL);
+            return 0, false;
+        }
+        word = (word << 4) | nibble;
     }
     pos += 4;
-    return (cast(*u16) hex_bytes.data).*, true;
+    return word, true;
 }
 
 advance_collection_state_for_string_or_return_if_invalid :: (using parser: *JSON_Parser) #expand {
@@ -1597,6 +1604,280 @@ advance_collection_state_for_value_or_return_if_invalid :: (using parser: *JSON_
 // -----------------------------------------------------------------------------------
 
 NaN_INT : s64 = 0x7fff_ffff_ffff_ffff;
+
+#scope_export
+
+json_test :: () -> bool {
+    find :: (obj: *JSON_Element, key: string) -> *JSON_Element {
+        if obj.type != .OBJECT then return null;
+        for *obj.object.elements {
+            if it.key.str == key then return *it.value;
+        }
+        return null;
+    }
+
+    Tree_Stats :: struct {
+        values: int;
+        keys: int;
+        max_depth: int;
+    }
+
+    gather_stats :: (parent_stack: []JSON_Element_Container, element: JSON_Element_Container, element_index: int, parent_element_count: int, user_data: *void) -> bool, bool {
+        stats := cast(*Tree_Stats) user_data;
+        stats.values += 1;
+        if element.key != null then stats.keys += 1;
+        stats.max_depth = max(stats.max_depth, parent_stack.count);
+        return true, true;
+    }
+
+    // --- a document with every element type
+    text := #string END
+{
+    "name": "ack",
+    "count": 3,
+    "neg": -12,
+    "pi": 3.25,
+    "large_int": 9007199254740993,
+    "flags": [true, false, null],
+    "nested": {"empty_obj": {}, "empty_arr": [], "list": [1, [2, [3]]]},
+    "name_again": "ack"
+}
+END;
+
+    result := load_json_from_string(text);
+    defer free(*result);
+
+    if result.errors.count > 0 || result.elements.count == 0 {
+        for result.errors log("  json error % at line %, column %", it.code, it.line, it.column);
+        return false;
+    }
+    root := *result.elements[0];
+    test_condition(root.type == .OBJECT && root.object.elements.count == 8);
+
+    name := find(root, "name");
+    test_condition(name != null && name.type == .STRING && name.str == "ack");
+    // strings are null terminated and deduplicated
+    test_condition(name.str.data[name.str.count] == 0);
+    name_again := find(root, "name_again");
+    test_condition(name_again != null && name_again.str.data == name.str.data);
+
+    count := find(root, "count");
+    test_condition(count != null && count.type == .INT && count.i64 == 3);
+    test_condition(text[get_file_position(count)] == #char "3");
+    neg := find(root, "neg");
+    test_condition(neg != null && neg.type == .INT && neg.i64 == -12);
+    pi := find(root, "pi");
+    test_condition(pi != null && pi.type == .FLOAT && pi.f64 == 3.25);
+    large_int := find(root, "large_int");
+    test_condition(large_int != null && large_int.type == .INT && large_int.i64 == 9007199254740993);
+
+    flags := find(root, "flags");
+    test_condition(flags != null && flags.type == .ARRAY && flags.array.elements.count == 3);
+    test_condition(flags.array.elements[0].nbool == .TRUE);
+    test_condition(flags.array.elements[1].nbool == .FALSE);
+    test_condition(flags.array.elements[2].nbool == .NULL);
+
+    nested := find(root, "nested");
+    empty_obj := find(nested, "empty_obj");
+    test_condition(empty_obj != null && empty_obj.type == .OBJECT && empty_obj.object.elements.count == 0);
+    empty_arr := find(nested, "empty_arr");
+    test_condition(empty_arr != null && empty_arr.type == .ARRAY && empty_arr.array.elements.count == 0);
+    list := find(nested, "list");
+    test_condition(list != null && list.type == .ARRAY && list.array.elements.count == 2);
+    test_condition(list.array.elements[0].i64 == 1);
+    inner := *list.array.elements[1];
+    test_condition(inner.type == .ARRAY && inner.array.elements[0].i64 == 2);
+    test_condition(inner.array.elements[1].array.elements[0].i64 == 3);
+
+    // json_get hands back the error value instead of reinterpreting the union
+    test_condition(json_get_nl(*count.i64).* == 3);
+    test_condition(json_get_nl(*count.str).* == JSON_GET_ERROR_STRING);
+    test_condition(json_get_nl(*name.object) == *JSON_GET_ERROR_OBJECT);
+
+    // every element but the root is visited once, as a value or a key
+    {
+        stats: Tree_Stats;
+        for_each_element(*result, gather_stats, *stats);
+        test_condition(stats.values == 19 && stats.keys == 11);
+        test_condition(1 + stats.values + stats.keys == result.elements.count);
+        test_condition(stats.max_depth == 5);
+    }
+
+    // --- numbers. ones written without a fraction or exponent must come back as ints.
+    Number :: struct {
+        text: string;
+        value: float64;
+        must_be_int: bool;
+    }
+    numbers :: Number.[
+        {"0", 0, true},
+        {"-12", -12, true},
+        {"3.25", 3.25, false},
+        {"-0.5", -0.5, false},
+        {"2.5e3", 2500, false},
+        {"1e2", 100, false},
+        {"1E+2", 100, false},
+        {"1e-2", 0.01, false},
+        {"125e-2", 1.25, false},
+        {"6.02214076e23", 6.02214076e23, false},
+        {"9223372036854775807", 9223372036854775807.0, true},
+        {"-9223372036854775807", -9223372036854775807.0, true},
+        // too big for s64: becomes a float instead of wrapping
+        {"99999999999999999999", 1.0e20, false},
+        {"12345678901234567890123.5", 1.2345678901234567890123e22, false},
+        // more fraction digits than a u64 can hold
+        {"0.12345678901234567890123", 0.12345678901234567890123, false},
+    ];
+    all_numbers_ok := true;
+    for number : numbers {
+        r := load_json_from_string(tprint("[%]", number.text));
+        defer free(*r);
+        ok := r.errors.count == 0 && r.elements.count == 2;
+        value: float64;
+        if ok {
+            e := r.elements[1];
+            if e.type == .INT {
+                value = xx e.i64;
+            } else if e.type == .FLOAT {
+                value = e.f64;
+            } else {
+                ok = false;
+            }
+            if number.must_be_int && e.type != .INT then ok = false;
+        }
+        if !ok || abs(value - number.value) > abs(number.value) * 1.0e-15 {
+            log("  json number % parsed as % (errors: %)", number.text, value, r.errors.count);
+            all_numbers_ok = false;
+        }
+    }
+    test_condition(all_numbers_ok);
+
+    // --- string escapes, anywhere in the string
+    Escaped :: struct {
+        json: string;
+        expected: string;
+    }
+    escaped_strings :: Escaped.[
+        .{"\"plain\"",                 "plain"},
+        .{"\"\\\"at start\"",          "\"at start"},
+        .{"\"a\\\"b\"",                "a\"b"},
+        .{"\"a\\\\b\\/c\"",            "a\\b/c"},
+        .{"\"tab\\there\\nnew\\r\"",   "tab\there\nnew\r"},
+        .{"\"\\u00e9\"",               "\xc3\xa9"},
+        .{"\"x\\u20ACy\"",             "x\xe2\x82\xacy"},
+        .{"\"\\ud83d\\ude00\"",        "\xf0\x9f\x98\x80"},
+        .{"\"ends in \\\\\"",          "ends in \\"},
+        .{"\"\\\\\\\"\"",              "\\\""},
+        .{"\"mixed \\u00E9\\t\\u20ac!\"", "mixed \xc3\xa9\t\xe2\x82\xac!"},
+    ];
+    all_strings_ok := true;
+    for escaped : escaped_strings {
+        r := load_json_from_string(tprint("[%]", escaped.json));
+        defer free(*r);
+        ok := r.errors.count == 0 && r.elements.count == 2 && r.elements[1].type == .STRING;
+        if !ok || r.elements[1].str != escaped.expected {
+            log("  json string % parsed as '%' (errors: %)", escaped.json, ifx ok then r.elements[1].str else "", r.errors.count);
+            all_strings_ok = false;
+        }
+    }
+    test_condition(all_strings_ok);
+
+    // --- options
+    {
+        floats := load_json_from_string("[1, -2, 3]", numbers_always_float=true);
+        defer free(*floats);
+        test_condition(floats.errors.count == 0);
+        for floats.elements[0].array.elements {
+            test_condition(it.type == .FLOAT);
+        }
+        test_condition(floats.elements[0].array.elements[1].f64 == -2.0);
+    }
+    {
+        temp_result := load_json_from_string("{\"a\": [1, 2, {\"b\": \"c\"}]}",, temp);
+        test_condition(temp_result.errors.count == 0 && temp_result.elements.count == 8);
+    }
+
+    // --- malformed input fails, the first error is the inciting one, and no elements are handed back
+    Bad :: struct {
+        text: string;
+        code: JSON_Error_Code;
+    }
+    bad_inputs :: Bad.[
+        .{"[1, 2",          .COLLECTION_WITHOUT_END_DELIMITER},
+        .{"{\"a\" 1}",      .EXPECTED_COLON},
+        .{"[1 2]",          .EXPECTED_COMMA_OR_END_OF_COLLECTION},
+        .{"[\"a\" \"b\"]",  .EXPECTED_COMMA_OR_END_OF_COLLECTION},
+        .{"{1: 2}",         .EXPECTED_OBJECT_KEY},
+        .{"[01]",           .EXTRA_DIGITS_IN_ZERO_WHEN_PARSING_NUMBER},
+        .{"[1.]",           .IMPROPERLY_FORMED_NUMBER_VALUE},
+        .{"[1e]",           .IMPROPERLY_FORMED_NUMBER_VALUE},
+        .{"[--1]",          .OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER},
+        .{"[tru]",          .EXPECTED_VALUE_TRUE},
+        .{"[nul]",          .EXPECTED_VALUE_NULL},
+        .{"[\"abc]",        .STRING_WITHOUT_END_QUOTE},
+        .{"[\"\\q\"]",      .INVALID_ESCAPE_CODE_IN_STRING},
+        .{"[\"\\u12\"]",    .UNEXPECTED_END_OF_INPUT},
+        .{"[\"\\u12g4\"]",  .IMPROPERLY_FORMED_HEX},
+        .{"[\"\\ud83dx\"]", .FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE},
+        .{"[\"\\ud83d\\u0041\"]", .FIRST_WORD_OF_UTF16_CODE_POINT_IS_HIGH_SURROGATE_BUT_FOUND_NO_LOW_SURROGATE},
+        .{"[\"\\udc00\"]",  .UNPAIRED_UTF16_LOW_SURROGATE},
+        .{"[1e+]",          .IMPROPERLY_FORMED_NUMBER_VALUE},
+        .{"[1e+-2]",        .OUT_OF_PLACE_MINUS_WHEN_PARSING_NUMBER},
+        .{"[1e2+]",         .OUT_OF_PLACE_PLUS_WHEN_PARSING_NUMBER},
+        .{"[-]",            .IMPROPERLY_FORMED_NUMBER_VALUE},
+        .{"[1, ?]",         .INVALID_BYTE},
+        .{"{\"a\": 1]",     .COLLECTION_WITHOUT_END_DELIMITER},
+        .{"{\"a\": 1}}",    .EXTRA_END_CURLY_BRACE},
+        .{"[1]]",           .EXTRA_END_SQUARE_BRACE},
+        .{"}",              .EXTRA_END_CURLY_BRACE},
+        .{",",              .TRAILING_COMMA},
+        .{"[1] [2]",        .DATA_AFTER_ROOT_VALUE},
+        .{"1 2",            .DATA_AFTER_ROOT_VALUE},
+        .{"\"a\" \"b\"",    .DATA_AFTER_ROOT_VALUE},
+        .{"{} x",           .DATA_AFTER_ROOT_VALUE},
+    ];
+    all_bad_inputs_rejected := true;
+    for bad : bad_inputs {
+        r := load_json_from_string(bad.text);
+        defer free(*r);
+        first_code := ifx r.errors.count > 0 then r.errors[0].code else .FAILED_TO_LOAD_FILE;
+        if !r.any_fatal_errors || r.errors.count == 0 || first_code != bad.code || r.elements.count != 0 {
+            log("  json '%' gave % errors (first: %), expected %", bad.text, r.errors.count, first_code, bad.code);
+            all_bad_inputs_rejected = false;
+        }
+    }
+    test_condition(all_bad_inputs_rejected);
+
+    // whitespace after the root is fine
+    {
+        r := load_json_from_string("  [1, 2]  \n\t ");
+        defer free(*r);
+        test_condition(r.errors.count == 0 && r.elements.count == 3);
+    }
+
+    // errors report 0-based line and column
+    {
+        r := load_json_from_string("[\n  1,\n  x\n]");
+        defer free(*r);
+        test_condition(r.errors.count > 0 && r.errors[0].code == .INVALID_BYTE);
+        test_condition(r.errors[0].line == 2 && r.errors[0].column == 2);
+        test_condition((r.errors[0].flags & .FATAL) != 0);
+    }
+
+    // --- a real file
+    {
+        path := tprint("%/additional_materials/test_supplemental/100 KB 10 Level Formatted.json", #filepath);
+        file_result := load_json_from_file(path, json_is_minified=false, log_errors=true);
+        defer free(*file_result);
+        test_condition(file_result.errors.count == 0 && file_result.elements.count > 1000);
+        stats: Tree_Stats;
+        for_each_element(*file_result, gather_stats, *stats);
+        test_condition(1 + stats.values + stats.keys == file_result.elements.count);
+        test_condition(stats.max_depth >= 10);
+    }
+
+    return true;
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

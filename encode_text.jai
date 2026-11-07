@@ -170,7 +170,7 @@ encode_text :: (src: string, encoder: Text_Encoder, enable_log := true, user_dat
     temp_storage_mark := get_temporary_storage_mark();
     defer if context.allocator.proc != temp.proc then set_temporary_storage_mark(temp_storage_mark);
 
-    if src.count == 0 then return "", true;
+    if src.count == 0 then return "", .SUCCESS;
 
     out_buffer_inline: [4096]u8;
     out_buffer: *u8 = out_buffer_inline.data;
@@ -182,9 +182,9 @@ encode_text :: (src: string, encoder: Text_Encoder, enable_log := true, user_dat
     if encoder.encode_from != encoder.encode_to {
         while src_index < src.count {
             out_remain := out_buffer_size - out_index;
-            if out_remain - MAX_WRITE_SIZE <= 0 {
+            if out_remain - ENCODE_TEXT_MAX_WRITE_SIZE <= 0 {
                 // no need to free on resize. all previous allocations are either stack-local or temp
-                new_size := max(out_buffer_size * 2, src.count + MAX_WRITE_SIZE);
+                new_size := max(out_buffer_size * 2, src.count + ENCODE_TEXT_MAX_WRITE_SIZE);
                 new_buffer := alloc(new_size,,temp);
                 memcpy(new_buffer, out_buffer, out_index);
                 out_buffer = new_buffer;
@@ -195,14 +195,14 @@ encode_text :: (src: string, encoder: Text_Encoder, enable_log := true, user_dat
 
             #if #run encoder.proc != null {
                 result := inline encoder.proc(src.data + src_index, out_buffer + out_index, src_remain, out_remain, user_data);
-                engine_check(result.write_count <= MAX_WRITE_SIZE, level=.HIGH);
+                engine_check(result.write_count <= ENCODE_TEXT_MAX_WRITE_SIZE, level=.HIGH);
             } else {
                 // cannot use an encoder with no procedure
-                result := Text_Encode_Result.{status=.INVALID_ENCODE_PROCEDURE};
+                result := Text_Encode_Result.{status=.INVALID_ENCODER_PROCEDURE};
             }
 
-            if !result.status != 0 {
-                engine_warning("failed to encode string '%' from % to %. error code: %.", view(src, 0, 100), encoder.encode_from, encoder.encode_to, result.status, loc=caller_loc);
+            if result.status != .SUCCESS {
+                if enable_log then engine_warning("failed to encode string '%' from % to %. error code: %.", view(src, 0, 100), encoder.encode_from, encoder.encode_to, result.status, loc=caller_loc);
                 // making sure this happens regardless of what context.allocator is (see defer at top)
                 set_temporary_storage_mark(temp_storage_mark);
                 return "", result.status;
@@ -474,7 +474,7 @@ utf8_to_ansi :: (in: *u8, out: *u8, in_buf_size: int, out_buf_size: int, unused:
         return_if_not_valid_encode(in_buf_size, out_buf_size, 1, 1);
         out.* = in.*;
         return {1, 1, 0};
-    } else if (in[0] & 0xfc) == 0x80 {
+    } else if (in[0] & 0xfc) == 0xc0 {
         // 2 byte utf8 code point
         // the only valid 2 byte utf8 -> ansi bits look like this:
         // [0]: 1100-00xx, [1]: 10xx-xxxx, where the ansi bits are the x's
@@ -682,6 +682,99 @@ Utf16_Word :: enum u8 {
     BASIC_MULTILINGUAL_PLANE;
     HIGH_SURROGATE;
     LOW_SURROGATE;
+}
+
+#scope_export
+
+encode_text_test :: () -> bool {
+    // 1, 2, 3, and 4 byte utf8 code points: A é € 😀
+    MIXED_UTF8  :: "A\xc3\xa9\xe2\x82\xac\xf0\x9f\x98\x80";
+    MIXED_UTF16 :: "A\x00\xe9\x00\xac\x20\x3d\xd8\x00\xde";
+    MIXED_UTF32 :: "A\x00\x00\x00\xe9\x00\x00\x00\xac\x20\x00\x00\x00\xf6\x01\x00";
+
+    expect :: (src: string, encoder: Text_Encoder, expected: string) -> bool {
+        out, status := encode_text(src, encoder, enable_log=false,, temp);
+        if status != .SUCCESS || out != expected {
+            log("  % -> % failed: status %, got % bytes, expected % bytes", encoder.encode_from, encoder.encode_to, status, out.count, expected.count);
+            return false;
+        }
+        // a terminator is written after the encoded text
+        terminator_size := ifx encoder.encode_to == .UTF32 then 4 else ifx encoder.encode_to == .UTF16 then 2 else 1;
+        for 0..terminator_size-1 {
+            test_condition(out.data[out.count + it] == 0);
+        }
+        return true;
+    }
+
+    expect_failure :: (src: string, encoder: Text_Encoder) -> bool {
+        out, status := encode_text(src, encoder, enable_log=false,, temp);
+        return status != .SUCCESS && out.count == 0;
+    }
+
+    // --- every conversion between the unicode encodings
+    test_condition(expect(MIXED_UTF8,  UTF8_TO_UTF16,  MIXED_UTF16));
+    test_condition(expect(MIXED_UTF8,  UTF8_TO_UTF32,  MIXED_UTF32));
+    test_condition(expect(MIXED_UTF16, UTF16_TO_UTF8,  MIXED_UTF8));
+    test_condition(expect(MIXED_UTF16, UTF16_TO_UTF32, MIXED_UTF32));
+    test_condition(expect(MIXED_UTF32, UTF32_TO_UTF8,  MIXED_UTF8));
+    test_condition(expect(MIXED_UTF32, UTF32_TO_UTF16, MIXED_UTF16));
+
+    // --- ansi
+    test_condition(expect("a\xff", ANSI_TO_UTF8,  "a\xc3\xbf"));
+    test_condition(expect("a\xff", ANSI_TO_UTF16, "a\x00\xff\x00"));
+    test_condition(expect("a\xff", ANSI_TO_UTF32, "a\x00\x00\x00\xff\x00\x00\x00"));
+    test_condition(expect("a\xc3\xbf", UTF8_TO_ANSI, "a\xff"));
+    test_condition(expect("a\x00\xff\x00", UTF16_TO_ANSI, "a\xff"));
+    test_condition(expect("a\x00\x00\x00\xff\x00\x00\x00", UTF32_TO_ANSI, "a\xff"));
+    test_condition(expect_failure(MIXED_UTF8, UTF8_TO_ANSI));
+    test_condition(expect_failure(MIXED_UTF32, UTF32_TO_ANSI));
+
+    // --- same encoding on both ends is a copy
+    test_condition(expect(MIXED_UTF8, Text_Encoder(ansi_to_utf8).{.UTF8, .UTF8, write_1_null_byte}, MIXED_UTF8));
+    {
+        out, status := encode_text("", UTF8_TO_UTF16, enable_log=false);
+        test_condition(status == .SUCCESS && out.count == 0);
+    }
+
+    // --- malformed input
+    test_condition(expect_failure("\xf0\x02", UTF8_TO_UTF32));       // truncated 4 byte sequence
+    test_condition(expect_failure("\xe1\x81", UTF8_TO_UTF32));       // truncated 3 byte sequence
+    test_condition(expect_failure("\xe1\x41\x81", UTF8_TO_UTF32));   // bad trailing byte
+    test_condition(expect_failure("\xff", UTF8_TO_UTF16));           // not a utf8 lead byte
+    test_condition(expect_failure("\x01\x02\x03", UTF32_TO_UTF16));  // not a multiple of 4
+    test_condition(expect_failure("\x3d\xd8\x41\x00", UTF16_TO_UTF8)); // high surrogate without a low one
+    test_condition(expect_failure("\x00\xd8\x00\x00", UTF32_TO_UTF16)); // surrogates aren't code points
+    test_condition(expect_failure("\x00\x00\x11\x00", UTF32_TO_UTF16)); // past the last code point
+
+    // --- utf16 input that isn't 2-byte aligned in memory
+    {
+        storage := copy_string("\x00\x01\x02\x00\x03",, temp);
+        unaligned := ifx (storage.data.(u64) & 1) == 0 then string.{4, storage.data + 1} else string.{4, storage.data};
+        unaligned[0], unaligned[1], unaligned[2], unaligned[3] = 0x01, 0x00, 0x02, 0x00;
+        test_condition(expect(unaligned, UTF16_TO_UTF32, "\x01\x00\x00\x00\x02\x00\x00\x00"));
+    }
+
+    // --- real world text survives every round trip, including outputs bigger than the inline buffer
+    {
+        path := tprint("%/additional_materials/test_supplemental/utf8_in.txt", #filepath);
+        real_world, read_success := read_entire_file(path,, temp);
+        test_condition(read_success && real_world.count > 4096);
+
+        to_utf32, status := encode_text(real_world, UTF8_TO_UTF32,, temp);
+        test_condition(status == .SUCCESS);
+        back_to_utf8:, status = encode_text(to_utf32, UTF32_TO_UTF8,, temp);
+        test_condition(status == .SUCCESS && back_to_utf8 == real_world);
+
+        to_utf16:, status = encode_text(real_world, UTF8_TO_UTF16,, temp);
+        test_condition(status == .SUCCESS);
+        back_to_utf8, status = encode_text(to_utf16, UTF16_TO_UTF8,, temp);
+        test_condition(status == .SUCCESS && back_to_utf8 == real_world);
+
+        utf16_to_utf32:, status = encode_text(to_utf16, UTF16_TO_UTF32,, temp);
+        test_condition(status == .SUCCESS && utf16_to_utf32 == to_utf32);
+    }
+
+    return true;
 }
 
 // Copyright (c) 2026 Trace Myers

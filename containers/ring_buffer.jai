@@ -9,7 +9,7 @@ Ring_Buffer :: struct($T: Type) {
 }
 
 operator *[] :: inline (using buffer: *Ring_Buffer($T), index: int) -> *T {
-    return buffer.items[index];
+    return *buffer.items[index];
 }
 
 operator []= :: inline (using buffer: *Ring_Buffer($T), index: int, value: T) {

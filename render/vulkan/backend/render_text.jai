@@ -25,13 +25,13 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
 
     engine_log("loading font %", fonts_relative_path, flags=.VERBOSE_ONLY);
 
-    path, success := build_path_string(engine.project_settings.fonts_path, fonts_relative_path);
+    path, success := build_path_string(engine.project_info.fonts_path, fonts_relative_path);
     if !success {
-        render_error("failed to navigate to path %/% to load font", engine.project_settings.fonts_path, fonts_relative_path);
+        render_error("failed to navigate to path %/% to load font", engine.project_info.fonts_path, fonts_relative_path);
         return false;
     }
 
-    font_data, success := read_entire_file(path,, temp);
+    font_data:, success = read_entire_file(path,, temp);
     if !success {
         engine_error("failed to read file %", path);
         return false;
@@ -40,7 +40,7 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
     font.path = copy_string(fonts_relative_path);
 
     s: Serializer;
-    initialize(*s, .READ, as_string(font_data), true);
+    initialize(*s, .READ, as_string(font_data), reverse_primitive_byte_order=true);
 
     // file header
     sfnt_version: Version;
@@ -85,8 +85,6 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
     dummy_entry: Table_Directory_Entry;
 
     for 0..num_tables-1 {
-        entry := *table_directory[it];
-
         ttf_try(read_ttf_number(*s, .TAG,   *tag));
         ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.checksum));
         ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.offset));
@@ -110,7 +108,7 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
                     return false;
                 }
 
-                table_data := array_view(font_data, table.offset, table.length);
+                table_data := array_view(as_array(font_data, u8), table.offset, table.length);
                 calculated_checksum := calculate_ttf_table_checksum(table_data);
                 if calculated_checksum != table.checksum {
                     engine_error("ttf file corruption in table %. in-file checkum %, calculated %", table.tag, table.checksum, calculated_checksum);
@@ -136,7 +134,7 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
             continue; 
         }
         
-        table_data := array_view(font_data, table.offset, table.length);
+        table_data := array_view(as_array(font_data, u8), table.offset, table.length);
         if !table.proc(table_data, *loading_font) {
             engine_error("failed to load table % in ttf font", table.tag);
             return false;
@@ -234,7 +232,7 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         // todo: check
         if subtable.platform_id == {
         case 0;
-            if subtable.encoding_id == {
+            if subtable.platform_encoding_id == {
             case 0; #through;
             case 1; #through;
             case 2;
@@ -248,12 +246,12 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
                 subtable.coverage = .FULL_UNICODE;
             }
         case 1;
-            if subtable.encoding_id == 0 {
+            if subtable.platform_encoding_id == 0 {
                 subtable.expected_format = 0; // or 6
                 subtable.coverage = .MAC_ROMAN;
             }
         case 3;
-            if subtable.encoding_id == {
+            if subtable.platform_encoding_id == {
             case 0;
                 subtable.expected_format = 4;
                 subtable.coverage = .SYMBOL_FONT;
@@ -279,11 +277,11 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
 
     quick_sort(unicode_subtables, (a: Subtable_Directory_Entry, b: Subtable_Directory_Entry) -> int {
         if a.expected_format == b.expected_format {
-            return a.coverage - b.coverage; // lower enum values better
+            return cast(int) a.coverage - cast(int) b.coverage; // lower enum values better
         } else return b.expected_format - a.expected_format; // 12 > 4 > 0
     });
 
-    best_subtable := *subtables[0];
+    best_subtable := *unicode_subtables[0];
 
     s.memory.data  = table_data.data + best_subtable.offset_to_subtable;
     s.memory.count = max(s.memory.count - best_subtable.offset_to_subtable, 0);
@@ -311,7 +309,7 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         glyph_id_array: [256]u8 = ---;
         ttf_try(read_bytes(*s, glyph_id_array.data, 256));
         for glyph_id_array {
-            loading_font.code_point_to_glyph_index[cast(u32) it_index] = it;
+            table_set(*lf.code_point_to_glyph_index, cast(u32) it_index, it);
         }
     case 4;
         segment_count_x2, search_range, entry_selector, range_shift: u16 = ---;
@@ -446,7 +444,8 @@ read_ttf_number :: (s: *Serializer, $num_type: TTF_Number, out: *$T, inv_units_p
         #assert(T == s8);
         success = read(s, out);
     case .USHORT; 
-        #through;
+        #assert(T == u16);
+        success = read(s, out);
     case .OFFSET16;
         #assert(T == u16);
         success = read(s, out);
@@ -454,7 +453,8 @@ read_ttf_number :: (s: *Serializer, $num_type: TTF_Number, out: *$T, inv_units_p
         #assert(T == s16);
         success = read(s, out);
     case .ULONG;
-        #through;
+        #assert(T == u32);
+        success = read(s, out);
     case .OFFSET32;
         #assert(T == u32);
         success = read(s, out);
@@ -468,24 +468,25 @@ read_ttf_number :: (s: *Serializer, $num_type: TTF_Number, out: *$T, inv_units_p
         #if T == float32 {
             out.* = xx (cast(float64) num / 65536.0);
         } else {
-            out.major = (num & 0xffff0000) >> 16;
-            out.minor = (num & 0x0000ffff);
+            bits := cast,no_check(u32) num;
+            out.major = bits >> 16;
+            out.minor = bits & 0xffff;
             out.patch = 0;
         }
     case .FUNIT;
         #assert(false);
     case .FWORD;
         #assert(T == float32);
-        engine_check(units_per_elem != null);
+        engine_check(inv_units_per_elem != null);
         num: s16 = ---;
         success = read(s, *num);
-        out.* = cast(float32) num * inv_units_per_elem;
+        out.* = cast(float32) num * inv_units_per_elem.*;
     case .UFWORD; // word, go gaters
         #assert(T == float32);
-        engine_check(units_per_elem != null);
+        engine_check(inv_units_per_elem != null);
         num: u16 = ---;
         success = read(s, *num);
-        out.* = cast(float32) num * inv_units_per_elem;
+        out.* = cast(float32) num * inv_units_per_elem.*;
     case .F2DOT14;
         #assert(T == float32);
         num: s16 = ---;

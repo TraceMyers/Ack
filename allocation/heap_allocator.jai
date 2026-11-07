@@ -213,7 +213,7 @@ world_heap_test :: () -> bool {
     }
 
     return true;
-} @engine_test
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

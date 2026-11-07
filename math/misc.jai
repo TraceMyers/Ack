@@ -117,8 +117,17 @@ compose_float :: (base: s64, fraction: string, exponent: s64) -> float64 {
         significand = cast(u64) base;
     }
 
+    // digits past what a u64 can hold are dropped. they're far below float64 precision.
+    MAX_BEFORE_MUL :: U64_MAX / 10;
+    MAX_LAST_DIGIT :: U64_MAX % 10;
+    used_fraction_digits := 0;
     for fraction {
-        significand = significand * 10 + cast(u64)(it - #char "0");
+        digit := cast(u64)(it - #char "0");
+        if significand > MAX_BEFORE_MUL || (significand == MAX_BEFORE_MUL && digit > MAX_LAST_DIGIT) {
+            break;
+        }
+        significand = significand * 10 + digit;
+        used_fraction_digits += 1;
     }
 
     if significand == 0 {
@@ -127,7 +136,7 @@ compose_float :: (base: s64, fraction: string, exponent: s64) -> float64 {
         return (cast(*float64) *bits).*;
     }
 
-    dec_exp := exponent - cast(s64) fraction.count;
+    dec_exp := exponent - used_fraction_digits;
     binary_exp: s64 = 0;
 
     // 10^n = 5^n * 2^n, so multiply/divide by 5 and track powers of 2 separately.

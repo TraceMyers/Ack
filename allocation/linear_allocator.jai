@@ -182,3 +182,91 @@ enough_space :: (page: *Linear_Allocator_Page, size: int) -> bool {
     return page.bytes.count - page.allocated >= size;
 }
 
+#scope_export
+
+linear_allocator_test :: () -> bool {
+    a: Linear_Allocator;
+    a.default_page_size = 4096;
+    linear_allocator_startup(*a);
+    defer linear_allocator_shutdown(*a);
+
+    COUNT :: 64;
+    memories: [COUNT]*u8;
+    sizes:    [COUNT]s64;
+
+    stamp_is_intact :: (memory: *u8, size: s64, stamp: u8) -> bool {
+        for 0..size-1 {
+            if memory[it] != stamp then return false;
+        }
+        return true;
+    }
+
+    // allocations are aligned, don't overlap, and spill over into new pages
+    fill :: (a: *Linear_Allocator, memories: []*u8, sizes: []s64) -> bool {
+        for i : 0..memories.count-1 {
+            size  := 1 + (i * 37) % 300;
+            align := 8 << (i % 4);
+            context.allocator_align = xx align;
+            memory := alloc(size,, a.base).(*u8);
+            context.allocator_align = 8;
+            test_condition(memory != null);
+            test_condition((memory.(u64) & (align - 1).(u64)) == 0);
+            memset(memory, xx (i + 1), size);
+            memories[i] = memory;
+            sizes[i]    = size;
+        }
+        for i : 0..memories.count-1 {
+            test_condition(stamp_is_intact(memories[i], sizes[i], xx (i + 1)));
+        }
+        return true;
+    }
+
+    test_condition(fill(*a, memories, sizes));
+    page_count := a.pages.count;
+    test_condition(page_count > 1);
+
+    test_condition(a.proc(.IS_THIS_YOURS, 0, 0, memories[0], a.data) != null);
+    test_condition(a.proc(.IS_THIS_YOURS, 0, 0, memories[COUNT-1], a.data) != null);
+    not_mine: u64;
+    test_condition(a.proc(.IS_THIS_YOURS, 0, 0, *not_mine, a.data) == null);
+
+    // zero-size and freed allocations are no-ops
+    test_condition(alloc(0,, a) == null);
+    free(memories[0],, a);
+    test_condition(stamp_is_intact(memories[0], sizes[0], 1));
+
+    // larger than a page gets its own page
+    {
+        huge := alloc(10_000,, a).(*u8);
+        memset(huge, 0xab, 10_000);
+        test_condition(stamp_is_intact(huge, 10_000, 0xab));
+        test_condition(stamp_is_intact(memories[COUNT-1], sizes[COUNT-1], COUNT));
+    }
+
+    // resizing down keeps the pointer. resizing up copies the old bytes.
+    {
+        memory := alloc(100,, a).(*u8);
+        memset(memory, 7, 100);
+        test_condition(realloc(memory, 50, 100,, a) == memory);
+        grown := realloc(memory, 300, 100,, a).(*u8);
+        test_condition(stamp_is_intact(grown, 100, 7));
+    }
+
+    // resetting keeps the pages, and refilling reuses them instead of making new ones
+    page_count = a.pages.count;
+    linear_allocator_reset_keeping_memory(*a);
+    test_condition(a.pages.count == page_count && a.cur_page == 0);
+    for a.pages test_condition(it.allocated == 0);
+    first := alloc(16,, a).(*u8);
+    test_condition(first - a.pages[0].bytes.data < 8);
+    test_condition(fill(*a, memories, sizes));
+    test_condition(a.pages.count == page_count);
+
+    // a full reset gives the memory back but keeps the settings
+    linear_allocator_reset(*a);
+    test_condition(a.pages.count == 0 && a.default_page_size == 4096);
+    test_condition(fill(*a, memories, sizes));
+
+    return true;
+}
+

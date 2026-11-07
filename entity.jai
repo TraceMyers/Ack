@@ -64,7 +64,7 @@ make_physical_entity :: (physics_template: string, owner: *Entity = null) -> *En
 }
 
 make_physical_entity_with_input :: (physics_template: string, owner: *Entity = null) -> *Entity {
-    e := make_physical_entity(owner);
+    e := make_physical_entity(physics_template, owner);
     add_component(e, Input);
     return e;
 }
@@ -88,7 +88,8 @@ null_entity_ref :: inline () -> Entity_Ref {
 }
 
 is_null :: inline (id: Gen_ID) -> bool {
-    return id == Gen_ID.{};
+    null_id :: Gen_ID.{};
+    return id.index == null_id.index && id.generation == null_id.generation;
 }
 
 queue_destroy_entity :: (entity: *Entity) {

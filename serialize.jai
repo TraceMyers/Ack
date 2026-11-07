@@ -73,13 +73,13 @@ reset_head_with_mode :: (using buffer: *Serializer, m: Rw_Mode) {
 
 reset :: (using buffer: *Serializer, keep_allocation := true) {
     if !keep_allocation {
-        if memory.data != null {
-            free(memory.data);
-            memory.data = null;
+        // static memory belongs to the caller. only a dynamic serializer owns its memory.
+        #if alloc_mode == .DYNAMIC {
+            if memory.data != null then free(memory.data,, allocator);
         }
-        memory.count = 0;
+        memory = "";
     }
-    initialize(buffer, pad_for_checksum, reverse_byte_order);
+    reset_head_with_mode(buffer, rw_mode);
 }
 
 // -----------------------------------------------------------------------------------
@@ -102,10 +102,6 @@ read_out :: inline (using buffer: *Serializer, $T: Type) -> T
 } {
     item: T = ---;
     read(buffer, *item);
-    if reverse_byte_order {
-        item_copy := item;
-        reverse_bytes((*item).(*u8), (*item_copy).(*u8), size_of(T));
-    }
     return item;
 }
 
@@ -392,11 +388,12 @@ calculate_checksum :: (using buffer: *Serializer, out: *u32) {
 
 align_head_up :: (using buffer: *Serializer, align: u8) -> bool {
     if align == 1 then return true;
-    new_head := ceil_to_pow2_multiple(head, align);
-    diff := new_head - head;
-    if diff > 0 {
-        return advance_head(buffer, diff);
-    } else return true;
+    new_head := ceil_to_power_of_two_multiple(head, align);
+    if new_head == head then return true;
+    // goes through check_new_head so that padding can grow a dynamic buffer
+    if !check_new_head(buffer, new_head) then return false;
+    head = new_head;
+    return true;
 }
 
 check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
@@ -415,24 +412,18 @@ check_new_head :: (using buffer: *Serializer, new_head: s64) -> bool {
     #if alloc_mode == .STATIC {
         return new_head <= memory.count;
     } else { // DYNAMIC
-        desired_capacity := max(ceil_to_pow2_multiple(new_head, 2), 256);
-        if memory.count < desired_capacity {
+        // only writes grow the buffer. reads are bounds checked like a static buffer.
+        if rw_mode == .READ {
+            return new_head <= memory.count;
+        }
+        if new_head > memory.count {
             if allocator.proc == null {
                 allocator = context.default_allocator;
             }
-            realloc_mem(desired_capacity, *memory,, allocator);
+            realloc_mem(max(max(memory.count * 2, new_head + 1024), 8192), *memory,, allocator);
         }
         return true;
     }
-}
-
-advance_head :: inline (using buffer: *Serializer, by_count: s64) -> bool {
-    engine_check(by_count >= 0, level=.HIGH);
-    new_head := head + by_count;
-    if new_head <= memory.count {
-        head = new_head;
-        return true;
-    } else return false;
 }
 
 align_head_up_for_type :: inline (using buffer: *Serializer, $T: Type) -> bool {
@@ -604,6 +595,244 @@ validate_read_write :: () #expand {
     if `pad_for_checksum {
         engine_check(`head >= SERIALIZER_CHECKSUM_SIZE);
     }
+}
+
+#scope_export
+
+serialize_test :: () -> bool {
+    Test_Struct :: struct {
+        a: s32;
+        b: u8;
+        c: float64;
+        d: u16;
+    }
+
+    same :: (x: Test_Struct, y: Test_Struct) -> bool {
+        return x.a == y.a && x.b == y.b && x.c == y.c && x.d == y.d;
+    }
+
+    // writes one of everything, reads it back, and checks values and that every read lands on the same head as its write
+    round_trip :: (s: *$S, use_checksum := false) -> bool {
+        initialize(s, .WRITE, use_checksum=use_checksum);
+
+        t := Test_Struct.{a=-100, b=255, c=0.1, d=0xbeef};
+        str := "whatever";
+        array := u16.[1, 2, 3, 4, 5, 6, 7];
+        array_view: []u16 = array;
+        dynamic: [..]s32;
+        dynamic.allocator = temp;
+        for s32.[10, -20, 30] array_add(*dynamic, it);
+
+        heads: [9]s64;
+        test_condition(serialize(s, *t.a));        heads[0] = s.head;
+        test_condition(serialize(s, *t.b));        heads[1] = s.head;
+        test_condition(serialize(s, *t.c));        heads[2] = s.head;
+        test_condition(serialize(s, *t));          heads[3] = s.head;
+        test_condition(serialize(s, *str));        heads[4] = s.head;
+        test_condition(serialize(s, *array_view)); heads[5] = s.head;
+        test_condition(serialize(s, *dynamic));    heads[6] = s.head;
+        test_condition(serialize(s, *t.b));        heads[7] = s.head;
+        test_condition(serialize(s, *t.d));        heads[8] = s.head;
+
+        if use_checksum {
+            imprint_checksum(s);
+            test_condition(validate_checksum(s));
+            s.memory[SERIALIZER_CHECKSUM_SIZE + 3] ^= 0xff;
+            test_condition(!validate_checksum(s));
+            s.memory[SERIALIZER_CHECKSUM_SIZE + 3] ^= 0xff;
+            test_condition(validate_checksum(s));
+        }
+
+        reset_head_with_mode(s, .READ);
+
+        r1, r2: Test_Struct;
+        r_str: string;
+        r_array: []u16;
+        r_dynamic: [..]s32;
+        r_dynamic.allocator = temp;
+        r_b: u8;
+        r_d: u16;
+
+        test_condition(serialize(s, *r1.a));      test_condition(s.head == heads[0]);
+        test_condition(serialize(s, *r1.b));      test_condition(s.head == heads[1]);
+        test_condition(serialize(s, *r1.c));      test_condition(s.head == heads[2]);
+        test_condition(serialize(s, *r2));        test_condition(s.head == heads[3]);
+        test_condition(serialize(s, *r_str));     test_condition(s.head == heads[4]);
+        test_condition(serialize(s, *r_array));   test_condition(s.head == heads[5]);
+        test_condition(serialize(s, *r_dynamic)); test_condition(s.head == heads[6]);
+        test_condition(serialize(s, *r_b));       test_condition(s.head == heads[7]);
+        test_condition(serialize(s, *r_d));       test_condition(s.head == heads[8]);
+
+        r1.d = t.d;
+        test_condition(same(r1, t) && same(r2, t));
+        test_condition(r_str == str);
+        test_condition(arrays_equal(r_array, array));
+        test_condition(arrays_equal(r_dynamic, dynamic));
+        test_condition(r_b == t.b && r_d == t.d);
+        return true;
+    }
+
+    // --- every alloc and align mode round-trips, with and without a checksum
+    {
+        s: Serializer(.STATIC, .BYTE);
+        s.read_array_allocator = temp;
+        s.memory = talloc_string(1024);
+        test_condition(round_trip(*s));
+        test_condition(round_trip(*s, use_checksum=true));
+    }
+    {
+        s: Serializer(.STATIC, .PRIMITIVE);
+        s.read_array_allocator = temp;
+        s.memory = talloc_string(1024);
+        test_condition(round_trip(*s));
+        test_condition(round_trip(*s, use_checksum=true));
+    }
+    for align : u8.[1, 2, 4, 8] {
+        s: Serializer(.STATIC, .PARAMETER);
+        s.read_array_allocator = temp;
+        s.memory = talloc_string(1024);
+        s.parameter_align = align;
+        test_condition(round_trip(*s));
+    }
+    {
+        s: Serializer(.DYNAMIC, .BYTE);
+        s.allocator = context.allocator;
+        s.read_array_allocator = temp;
+        defer free(s.memory.data,, s.allocator);
+        test_condition(round_trip(*s));
+        test_condition(round_trip(*s, use_checksum=true));
+    }
+
+    // --- alignment padding
+    {
+        s: Serializer(.STATIC, .PRIMITIVE);
+        initialize(*s, .WRITE, static_memory=talloc_string(64));
+        b: u8 = 1;
+        q: u64 = 2;
+        serialize(*s, *b);
+        serialize(*s, *q);
+        test_condition(s.head == 16);
+    }
+    {
+        s: Serializer(.STATIC, .PARAMETER);
+        s.parameter_align = 4;
+        initialize(*s, .WRITE, static_memory=talloc_string(64));
+        b: u8 = 1;
+        serialize(*s, *b);
+        serialize(*s, *b);
+        test_condition(s.head == 5);
+    }
+
+    // --- a static buffer refuses writes and reads past its end, and doesn't move the head
+    {
+        s: Serializer(.STATIC, .BYTE);
+        initialize(*s, .WRITE, static_memory=talloc_string(6));
+        x: u32 = 7;
+        test_condition(serialize(*s, *x));
+        test_condition(!serialize(*s, *x));
+        test_condition(s.head == 4);
+
+        reset_head_with_mode(*s, .READ);
+        test_condition(serialize(*s, *x));
+        test_condition(!serialize(*s, *x));
+        test_condition(s.head == 4);
+    }
+
+    // --- a dynamic buffer keeps its contents while it grows
+    {
+        s: Serializer(.DYNAMIC, .PRIMITIVE);
+        s.allocator = context.allocator;
+        defer free(s.memory.data,, s.allocator);
+        initialize(*s, .WRITE);
+        for i : 0..999 {
+            v := (i * 7919).(u32);
+            test_condition(serialize(*s, *v));
+        }
+        test_condition(s.head == 4000);
+        reset_head_with_mode(*s, .READ);
+        for i : 0..999 {
+            v: u32;
+            test_condition(serialize(*s, *v));
+            test_condition(v == (i * 7919).(u32));
+        }
+    }
+
+    // --- reversed byte order is big endian on the wire and transparent to the caller
+    {
+        Wire :: struct {
+            a: u16;
+            b: u32;
+        }
+        s: Serializer(.STATIC, .BYTE);
+        initialize(*s, .WRITE, static_memory=talloc_string(32), reverse_primitive_byte_order=true);
+        v: u32 = 0x11223344;
+        w := Wire.{0x0102, 0x0a0b0c0d};
+        f: float64 = -1234.5;
+        serialize(*s, *v);
+        serialize(*s, *w);
+        serialize(*s, *f);
+        test_condition(s.memory[0] == 0x11 && s.memory[1] == 0x22 && s.memory[2] == 0x33 && s.memory[3] == 0x44);
+
+        reset_head_with_mode(*s, .READ);
+        rv: u32;
+        rw: Wire;
+        rf: float64;
+        serialize(*s, *rv);
+        serialize(*s, *rw);
+        serialize(*s, *rf);
+        test_condition(rv == v && rw.a == w.a && rw.b == w.b && rf == f);
+
+        reset_head_with_mode(*s, .READ);
+        test_condition(read_out(*s, u32) == v);
+    }
+
+    test_condition(reverse_bytes(cast(u32) 0x11223344) == 0x44332211);
+    test_condition(reverse_bytes(cast(s16) 0x0102) == 0x0201);
+
+    // --- reading past the end of a dynamic buffer fails instead of growing it
+    {
+        s: Serializer(.DYNAMIC, .BYTE);
+        s.allocator = context.allocator;
+        defer free(s.memory.data,, s.allocator);
+        initialize(*s, .WRITE);
+        v: u32 = 7;
+        serialize(*s, *v);
+        capacity := s.memory.count;
+        reset_head_with_mode(*s, .READ);
+        big: [16384]u8;
+        test_condition(!serialize(*s, big.data, big.count));
+        test_condition(s.memory.count == capacity);
+    }
+
+    // --- alignment padding can grow a dynamic buffer
+    {
+        s: Serializer(.DYNAMIC, .PRIMITIVE);
+        s.allocator = context.allocator;
+        defer free(s.memory.data,, s.allocator);
+        initialize(*s, .WRITE);
+        bytes: [9217]u8;
+        serialize(*s, bytes.data, bytes.count);   // capacity becomes 9217 + 1024, not a multiple of 8
+        filler: [1024]u8;
+        serialize(*s, filler.data, filler.count); // head lands exactly on the capacity
+        test_condition(s.head == s.memory.count && s.head % 8 != 0);
+        q: u64 = 2;
+        test_condition(serialize(*s, *q));        // needs padding past the capacity
+    }
+
+    // --- reset keeps or releases memory without asserting
+    {
+        s: Serializer(.DYNAMIC, .BYTE);
+        s.allocator = context.allocator;
+        initialize(*s, .WRITE);
+        v: u32 = 7;
+        serialize(*s, *v);
+        reset(*s);
+        test_condition(s.head == 0 && s.memory.count > 0);
+        reset(*s, keep_allocation=false);
+        test_condition(s.memory.count == 0 && s.memory.data == null);
+    }
+
+    return true;
 }
 
 // Copyright (c) 2026 Trace Myers

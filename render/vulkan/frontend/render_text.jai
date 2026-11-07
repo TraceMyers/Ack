@@ -11,7 +11,7 @@ Glyph :: struct {
 load_ttf_font :: (fonts_relative_path: string) -> *Font {
     using engine.renderer;
 
-    scope_set_allocator(text.allocator);
+    push_allocator(text.allocator);
 
     font_ptr := find_or_add(*text.fonts, fonts_relative_path);
 
@@ -29,10 +29,10 @@ load_ttf_font :: (fonts_relative_path: string) -> *Font {
 }
 
 get_glyph :: (font: *Font, code_point: u32) -> Glyph {
-    glyph := table_find(*font.code_point_to_glyph, code_point);
+    glyph := table_find_pointer(*font.code_point_to_glyph, code_point);
     if glyph == null {
         // code point 0 maps to the special glyph representing a missing character.
-        glyph = table_find(*font.code_point_to_glyph, 0);
+        glyph = find_or_add(*font.code_point_to_glyph, 0);
     }
     return glyph.*;
 }

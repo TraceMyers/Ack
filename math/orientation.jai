@@ -271,7 +271,6 @@ rotate :: (v: *Vector3, axis: Vector3, angle: float32) {
     sin_ht, cos_ht := sin_cos(ht);
     rot_quat := Quaternion.{xyz=axis*sin_ht, w=cos_ht};
     rotate(v, rot_quat);
-    normalize(v);
 }
 
 interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: float32) -> Quaternion {

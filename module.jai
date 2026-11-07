@@ -239,6 +239,29 @@ update_clock :: () {
 }
 
 // -----------------------------------------------------------------------------------------------
+// without dead code elimination turned off, unreferenced procedures are invisible to the program
+// importing this module. so, the method of adding a @build_test note to the procedure doesn't
+// work for engine procs. this array exists so they're visible and callable during build testing.
+
+Engine_Test :: struct {
+    name: string;
+    proc: () -> bool;
+}
+
+ENGINE_TESTS :: Engine_Test.[
+    {"allocator_64_test",              allocator_64_test},
+    {"linear_allocator_test",          linear_allocator_test},
+    {"world_heap_test",                world_heap_test},
+    {"general_purpose_allocator_test", general_purpose_allocator_test},
+    {"containers_test",                containers_test},
+    {"math_test",                      math_test},
+    {"encode_text_test",               encode_text_test},
+    {"json_test",                      json_test},
+    {"serialize_test",                 serialize_test},
+    {"string_test",                    string_test},
+];
+
+// -----------------------------------------------------------------------------------------------
 
 // multi-file loads
 #load "mesh/mesh.jai";

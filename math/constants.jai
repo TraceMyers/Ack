@@ -42,7 +42,7 @@ COS_PI_OVER_7    :: #run cos(PI/7);
 COS_PI_OVER_6    :: #run cos(PI/6);
 COS_PI_OVER_5    :: #run cos(PI/5);
 COS_PI_OVER_4    :: #run cos(PI/4);
-COS_PI_OVER_3    :: #run cos(PI/2);
+COS_PI_OVER_3    :: #run cos(PI/3);
 COS_PI_OVER_2    :: 0.0;
 
 SIN_PI_OVER_16   :: #run sin(PI/16);
@@ -52,7 +52,7 @@ SIN_PI_OVER_7    :: #run sin(PI/7);
 SIN_PI_OVER_6    :: #run sin(PI/6);
 SIN_PI_OVER_5    :: #run sin(PI/5);
 SIN_PI_OVER_4    :: #run sin(PI/4);
-SIN_PI_OVER_3    :: #run sin(PI/2);
+SIN_PI_OVER_3    :: #run sin(PI/3);
 SIN_PI_OVER_2    :: 1.0;
 
 FloatTypes :: Type.[float32, float64];

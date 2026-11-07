@@ -23,7 +23,8 @@ signed_point_plane_distance :: inline (point: Vector3, point_on_plane: Vector3, 
 }
 
 project_point_onto_plane :: inline (point: Vector3, plane: Vector4) -> pos: Vector3, signed_dist: float {
-    return project_point_onto_plane(point, plane.xyz * plane.w, plane.xyz);
+    pos, signed_dist := project_point_onto_plane(point, plane.xyz * plane.w, plane.xyz);
+    return pos, signed_dist;
 }
 
 signed_point_plane_distance :: inline (point: Vector3, plane: Vector4) -> float {

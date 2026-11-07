@@ -21,9 +21,9 @@ linear_decompress_float :: inline (u: $in_type, $min_value: float, $max_value: f
     INT_TYPE_MIN :: get_min_value(in_type).(float);
     INT_TYPE_MAX :: get_max_value(in_type).(float);
     INT_TYPE_RANGE :: INT_TYPE_MAX - INT_TYPE_MIN;
-    INV_INT_TYPE_RANGE :: 1.0 / INT_TYPE_RANGE.(float);
+    INT_TYPE_INV_RANGE :: 1.0 / INT_TYPE_RANGE.(float);
     FLOAT_RANGE :: #run (max_value - min_value);
-    norm := (u.(float) - INT_TYPE_MIN) * INV_INT_RANGE;
+    norm := (u.(float) - INT_TYPE_MIN) * INT_TYPE_INV_RANGE;
     return min_value + norm * FLOAT_RANGE;
 }
 

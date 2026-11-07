@@ -143,7 +143,7 @@ general_purpose_allocator_test :: () -> bool {
     test_condition(a.large.ranges.count <= a.large.keep_empty_pages + a.small.ranges.count);
 
     return true;
-} @engine_test
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

@@ -21,7 +21,7 @@ decompose_transform_matrix :: (transform: *Matrix4, out_position: *Vector3, out_
     right_axis := col0 / out_scale.x;
     fore_axis  := col1 / out_scale.y;
     up_axis    := col2 / out_scale.z;
-    out_orientation.* = make_quat(fore_axis, right_axis, up_axis);
+    out_orientation.* = make_quat(right_axis, fore_axis, up_axis);
 }
 
 // Copyright (c) 2026 Trace Myers

@@ -59,7 +59,7 @@ concatenate :: (strings: ..string) -> string {
 reverse :: (str: string) {
     b: s64;
     half_count := str.count >> 1;
-    while b <= half_count {
+    while b < half_count {
         e := str.count - 1 - b;
         str[b], str[e] = str[e], str[b];
         b += 1;
@@ -114,27 +114,25 @@ hex_text_to_bytes :: (hex_text: string) -> string, bool {
 
     out_bytes := alloc_string(hex_text.count / 2);
 
-    i := 0;
-    high_nibble := true;
-
     for hex_text {
         digit: u8 = ---;
-        if it >= #char "a" && it <= #char "z" {
+        if it >= #char "a" && it <= #char "f" {
             digit = it - #char "a" + 10;
-        } else if it >= #char "A" && it <= #char "Z" {
+        } else if it >= #char "A" && it <= #char "F" {
             digit = it - #char "A" + 10;
-        } else if digit >= #char "0" && digit <= #char "9" {
+        } else if it >= #char "0" && it <= #char "9" {
             digit = it - #char "0";
         } else {
             free(out_bytes.data);
             return {}, false;
         }
 
-        one_if_doing_high_nibble := cast(int) (high_nibble != false);
-        out_bytes[i] |= digit << (4 * one_if_doing_high_nibble);
-
-        high_nibble = !high_nibble;
-        i += one_if_doing_high_nibble;
+        // even index = high nibble, odd index = low nibble
+        if (it_index & 1) == 0 {
+            out_bytes[it_index / 2] = digit << 4;
+        } else {
+            out_bytes[it_index / 2] |= digit;
+        }
     }
 
     return out_bytes, true;
@@ -317,6 +315,103 @@ pop :: (stack: *String_Stack) {
 
 view_string :: (stack: *String_Stack) -> string {
     return string.{stack.bytes.count, stack.bytes.data};
+}
+
+string_test :: () -> bool {
+    // --- per_line
+    {
+        lines := string.["", "hey there", "", "this is a line", "and this is another line"];
+        builder: String_Builder;
+        builder.allocator = temp;
+        for lines print(*builder, "%\n", it);
+        text := builder_to_string(*builder,, temp);
+
+        line_count := 0;
+        for :per_line line : text {
+            test_condition(line == lines[it_index]);
+            line_count += 1;
+        }
+        test_condition(line_count == lines.count);
+
+        // windows line endings, and no newline at the end
+        expected := string.["a", "", "b c"];
+        line_count = 0;
+        crlf_text := "a\r\n\r\nb c";
+        for :per_line line : crlf_text {
+            test_condition(line == expected[line_count]);
+            line_count += 1;
+        }
+        test_condition(line_count == expected.count);
+    }
+
+    // --- String_Exchange, which the json parser leans on
+    {
+        exchange := String_Exchange.{src="hello/there//friend"};
+        parts: [..]string;
+        parts.allocator = temp;
+        while exchange.src.count > 0 {
+            for exchange {
+                if it == #char "/" {
+                    exchange.trim_bytes = 1;
+                    break;
+                }
+            }
+            array_add(*parts, exchange.dst);
+        }
+        test_condition(parts.count == 4);
+        test_condition(parts[0] == "hello" && parts[1] == "there" && parts[2] == "" && parts[3] == "friend");
+        test_condition(!exchange.broke_out_of_loop);
+    }
+
+    // --- hex
+    {
+        bytes, ok := hex_text_to_bytes("00ff1A7c",, temp);
+        test_condition(ok && bytes == "\x00\xff\x1a\x7c");
+        _, ok = hex_text_to_bytes("0g");
+        test_condition(!ok);
+        _, ok = hex_text_to_bytes("zz");
+        test_condition(!ok);
+    }
+
+    // --- small helpers
+    {
+        even := copy_string("abcd",, temp);
+        reverse(even);
+        test_condition(even == "dcba");
+        odd := copy_string("abcde",, temp);
+        reverse(odd);
+        test_condition(odd == "edcba");
+
+        test_condition(to_upper("aBz1_",, temp) == "ABZ1_");
+        test_condition(to_lower("AbZ1_",, temp) == "abz1_");
+        test_condition(concatenate("ab", "", "cd",, temp) == "abcd");
+
+        test_condition(c_strings_equal("abc\0x".data, "abc\0y".data, 10));
+        test_condition(!c_strings_equal("abd".data, "abc".data, 3));
+        test_condition(to_string_safe("hi\0there".data, 8) == "hi");
+        test_condition(to_string_safe("hi".data, 2) == "hi");
+
+        values := u16.[1, 2, 3];
+        test_condition(as_string(values).count == 6);
+        test_condition(as_array(as_string(values), u16)[2] == 3);
+    }
+
+    // --- String_Stack
+    {
+        stack: String_Stack;
+        defer free_stack(*stack);
+        test_condition(push(*stack, "a%", 1) == "a1");
+        test_condition(push(*stack, "-%-", "b") == "a1-b-");
+        test_condition(push(*stack, "") == "a1-b-");
+        pop(*stack);
+        test_condition(view_string(*stack) == "a1-b-");
+        pop(*stack);
+        test_condition(view_string(*stack) == "a1");
+        pop(*stack);
+        test_condition(view_string(*stack) == "");
+    }
+
+    return true;
 }
 
 // Copyright (c) 2026 Trace Myers

@@ -50,16 +50,16 @@ only_set_or_only_cleared_bits :: (array: *Bit_Array, body: Code, flags: For_Flag
         limit      := min(array.count - base_index - 1, BIT_ARRAY_SLOT_BIT_COUNT - 1);  // Don't go past the number of bits that are actually stored.
 
         #if (flags & .REVERSE) != 0 {
-            bit := 1 << limit;
+            bit : u64 = cast,no_check(u64) (1 << limit);
         } else {
-            bit := 1;
+            bit : u64 = xx 1;
         }
 
         for i: 0..limit {
             #if set_or_cleared == .SET {
-                found_set_or_cleared_bit := (slot & bit) != 0;
+                found_set_or_cleared_bit := ((cast,no_check(u64) slot) & bit) != 0;
             } else { // CLEARED
-                found_set_or_cleared_bit := (slot & bit) == 0;
+                found_set_or_cleared_bit := ((cast,no_check(u64) slot) & bit) == 0;
             }
 
             #if (flags & .REVERSE) != 0 {
@@ -91,6 +91,168 @@ BIT_ARRAY_SLOT_BIT_COUNT :: BIT_ARRAY_SLOT_SIZE * 8;
 #load "pool.jai";
 #load "ring_buffer.jai";
 #load "struct_of_arrays.jai";
+
+containers_test :: () -> bool {
+    // --- bit array iteration, across slot boundaries and in reverse
+    {
+        bits: Bit_Array;
+        init_bit_array(*bits, 130);
+        defer deinit(*bits);
+        SET :: int.[0, 62, 64, 129];
+        for SET set_bit(*bits, it);
+
+        found: [..]int;
+        found.allocator = temp;
+        for :only_set_bits bits array_add(*found, it_index);
+        test_condition(arrays_equal(found, SET));
+
+        found.count = 0;
+        for < :only_set_bits bits array_add(*found, it_index);
+        test_condition(arrays_equal(found, int.[129, 64, 62, 0]));
+
+        cleared_count := 0;
+        first_cleared, last_cleared := -1, -1;
+        for :only_cleared_bits bits {
+            if first_cleared < 0 then first_cleared = it_index;
+            last_cleared = it_index;
+            cleared_count += 1;
+        }
+        test_condition(cleared_count == 130 - SET.count && first_cleared == 1 && last_cleared == 128);
+
+        found.count = 0;
+        for < :only_cleared_bits bits array_add(*found, it_index);
+        test_condition(found.count == 130 - SET.count && found[0] == 128 && found[found.count-1] == 1);
+    }
+
+    // --- pool
+    {
+        Item :: struct {
+            a: s32 = -1;
+            b := 1.0;
+        }
+        init_item   :: (item: *Item) { item.a = 100; }
+        deinit_item :: (item: *Item) { item.b = 0; }
+        compare     :: (item: *Item, a: s32) -> bool { return item.a == a; }
+
+        p: Pool(Item);
+        defer pool_reset(*p);
+
+        i0 := pool_borrow(*p, init_item);
+        i1 := pool_borrow(*p, init_item);
+        i2 := pool_borrow(*p, init_item);
+        test_condition(i0 == 0 && i1 == 1 && i2 == 2 && p.top == 2);
+        test_condition(pool_get(*p, i1).a == 100);
+
+        pool_return(*p, i1, deinit_item);
+        test_condition(!is_pool_item_in_use(*p, i1) && p.top == 2);
+        // returned items are reinitialized
+        test_condition(p.items[i1].a == -1 && p.items[i1].b == 1.0);
+
+        // the lowest free slot is reused
+        test_condition(pool_borrow(*p, init_item) == i1);
+        test_condition(pool_get_index(*p, pool_get(*p, i2)) == i2);
+
+        pool_get(*p, i2).a = 77;
+        test_condition(pool_find(*p, cast(s32) 77, compare) == i2);
+        test_condition(pool_find(*p, cast(s32) 12345, compare) == -1);
+
+        // iteration only visits items in use
+        pool_return(*p, i0);
+        visited := 0;
+        index_sum := 0;
+        for p {
+            visited += 1;
+            index_sum += it_index;
+        }
+        test_condition(visited == 2 && index_sum == i1 + i2);
+
+        // returning the top item moves top down to the next item in use
+        pool_return(*p, i2);
+        test_condition(p.top == i1);
+        pool_return(*p, i1);
+        test_condition(p.top == -1 && pool_is_empty(*p));
+
+        // stress: borrow a bunch, return them in a scrambled order
+        indices: [100]s64;
+        for *indices it.* = pool_borrow(*p, init_item);
+        for 0..indices.count-1 {
+            swap_index := (it * 37 + 11) % indices.count;
+            indices[it], indices[swap_index] = indices[swap_index], indices[it];
+        }
+        for indices pool_return(*p, it, deinit_item);
+        test_condition(p.top == -1 && p.items.count == 0);
+        found_any := false;
+        for :only_set_bits p.in_use found_any = true;
+        test_condition(!found_any);
+
+        // shrinking stops at shrink_to_min
+        p.shrink_to_min = 12;
+        for *indices it.* = pool_borrow(*p);
+        for < indices pool_return(*p, it);
+        test_condition(p.top == -1 && p.items.count >= 12);
+    }
+    {
+        // a locked pool doesn't grow
+        q: Pool(int);
+        pool_init(*q, 4, lock_allocation=true, do_track_generation=true);
+        for 0..3 test_condition(pool_borrow(*q) == it);
+        test_condition(pool_borrow(*q) == -1);
+
+        // generations change when a slot is reused
+        generation := pool_get_item_generation(*q, 2);
+        pool_return(*q, 2);
+        test_condition(pool_borrow(*q) == 2);
+        test_condition(pool_get_item_generation(*q, 2) != generation);
+
+        pool_set_allocator(*q, context.allocator);
+        pool_reset(*q);
+        array_reset(*q.generations);
+    }
+
+    // --- ring buffer
+    {
+        rb := make_ring_buffer(int, 4);
+        defer array_free(rb.items);
+        test_condition(count(*rb) == 0);
+        test_condition(make_array(*rb).count == 0);
+
+        for 1..3 push_back(*rb, it);
+        push_front(*rb, 0);
+        test_condition(count(*rb) == 4);
+        {
+            items := make_array(*rb);
+            defer array_free(items);
+            test_condition(arrays_equal(items, int.[0, 1, 2, 3]));
+        }
+
+        // pushing onto a full buffer overwrites the other end
+        push_back(*rb, 4);
+        test_condition(count(*rb) == 4);
+        push_front(*rb, -1);
+        {
+            items := make_array(*rb);
+            defer array_free(items);
+            test_condition(arrays_equal(items, int.[-1, 1, 2, 3]));
+        }
+
+        test_condition(pop_front(*rb) == -1);
+        test_condition(pop_back(*rb) == 3);
+        test_condition(count(*rb) == 2);
+        test_condition(pop_back(*rb) == 2);
+        test_condition(pop_front(*rb) == 1);
+        test_condition(count(*rb) == 0);
+
+        // usable again after emptying, and wraps around the end of the storage
+        for 10..15 push_back(*rb, it);
+        {
+            items := make_array(*rb);
+            defer array_free(items);
+            test_condition(arrays_equal(items, int.[12, 13, 14, 15]));
+        }
+    }
+
+    return true;
+}
 
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.
