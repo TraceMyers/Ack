@@ -35,4 +35,3 @@ Version :: struct {
     #overlay(bytes[8]) patch: u32;
     bytes: [12]u8 #align(4);
 };
-
