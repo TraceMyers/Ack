@@ -215,5 +215,15 @@ is_norm_float :: inline (x: float) -> bool {
     return x >= 0 && x <= 1;
 }
 
+// ranges = [a1, a2], [b1, b2]. assumed a2 >= a1 and b2 >= b1.
+// inclusive overlap (returns true if one end equals another)
+ranges_overlap :: inline (a1: $T, a2: T, b1: T, b2: T) -> bool {
+    if a1 < b1 {
+        return a2 >= b1;
+    } else {
+        return a2 <= b2;
+    }
+}
+
 // Copyright (c) 2026 Trace Myers
 // Licensed under the MIT License. See LICENSE file in the project root for license information.

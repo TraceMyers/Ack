@@ -119,15 +119,15 @@ run_or_return_failure :: ($proc_call: Code, do_log := true, do_log_error := true
     }
 }
 
-engine_run_or_return_failure :: ($proc_call: Code, flags: Log_Flags=0, $log_proc: Engine_Log_Procedure = engine_log, $fail_log_proc: Engine_Log_Procedure = engine_error, loc := #caller_location) #expand #no_debug {
-    proc_name :: #run code_string(proc_call);
+engine_run_or_return_failure :: ($code: Code, flags: Log_Flags=0, $log_proc: Engine_Log_Procedure = engine_log, $fail_log_proc: Engine_Log_Procedure = engine_error, loc := #caller_location) #expand #no_debug {
+    code_str :: #run code_string(code);
     #if log_proc {
-        log_proc("calling %", proc_name, flags=flags, loc=loc);
+        log_proc("checking %", code_str, flags=flags, loc=loc);
     }
-    run_success := #insert proc_call;
+    run_success := #insert code;
     if !run_success {
         #if fail_log_proc {
-            fail_log_proc("% failed.", proc_name, flags=flags, loc=loc);
+            fail_log_proc("% failed.", code_str, flags=flags, loc=loc);
         }
         `return false;
     }
