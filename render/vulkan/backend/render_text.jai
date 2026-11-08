@@ -18,9 +18,8 @@ init_render_text :: () -> bool {
     return true;
 }
 
-// great primary sournce for the ttf file format (old, not including otf):
-// http://hackipedia.org/browse.cgi/File%20formats/TrueType%20font%20format/TrueType%201%2e0%20Font%20Files%20Technical%20Specification%20v1%2e66%20%281995%2d08%29/Chapter%202%20%2d%20The%20TrueType%20Font%20File%2epdf
-load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
+// loads most ttf and some otf font files.
+load_truetype_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
     auto_release_temp();
 
     engine_log("loading font %", fonts_relative_path, flags=.VERBOSE_ONLY);
@@ -44,36 +43,66 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
 
     // file header
     sfnt_version: Version;
-    num_tables, search_range, entry_selector: u16;
-    ttf_try(read_ttf_number(*s, .FIXED,  *sfnt_version)); // todo: how does this change things?
-    ttf_try(read_ttf_number(*s, .USHORT, *num_tables));
-    ttf_try(read_ttf_number(*s, .USHORT, *search_range));
-    ttf_try(read_ttf_number(*s, .USHORT, *entry_selector));
+    num_tables, search_range, entry_selector, range_shift: u16;
+    ttf_try(read_ttf_number(null, *s, .FIXED,  *sfnt_version)); 
+    ttf_try(read_ttf_number(null, *s, .USHORT, *num_tables));
+    ttf_try(read_ttf_number(null, *s, .USHORT, *search_range));
+    ttf_try(read_ttf_number(null, *s, .USHORT, *entry_selector));
+    ttf_try(read_ttf_number(null, *s, .USHORT, *range_shift));
+
+    font_type: Font_Type = .NONE;
+    if version.major == 1 && version.minor == 0 && version.patch == 0 {
+        font_type = .TRUETYPE;
+    } else {
+        version_str := to_string(sfnt_version, 2,, temp);
+        if version_str == {
+        case "OTTO";
+            font_type = .OPENTYPE_CFF;
+        case "ttcf";
+            font_type = .OPENTYPE_FONT_COLLECTION;
+        case "wOFF";
+            font_type = .WOFF_1;
+        case "wOF2";
+            font_type = .WOFF_2;
+        case "true"; 
+            font_type = .APPLE_TRUE;
+        case "typ1";
+            font_type = .APPLE_TYP1;
+        }
+    }
+
+    if font_type != .TRUETYPE {
+        engine_error("unsupported truetype/opentype font type %", font_type);
+        return false;
+    }
 
     // ttf format goes 1. file header, 2. table directory entries, 3. table data.
     // each directory entry corresponds to a table within the table data section.
-    // my directory leaves a lot of optional tables out. not using them, kay?
+    // my directory leaves a lot of optional tables out, because don't need
+    // table directories are supposed to be in a certain order, probably for
+    // legacy speed reasons, but they were put in a confusing order. I reordered
+    // them so they are in the right processing order.
     table_directory := Table_Directory_Entry.[
-        // character to glyph mapping
-        {tag="cmap", proc=read_ttf_table_cmap, required=true},
-        // glyph data
-        {tag="glyf", proc=read_ttf_table_glyf, required=true},
         // font header
         {tag="head", proc=read_ttf_table_head, required=true},
+        // maximum profile
+        {tag="maxp", proc=read_ttf_table_maxp, required=true},
         // horizontal header
         {tag="hhea", proc=read_ttf_table_hhea, required=true},
         // horizontal metrics
         {tag="hmtx", proc=read_ttf_table_hmtx, required=true},
+        // character to glyph mapping
+        {tag="cmap", proc=read_ttf_table_cmap, required=true},
         // index to location
         {tag="loca", proc=read_ttf_table_loca, required=true},
-        // maximum profile
-        {tag="maxp", proc=read_ttf_table_maxp, required=true},
+        // glyph data
+        {tag="glyf", proc=read_ttf_table_glyf, required=true},
         // naming table
         {tag="name", proc=read_ttf_table_name, required=true},
-        // PostScript information
-        {tag="post", proc=read_ttf_table_post, required=true},
         // OS/2 and Windows specific metrics
         {tag="OS/2", proc=read_ttf_table_OS_2, required=true},
+        // PostScript information
+        {tag="post", proc=read_ttf_table_post, required=true},
         // kerning
         {tag="kern", proc=read_ttf_table_kern, required=false},
         // also kerning?
@@ -85,10 +114,10 @@ load_ttf_font_impl :: (font: *Font, fonts_relative_path: string) -> bool {
     dummy_entry: Table_Directory_Entry;
 
     for 0..num_tables-1 {
-        ttf_try(read_ttf_number(*s, .TAG,   *tag));
-        ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.checksum));
-        ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.offset));
-        ttf_try(read_ttf_number(*s, .ULONG, *dummy_entry.length));
+        ttf_try(read_ttf_number(null, *s, .TAG,   *tag));
+        ttf_try(read_ttf_number(null, *s, .ULONG, *dummy_entry.checksum));
+        ttf_try(read_ttf_number(null, *s, .ULONG, *dummy_entry.offset));
+        ttf_try(read_ttf_number(null, *s, .ULONG, *dummy_entry.length));
 
         for *table : table_directory {
             if table.tag == tag_str {
@@ -150,6 +179,11 @@ ttf_try :: #bake_arguments engine_run_or_return_failure(log_proc=null, flags=.VE
 
 Loading_Font :: struct {
     using font: *Font;
+    version: Font_Type;
+    header: Font_Header;
+    profile: Font_Maximum_Profile;
+    horizontal_header: Font_Horizontal_Header;
+    horizontal_metrics: Font_Horizontal_Metrics;
     code_point_to_glyph_index: Table(u32, u32);
 }
 
@@ -165,7 +199,18 @@ Table_Directory_Entry :: struct {
     exists_in_file: bool;
 }
 
-TTF_Number :: enum u8 {
+Font_Type :: enum {
+    NONE;
+    TRUETYPE;
+    OPENTYPE_CFF;
+    OPENTYPE_FONT_COLLECTION;
+    WOFF_1;
+    WOFF_2;
+    APPLE_TRUE;
+    APPLE_TYP1;
+}
+
+Font_Number :: enum u8 {
     BYTE;
     CHAR;
     USHORT;
@@ -184,18 +229,193 @@ TTF_Number :: enum u8 {
     UINT24;
 }
 
+Font_Header :: struct {
+    table_version: Version;
+    font_revision: Version;
+    checksum_adjustment: u32;
+    magic_number: u32;
+    flags: enum_flags u16 {
+        Y_ZERO_BASELINE;
+        X_ZERO_SIDEBEARING;
+        INSTRUCTIONS_MAY_DEPEND_ON_POINT_SIZE;
+        FORCE_PPEM_TO_USE_INTEGER_SCALARS;
+        INSTRUCTIONS_MAY_ALTER_ADVANCE_WIDTH;
+    };
+    units_per_em: u16; // 16 to 16834
+    created: s64;
+    modified: s64;
+    x_min: float32;
+    y_min: float32;
+    x_max: float32;
+    y_max: float32;
+    mac_style: enum_flags u16 {
+        BOLD;
+        ITALIC;
+    };
+    smallest_readable_size_in_pixels: u16;
+    font_direction_hint: enum s16 {
+        FULLY_MIXED_DIRECTIONAL_GLYPHS  :: 0;
+        STRONGLY_LEFT_TO_RIGHT          :: 1;
+        LEFT_TO_RIGHT_WITH_NEUTRALS     :: 2;
+        STRONGLY_RIGHT_TO_LEFT          :: -1;
+        RIGHT_TO_LEFT_WITH_NEUTRALS     :: -2;
+    };
+    index_to_loc_format: enum s16 {
+        SHORT;
+        LONG;
+    };
+    glyph_data_format: s16;
+}
+
+Font_Maximum_Profile :: struct {
+    table_version: Version;
+    num_glyphs: u16;
+    max_points: u16;
+    max_contours: u16;
+    max_composite_points: u16;
+    max_composite_contours: u16;
+    max_zones: u16;
+    max_twilight_points: u16;
+    max_storage: u16;
+    max_function_defs: u16;
+    max_instruction_defs: u16;
+    max_stack_elements: u16;
+    max_size_of_instructions: u16;
+    max_component_elements: u16;
+    max_component_depth: u16;
+}
+
+Font_Horizontal_Header :: struct {
+    table_version: Version;
+    ascender: float32;
+    descender: float32;
+    line_gap: float32;
+    advance_width_max: float32;
+    min_left_side_bearing: float32;
+    min_right_side_bearing: float32;
+    x_max_extent: float32;
+    caret_slope_rise: s16;
+    caret_slope_run: s16;
+    reserved: [5]u16; 
+    metric_data_format: s16;
+    number_of_hmetrics: u16;
+}
+
+Font_Horizontal_Metrics :: struct {
+    metrics: []Horizontal_Metric;
+    left_side_bearing: []float32;
+}
+
+Horizontal_Metric :: struct {
+    advance_width: float32;
+    lsb: float32;
+}
+
+read_ttf_table_head :: (table_data: []u8, lf: *Loading_Font) -> bool {
+    s: Serializer;
+    initialize(*s, .READ, as_string(table_data), true);
+
+    ttf_try(read(lf, *s, .FIXED,        *lf.header.table_version));
+    ttf_try(read(lf, *s, .FIXED,        *lf.header.font_revision));
+    ttf_try(read(lf, *s, .ULONG,        *lf.header.checksum_adjustment));
+    ttf_try(read(lf, *s, .ULONG,        *lf.header.magic_number));
+    ttf_try(read(lf, *s, .USHORT,       *lf.header.flags));
+    ttf_try(read(lf, *s, .USHORT,       *lf.header.units_per_em));
+    ttf_try(read(lf, *s, .LONGDATETIME, *lf.header.created));
+    ttf_try(read(lf, *s, .LONGDATETIME, *lf.header.modified));
+    ttf_try(read(lf, *s, .FWORD,        *lf.header.x_min));
+    ttf_try(read(lf, *s, .FWORD,        *lf.header.y_min));
+    ttf_try(read(lf, *s, .FWORD,        *lf.header.x_max));
+    ttf_try(read(lf, *s, .FWORD,        *lf.header.y_max));
+    ttf_try(read(lf, *s, .USHORT,       *lf.header.mac_style));
+    ttf_try(read(lf, *s, .USHORT,       *lf.header.smallest_readable_size_in_pixels));
+    ttf_try(read(lf, *s, .SHORT,        *lf.header.font_direction_hint));
+    ttf_try(read(lf, *s, .SHORT,        *lf.header.index_to_loc_format));
+    ttf_try(read(lf, *s, .SHORT,        *lf.header.glyph_data_format));
+
+    ttf_try(lf.units_per_em >= 16 && lf.units_per_em <= 16384); // valid range
+    ttf_try((lf.flags & 0xffe0) == 0); // required by spec
+
+    return true;
+}
+
+read_ttf_table_maxp :: (table_data: []u8, lf: *Loading_Font) -> bool {
+    s: Serializer;
+    initialize(*s, .READ, as_string(table_data), true);
+
+    ttf_try(read(lf, *s, .FIXED,  *lf.profile.table_version));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.num_glyphs));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_points));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_contours));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_composite_points));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_composite_contours));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_zones));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_twilight_points));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_storage));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_function_defs));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_instruction_defs));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_stack_elements));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_size_of_instructions));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_component_elements));
+    ttf_try(read(lf, *s, .USHORT, *lf.profile.max_component_depth));
+
+    return true;
+}
+
+read_ttf_table_hhea :: (table_data: []u8, lf: *Loading_Font) -> bool {
+    s: Serializer;
+    initialize(*s, .READ, as_string(table_data), true);
+
+    ttf_try(read(lf, *s, .FIXED,  *lf.horizontal_header.table_version));
+    ttf_try(read(lf, *s, .FWORD,  *lf.horizontal_header.ascender));
+    ttf_try(read(lf, *s, .FWORD,  *lf.horizontal_header.descender));
+    ttf_try(read(lf, *s, .FWORD,  *lf.horizontal_header.line_gap));
+    ttf_try(read(lf, *s, .UFWORD, *lf.horizontal_header.advance_width_max));
+    ttf_try(read(lf, *s, .FWORD,  *lf.horizontal_header.min_left_side_bearing));
+    ttf_try(read(lf, *s, .FWORD,  *lf.horizontal_header.min_right_side_bearing));
+    ttf_try(read(lf, *s, .FWORD,  *lf.horizontal_header.x_max_extent));
+    ttf_try(read(lf, *s, .SHORT,  *lf.horizontal_header.caret_slope_rise));
+    ttf_try(read(lf, *s, .SHORT,  *lf.horizontal_header.caret_slope_run));
+    ttf_try(read(*s,              *lf.horizontal_header.reserved));
+    ttf_try(read(lf, *s, .SHORT,  *lf.horizontal_header.metric_data_format));
+    ttf_try(read(lf, *s, .USHORT, *lf.horizontal_header.number_of_hmetrics));
+
+    // out of date?
+    for reserved_value : lf.horizontal_header.reserved {
+        ttf_try(reserved_value == 0);
+    }
+
+    // required by spec
+    ttf_try(lf.horizontal_header.number_of_hmetrics > 0);
+
+    return true;
+}
+
+read_ttf_table_hmtx :: (table_data: []u8, lf: *Loading_Font) -> bool {
+    s: Serializer;
+    initialize(*s, .READ, as_string(table_data), true);
+
+    lf.horizontal_metrics.metrics = make_static_array(Horizontal_Metric, lf.horizontal_header.number_of_hmetrics);
+    for *metric : lf.horizontal_metrics.metrics {
+        ttf_try(read(lf, *s, .UFWORD, *metric.advance_width));
+        ttf_try(read(lf, *s, .FWORD,  *metric.lsb));
+    }
+
+    return true;
+}
+
 read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
     s: Serializer;
     initialize(*s, .READ, as_string(table_data), true);
 
     table_version_number, table_count: u16;
 
-    ttf_try(read_ttf_number(*s, .USHORT, *table_version_number));
+    ttf_try(read_ttf_number(lf, *s, .USHORT, *table_version_number));
     if table_version_number != 0 {
         engine_error("ttf parser does not support cmap table version number > 0. seeing version %", table_version_number, flags=.VERBOSE_ONLY);
         return false;
     }
-    ttf_try(read_ttf_number(*s, .USHORT, *table_count));
+    ttf_try(read_ttf_number(lf, *s, .USHORT, *table_count));
 
     if table_count == 0 {
         engine_error("cmap table count = 0. no mappings.", flags=.VERBOSE_ONLY);
@@ -219,14 +439,13 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
     }
 
     unicode_subtables := make_dynamic_array(Subtable_Directory_Entry, table_count,, temp);
-    unicode_subtable_index := -1;
 
     for 0..table_count-1 {
         subtable: Subtable_Directory_Entry = ---;
 
-        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_id));
-        ttf_try(read_ttf_number(*s, .USHORT, *subtable.platform_encoding_id));
-        ttf_try(read_ttf_number(*s, .ULONG,  *subtable.offset_to_subtable));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *subtable.platform_id));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *subtable.platform_encoding_id));
+        ttf_try(read_ttf_number(lf, *s, .ULONG,  *subtable.offset_to_subtable));
         subtable.expected_format = -1;
 
         // todo: check
@@ -283,15 +502,16 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
 
     best_subtable := *unicode_subtables[0];
 
+    ttf_try(best_subtale.offset_to_subtable < table_data.count);
     s.memory.data  = table_data.data + best_subtable.offset_to_subtable;
     s.memory.count = max(s.memory.count - best_subtable.offset_to_subtable, 0);
     s.head         = 0;
 
     format, length, version: u16 = ---;
     
-    ttf_try(read_ttf_number(*s, .USHORT, *format));
-    ttf_try(read_ttf_number(*s, .USHORT, *length));
-    ttf_try(read_ttf_number(*s, .USHORT, *version));
+    ttf_try(read_ttf_number(lf, *s, .USHORT, *format));
+    ttf_try(read_ttf_number(lf, *s, .USHORT, *length));
+    ttf_try(read_ttf_number(lf, *s, .USHORT, *version));
 
     if length > s.memory.count {
         engine_error("cmap subtable length % greater than remaining byte count %", length, s.memory.count);
@@ -313,10 +533,10 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         }
     case 4;
         segment_count_x2, search_range, entry_selector, range_shift: u16 = ---;
-        ttf_try(read_ttf_number(*s, .USHORT, *segment_count_x2));
-        ttf_try(read_ttf_number(*s, .USHORT, *search_range));
-        ttf_try(read_ttf_number(*s, .USHORT, *entry_selector));
-        ttf_try(read_ttf_number(*s, .USHORT, *range_shift));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *segment_count_x2));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *search_range));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *entry_selector));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *range_shift));
         
         segment_count := segment_count_x2 / 2;
         if segment_count == 0 {
@@ -326,15 +546,11 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
 
         end_codes := make_static_array(u16, segment_count,, temp);
         for 0..segment_count - 1 {
-            ttf_try(read_ttf_number(*s, .USHORT, *end_codes[it]));
-        }
-
-        if end_codes[end_codes.count-1] != 0xffff {
-            engine_warning("final end code in cmap subtable format 4 should be 0xffff but was %", end_codes[end_codes.count-1]);
+            ttf_try(read_ttf_number(lf, *s, .USHORT, *end_codes[it]));
         }
 
         reserved_padding: u16 = ---;
-        ttf_try(read_ttf_number(*s, .USHORT, *reserved_padding));
+        ttf_try(read_ttf_number(lf, *s, .USHORT, *reserved_padding));
 
         if reserved_padding != 0 {
             engine_warning("padding in cmap subtable format 4 should be 0 but was %", reserved_padding);
@@ -342,54 +558,83 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
 
         start_codes := make_static_array(u16, segment_count,, temp);
         for 0..segment_count - 1 {
-            ttf_try(read_ttf_number(*s, .USHORT, *start_codes[it]));
+            ttf_try(read_ttf_number(lf, *s, .USHORT, *start_codes[it]));
         }
 
-        code_deltas := make_static_array(u16, segment_count,, temp);
+        id_deltas := make_static_array(u16, segment_count,, temp);
         for 0..segment_count - 1 {
-            ttf_try(read_ttf_number(*s, .USHORT, *code_deltas[it]));
+            ttf_try(read_ttf_number(lf, *s, .USHORT, *id_deltas[it]));
         }
 
-        glyph_offsets := make_static_array(u16, segment_count,, temp);
+        id_offsets := make_static_array(u16, segment_count,, temp);
         for 0..segment_count - 1 {
-            ttf_try(read_ttf_number(*s, .USHORT, *glyph_offsets[it]));
+            ttf_try(read_ttf_number(lf, *s, .USHORT, *id_offsets[it]));
         }
 
+        remaining_size := s.memory.count - s.head;
 
+        id_array := make_static_array(u16, remaining_size / 2,, temp);
+        for 0..id_array.count - 1{
+            ttf_try(read_ttf_number(lf, *s, .USHORT, *id_array[it]));
+        }
+        
+        for segment : 0..segment_count-1 {
+            start_code      := start_codes[segment];
+            end_code        := end_codes[segment];
+            id_delta        := id_deltas[segment];
+            id_byte_offset  := id_offsets[segment];
 
+            found_end: bool;
+            if end_code == 0xffff {
+                if start_code == 0xffff {
+                    break;
+                }
+                end_code -= 1;
+                found_end = true;
+            } else ttf_try(segment < segment_count - 1);
+
+            for code : start_code..end_code {
+                glyph_id: u32;
+
+                if id_byte_offset != 0 {
+                    id_index_offset := cast(s64) (id_byte_offset / 2) - (segment_count - segment);
+                    id_index := id_index_offset + (code - start_code);
+                    ttf_try(id_index >= 0 && id_index < id_array.count);
+                    glyph_id = cast(u32) id_array[id_index];
+                    if glyph_id == 0 {
+                        continue;
+                    }
+                    glyph_id = (glyph_id + id_delta) & 0xffff;
+                } else {
+                    glyph_id = (cast(u32) code + id_delta) & 0xffff;
+                }
+
+                table_set(*lf.code_point_to_glyph_index, cast(u32) code, glyph_id);
+            }
+
+            if found_end {
+                break;
+            }
+        }
     case 6;
-
+        engine_error("unicode subtable format % encountered. not supported yet.", format);
+        return false;
     case 12;
-
+        engine_error("unicode subtable format % encountered. not supported yet.", format);
+        return false;
     case;
         engine_error("unicode subtable format % encountered. only 0, 4, 6, 12, 14 are supported.", format);
         return false;
     }
     
-    return false;
+    return true;
 }
 
 read_ttf_table_glyf :: (table_data: []u8, lf: *Loading_Font) -> bool {
     return false;
 }
 
-read_ttf_table_head :: (table_data: []u8, lf: *Loading_Font) -> bool {
-    return false;
-}
-
-read_ttf_table_hhea :: (table_data: []u8, lf: *Loading_Font) -> bool {
-    return false;
-}
-
-read_ttf_table_hmtx :: (table_data: []u8, lf: *Loading_Font) -> bool {
-    return false;
-}
-
 read_ttf_table_loca :: (table_data: []u8, lf: *Loading_Font) -> bool {
-    return false;
-}
-
-read_ttf_table_maxp :: (table_data: []u8, lf: *Loading_Font) -> bool {
     return false;
 }
 
@@ -433,7 +678,7 @@ calculate_ttf_table_checksum :: (table_data: []u8) -> u32 {
     return sum;
 }
 
-read_ttf_number :: (s: *Serializer, $num_type: TTF_Number, out: *$T, inv_units_per_elem: *float32 = null) -> bool {
+read_ttf_number :: (lf: *Loading_Font, s: *Serializer, $num_type: Font_Number, out: *$T) -> bool {
     success: bool;
 
     #if #complete num_type == {
@@ -477,16 +722,14 @@ read_ttf_number :: (s: *Serializer, $num_type: TTF_Number, out: *$T, inv_units_p
         #assert(false);
     case .FWORD;
         #assert(T == float32);
-        engine_check(inv_units_per_elem != null);
         num: s16 = ---;
         success = read(s, *num);
-        out.* = cast(float32) num * inv_units_per_elem.*;
+        out.* = cast(float32) num / cast(float32) lf.header.units_per_em;
     case .UFWORD; // word, go gaters
         #assert(T == float32);
-        engine_check(inv_units_per_elem != null);
         num: u16 = ---;
         success = read(s, *num);
-        out.* = cast(float32) num * inv_units_per_elem.*;
+        out.* = cast(float32) num / cast(float32) lf.header.units_per_em;
     case .F2DOT14;
         #assert(T == float32);
         num: s16 = ---;
@@ -510,3 +753,4 @@ read_ttf_number :: (s: *Serializer, $num_type: TTF_Number, out: *$T, inv_units_p
 
     return success;
 }
+
