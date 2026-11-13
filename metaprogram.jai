@@ -166,7 +166,7 @@ collect_offsets :: (struct_type: *Type_Info, field_type: *Type_Info) -> []int {
 
     stack   := make_dynamic_array(TInfo_Stack_Item, 8,, temp);
     offsets := make_dynamic_array(int, 8,, temp);
-    array_add(*stack, {struct_type, 0, 0});
+    array_add(*stack, {cast(*Type_Info_Struct) struct_type, 0, 0});
 
     cur_offset: int;
 
@@ -186,7 +186,7 @@ collect_offsets :: (struct_type: *Type_Info, field_type: *Type_Info) -> []int {
         }
 
         if field_info.type.type == .STRUCT {
-            array_add(*stack, {cast(*Type_Info_Struct) field_info, 0, field_info.offset_in_bytes});
+            array_add(*stack, {cast(*Type_Info_Struct) field_info.type, 0, field_info.offset_in_bytes});
             cur_offset += field_info.offset_in_bytes;
         }
     }
@@ -203,19 +203,19 @@ type_2_is_pointer_to_type_1 :: (T1: Type, T2: Type) -> bool {
 
 // true if 'type' is 'base', or reaches 'base' through a chain of '#as' struct members.
 is_subtype_of :: (type: Type, base: Type) -> bool {
-    walk :: (info: *Type_Info, base: *Type_Info) -> bool {
-        if info == base return true;
-        if info.type != .STRUCT return false;
+    return is_subtype_of(cast(*Type_Info) type, cast(*Type_Info) base);
+}
 
-        struct_info := cast(*Type_Info_Struct) info;
-        for member : struct_info.members {
-            if !(member.flags & .AS) || (member.flags & .CONSTANT) continue;
-            if walk(member.type, base) return true;
-        }
-        return false;
+is_subtype_of :: (info: *Type_Info, base: *Type_Info) -> bool {
+    if info == base return true;
+    if info.type != .STRUCT return false;
+
+    struct_info := cast(*Type_Info_Struct) info;
+    for member : struct_info.members {
+        if !(member.flags & .AS) || (member.flags & .CONSTANT) continue;
+        if is_subtype_of(member.type, base) return true;
     }
-
-    return walk(cast(*Type_Info) type, cast(*Type_Info) base);
+    return false;
 }
 
 Struct_Visit_Item :: struct {

@@ -36,7 +36,7 @@ Draw_Section :: struct {
 Instance_Data :: struct {
     transform:                   Matrix4;
     inverse_transpose_transform: Matrix4;
-    entity_id:                   u64; // Entity_ID.index of the instance's entity (generation dropped, must fit in 32 bits)
+    entity_id:                   u64; // CID.index of the instance's entity (generation dropped, must fit in 32 bits)
     joint_offset:                s32 = -1;
     draw_fx:                     Draw_FX;
 }
@@ -148,7 +148,7 @@ prepare_mesh_draws :: (frame: *GPU_Frame) -> Mesh_Draws {
         if !inst.should_draw_this_frame then continue;
 
         ri := range_index(inst.ref.index, xx inst.layer);
-        instance_data[starts[ri]] = make_instance_data(inst, it.entity);
+        instance_data[starts[ri]] = make_instance_data(inst);
         starts[ri] += 1;
     }
 
@@ -156,7 +156,7 @@ prepare_mesh_draws :: (frame: *GPU_Frame) -> Mesh_Draws {
         inst := it.data;
         if !inst.should_draw_this_frame then continue;
 
-        data := make_instance_data(inst, it.entity);
+        data := make_instance_data(inst);
         skinning_joints := inst.pose.skinning_joints;
 
         joints_per_instance := get_instanced_mesh(inst.ref).mesh.skeleton.joints.count;
@@ -185,7 +185,7 @@ count_visible_instances :: ($T: Type, counts: []s32, view_frustum: *View_Frustum
         inst := it.data;
         instanced := get_instanced_mesh(inst.ref);
 
-        inst.should_draw_this_frame = is_mesh_uploaded(*instanced.mesh) && should_draw_instance(inst, it.entity, view_frustum, instanced.cull_radius);
+        inst.should_draw_this_frame = is_mesh_uploaded(*instanced.mesh) && should_draw_instance(inst, view_frustum, instanced.cull_radius);
         if !inst.should_draw_this_frame then continue;
 
         counts[range_index(inst.ref.index, xx inst.layer)] += 1;
@@ -197,14 +197,17 @@ count_visible_instances :: ($T: Type, counts: []s32, view_frustum: *View_Frustum
     }
 }
 
-make_instance_data :: (inst: *Mesh_Instance, entity: *Entity) -> Instance_Data {
+make_instance_data :: (inst: *Mesh_Instance) -> Instance_Data {
     using engine.renderer;
     // todo: attaching to another mesh's skeletal joint
     render_check(inst.attachment.skeletal_mesh_joint == NO_JOINT, "mesh instances attached to joints aren't supported yet");
 
+    entity := get_parent(inst);
     render_check(entity != null, "mesh instance % has no entity", inst.*);
-    t := get_component(entity, Transform);
-    render_check(t != null, "mesh instance %'s entity has no Transform", inst.*);
+
+    // world transform of the owning entity (mesh instances aren't spatial, so this is the parent's)
+    t: Transform = ---;
+    get_transform(inst, *t);
     entity_transform := make_transform_matrix(t.position, t.orientation, t.scale);
 
     attachment := inst.attachment;
@@ -257,14 +260,14 @@ allocate_mesh_draws :: (frame: *GPU_Frame, mesh_draws: *Mesh_Draws, instance_cou
     }
 }
 
-should_draw_instance :: inline (inst: *$T, entity: *Entity, view_frustum: *View_Frustum, mesh_cull_radius: float) -> bool {
+should_draw_instance :: inline (inst: *$T, view_frustum: *View_Frustum, mesh_cull_radius: float) -> bool {
     if !inst.visible {
         return false;
     }
     if inst.frustum_cull {
-        render_check(entity != null, "mesh instance has no entity");
-        t := get_component(entity, Transform);
-        render_check(t != null, "mesh instance's entity has no Transform");
+        render_check(get_parent(inst) != null, "mesh instance has no entity");
+        t: Transform = ---;
+        get_transform(inst, *t);
 
         position  := inst.attachment.translation + t.position;
         scale     := inst.attachment.scale * t.scale;

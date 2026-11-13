@@ -1,5 +1,6 @@
 Component :: struct {
-    parent: Entity_ID;
+    id: CID;
+    parent: CID;
 }
 
 Spatial_Component :: struct {
@@ -48,44 +49,46 @@ get_parent :: (component: *$C/Component) -> *Entity {
     if is_null(component.parent) {
         return null;
     }
-    parent := get_component_data(component.parent);
-    return cast(*Entity) parent;
+    return cast(*Entity) get_component_data(component.parent);
 }
 
 // try to cast component to type C. null if failure. if 'exact_match', then
-// the component must be of type C. if not, then T can be a superclass of the component's type.
+// the component must be of type C. if not, then C can be a superclass of the component's type.
 cast_component :: inline (component: *Component, $C: Type, $exact_match := false) -> *C {
+    #assert(is_subtype_of(C, Component));
+    if component == null {
+        return null;
+    }
     component_tinfo := engine.components[component.id.type_handle].tinfo;
     if component_tinfo == type_info(C) {
         return xx component;
     }
     #if !exact_match {
-        C_NAME :: #run tprint("%", C);
-        if is_subclass_of(component_tinfo, C_NAME) {
+        if is_subtype_of(component_tinfo, type_info(C)) {
             return xx component;
         }
-    } 
+    }
     return null;
 }
 
 // same as cast_component, but the cast must succeed.
-cast_component_checked :: inline (component: *Component, $C/Component, $exact_match := false) -> *C {
-    ptr := cast_component(component, exact_match);
+cast_component_checked :: inline (component: *Component, $C: Type, $exact_match := false) -> *C {
+    ptr := cast_component(component, C, exact_match);
     engine_check(ptr != null);
     return ptr;
 }
 
-component_has_position_and_orientation :: ($C/Component: Type) -> bool {
-    return is_subclass_of(C, "Spatial_Component") || is_subclass_of(C, "Scalable_Spatial_Component");
+component_has_position_and_orientation :: (C: Type) -> bool {
+    return is_subtype_of(C, Spatial_Component) || is_subtype_of(C, Scalable_Spatial_Component);
 }
 
-component_has_scale :: ($C/Component: Type) -> bool {
-    return is_subclass_of(C, "Scalable_Spatial_Component");
+component_has_scale :: (C: Type) -> bool {
+    return is_subtype_of(C, Scalable_Spatial_Component);
 }
 
 get_transform :: (component: *$C/Component, tform: *Transform) {
-    IS_SPATIAL :: #run (is_subclass_of(C, "Spatial_Component");
-    IS_SCALABLE_SPATIAL :: #run (is_subclass_of(C, "Scalable_Spatial_Component");
+    IS_SPATIAL :: #run is_subtype_of(C, Spatial_Component);
+    IS_SCALABLE_SPATIAL :: #run is_subtype_of(C, Scalable_Spatial_Component);
 
     parent := get_parent(component);
 
@@ -137,8 +140,9 @@ get_transform_no_scale :: (component: *$C/Component, tform: *Transform_No_Scale)
 }
 
 get_position :: (component: *$C/Component) -> Vector3 
-#modify { 
-    return T != Physics_Body;
+#modify {
+    // physics bodies have their own (interpolated) get_position
+    return C != Physics_Body && C != Physics_Body_Internal;
 } {
     tform: Transform_No_Scale = ---;
     get_transform_no_scale(component, *tform);
@@ -169,7 +173,7 @@ get_orientation :: (component: *$C/Component) -> Quaternion {
 }
 
 get_scale :: (component: *$C/Component) -> Vector3 {
-    IS_ANY_SPATIAL :: #run component_has_position_and_orientation(C);
+    HAS_SCALE :: #run component_has_scale(C);
 
     scale: Vector3 = ---;
     parent := get_parent(component);
@@ -177,11 +181,11 @@ get_scale :: (component: *$C/Component) -> Vector3 {
     if parent != null {
         scale = get_scale(parent);
 
-        #if IS_ANY_SPATIAL {
+        #if HAS_SCALE {
             scale *= component.scale;
         }
     } else {
-        #if IS_ANY_SPATIAL {
+        #if HAS_SCALE {
             scale = component.scale;
         } else {
             scale = {1,1,1};
@@ -196,4 +200,22 @@ get_axes :: inline (component: *$C/Component) -> x: Vector3, y: Vector3, z: Vect
     x, y, z: Vector3 = ---;
     calculate_axes(get_orientation(component), *x, *y, *z);
     return x, y, z;
+}
+
+// set a spatial component's transform such that it ends up at the given world position and
+// orientation, accounting for its parent's transform.
+set_world_position_and_orientation :: (component: *$C/Component, position: Vector3, orientation: Quaternion) {
+    #assert(#run component_has_position_and_orientation(C));
+
+    parent := get_parent(component);
+    if parent == null {
+        component.position = position;
+        component.orientation = orientation;
+        return;
+    }
+
+    parent_transform: Transform = ---;
+    get_transform(parent, *parent_transform);
+    component.position = rotate(position - parent_transform.position, conjugate(parent_transform.orientation));
+    component.orientation = rotation_from_a_to_b(parent_transform.orientation, orientation);
 }

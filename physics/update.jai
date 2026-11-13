@@ -128,9 +128,15 @@ update_entity_transforms :: () {
             continue;
         }
 
-        t := get_component(it.entity, Transform);
-        t.orientation = interp_rotate_with_alpha(body.prev_orientation, body.next_orientation, physics_transform_alpha);
-        t.position = get_position(body) - body.collider.half_height * get_up_direction(t.orientation);
+        // the body drives the transform of the entity that owns it
+        entity := get_parent(body);
+        if entity == null {
+            continue;
+        }
+
+        orientation := interp_rotate_with_alpha(body.prev_orientation, body.next_orientation, physics_transform_alpha);
+        position := get_position(body) - body.collider.half_height * get_up_direction(orientation);
+        set_world_position_and_orientation(entity, position, orientation);
     }
 }
 

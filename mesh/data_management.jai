@@ -24,46 +24,46 @@ Skeletal_Animation_Playback_Control :: struct {
     speed: float;
 }
 
-// one mesh instance per entity. for a skeletal mesh, the skeletal fields are reached with
-// get_component(entity, Skeletal_Mesh_Instance).
-add_mesh :: (entity: *Entity, mesh_ref: Mesh_Ref) -> *Mesh_Instance {
+// allocate a mesh instance component into the given pointer field on the entity.
+// the field type picks the instance type, and must match the mesh's type:
+// *Static_Mesh_Instance for static meshes, *Skeletal_Mesh_Instance for skeletal meshes.
+// My_Entity :: struct { using #as base: Entity; mesh: *Static_Mesh_Instance; }
+// add_mesh(e, *e.mesh, mesh_ref);
+add_mesh :: (entity: *$E/Entity, ptr_on_entity: **$M/Mesh_Instance, mesh_ref: Mesh_Ref) -> *M {
     instanced := get_instanced_mesh(mesh_ref);
 
-    inst: *Mesh_Instance;
-    if instanced.type == .STATIC {
-        engine_check(is_static_mesh(*instanced.mesh));
-        inst = add_component(entity, Static_Mesh_Instance);
-    } else { // .SKELETAL
-        engine_check(is_skeletal_mesh(*instanced.mesh));
-        inst = add_component(entity, Skeletal_Mesh_Instance);
+    #if M == Skeletal_Mesh_Instance {
+        engine_check(instanced.type == .SKELETAL && is_skeletal_mesh(*instanced.mesh), "add_mesh: a *Skeletal_Mesh_Instance field needs a skeletal mesh");
+    } else {
+        engine_check(instanced.type == .STATIC && is_static_mesh(*instanced.mesh), "add_mesh: a *Static_Mesh_Instance field needs a static mesh");
     }
 
+    add_component(entity, ptr_on_entity);
+    inst := ptr_on_entity.*;
     inst.ref = mesh_ref;
     return inst;
 }
 
+// first allocated mesh instance on the entity, static or skeletal. null if none.
 get_mesh_instance :: (entity: *Entity) -> *Mesh_Instance {
-    inst := get_component(entity, Static_Mesh_Instance);
+    inst := get_entity_component(entity, Static_Mesh_Instance);
     if inst == null {
-        inst = get_component(entity, Skeletal_Mesh_Instance);
+        inst = get_entity_component(entity, Skeletal_Mesh_Instance);
     }
     return inst;
 }
 
-remove_mesh :: (entity: *Entity) {
-    inst := get_mesh_instance(entity);
-    engine_check(inst != null, "entity has no mesh instance");
+// symmetric bookend to add_mesh.
+remove_mesh :: (entity: *$E/Entity, ptr_on_entity: **$M/Mesh_Instance) {
+    inst := ptr_on_entity.*;
+    engine_check(inst != null, "remove_mesh: mesh instance field is null");
 
     if inst.draw_fx != -1 {
         pool_return(*engine.renderer.meshes.draw_fxs, inst.draw_fx);
         inst.draw_fx = -1;
     }
 
-    if get_instanced_mesh(inst.ref).type == .STATIC {
-        remove_component(entity, Static_Mesh_Instance);
-    } else { // .SKELETAL
-        remove_component(entity, Skeletal_Mesh_Instance);
-    }
+    remove_component(entity, ptr_on_entity);
 }
 
 get_mesh :: inline (inst: *Mesh_Instance) -> mesh: *Mesh {

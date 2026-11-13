@@ -190,7 +190,7 @@ Game_Engine :: struct {
     components: [..]Component_Storage;
     type_to_component_handle: Table(*Type_Info, u16);
 
-    entities_queued_for_destruction: [..]Entity_ID;
+    entities_queued_for_destruction: [..]CID;
 
     initialized: bool;
 }

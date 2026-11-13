@@ -7,20 +7,20 @@ physics_body_handle: u16;
 
 // types
 
-Component_ID :: struct {
+CID :: struct {
     type_handle: u16;
     generation: u16;
     index: s32 = -1;
 }
 
-operator == :: (a: Component_ID, b: Component_ID) -> bool {
+operator == :: (a: CID, b: CID) -> bool {
     if a.index < 0 && b.index < 0 return true;
     return a.type_handle == b.type_handle && a.index == b.index && a.generation == b.generation;
 }
 
 Component_Instance :: struct {
     data: *void;
-    id: Component_ID;
+    id: CID;
 }
 
 Component_Handling_Flags :: enum_flags {
@@ -38,7 +38,7 @@ Component_Storage_Index :: struct {
 
 Component_Slot :: struct {
     component: *u8;
-    owner_id: *Entity_ID;
+    owner_id: *CID;
     generation: *u16;
 }
 
@@ -55,6 +55,8 @@ Component_Storage :: struct {
 
     type_init: (*void);
     type_deinit: (*void);
+    // non-null if the type is a Component. writes the component's own id into it.
+    set_component_id: (*void, CID);
 
     handling: Component_Handling_Flags;
     component_is_entity: bool;
@@ -76,7 +78,7 @@ component_storage :: (info: *Type_Info) -> *Component_Storage {
 }
 
 add_entity_type :: ($T: Type) -> handle: u16 {
-    #assert(is_subclass_of(T, "Entity"));
+    #assert(is_subtype_of(T, Entity));
     entity_flags := DEFAULT_COMPONENT_HANDLING_FLAGS | .STABLE_ID;
     return add_component_type(T, init_handling=entity_flags);
 }
@@ -111,14 +113,18 @@ init :: (using storage: *Component_Storage, $T: Type, component_handling: Compon
     type_init = ifx override_init != null then override_init else get_virtual_meminit(T);
     type_deinit = deinit;
 
-    component_is_entity = T == Entity || is_subclass_of(T, "Entity");
+    component_is_entity = #run is_subtype_of(T, Entity);
+
+    #if #run is_subtype_of(T, Component) {
+        set_component_id = (mem: *void, id: CID) { (cast(*T) mem).id = id; };
+    }
 }
 
-get_component :: inline (id: Component_ID, $T: Type) -> *T {
+get_component :: inline (id: CID, $T: Type) -> *T {
     return cast(*T) get_component_data(id);
 }
 
-get_component_data :: inline (id: Component_ID) -> *void {
+get_component_data :: inline (id: CID) -> *void {
     return get_component_data(*engine.components[id.type_handle], id.index, id.generation);
 }
 
@@ -132,16 +138,16 @@ get_component_data :: inline (using storage: *Component_Storage, slot_index: int
     return get_slot_component_memory(storage, index);
 }
 
-add_component :: ($T: Type, owner_id: Entity_ID) -> Component_Instance {
+add_component :: ($T: Type, owner_id: CID) -> Component_Instance {
     handle := table_find_pointer(*engine.type_to_component_handle, type_info(T)).*;
     return add_component(handle, owner_id);
 }
 
-add_component :: (handle: u16, owner_id: Entity_ID) -> Component_Instance {
+add_component :: (handle: u16, owner_id: CID) -> Component_Instance {
     return add_component(*engine.components[handle], owner_id);
 }
 
-add_component :: (using storage: *Component_Storage, owner_id: Entity_ID) -> Component_Instance {
+add_component :: (using storage: *Component_Storage, owner_id: CID) -> Component_Instance {
     free_component_index := Component_Storage_Index.{xx chunks.count, 0};
 
     if (handling & .STABLE_ID) != 0 {
@@ -172,10 +178,16 @@ add_component :: (using storage: *Component_Storage, owner_id: Entity_ID) -> Com
     }
 
     index := free_component_index.chunk * ITEMS_PER_CHUNK + free_component_index.index;
-    return {slot.component, {type_handle, slot.generation.*, xx index}};
+    id := CID.{type_handle, slot.generation.*, xx index};
+
+    if set_component_id != null {
+        set_component_id(slot.component, id);
+    }
+
+    return {slot.component, id};
 }
 
-remove_component :: (id: Component_ID, allow_shrink := true) {
+remove_component :: (id: CID, allow_shrink := true) {
     inst := Component_Instance.{get_component_data(id), id};
     remove_component(inst, allow_shrink);
 }
@@ -190,6 +202,12 @@ remove_component :: (inst: Component_Instance, allow_shrink := true) {
     }
 
     // ----------
+
+    // a stale or null id would otherwise remove whatever currently lives in that slot
+    if get_component_data(inst.id) == null {
+        engine_check(false, "tried to remove a stale or null component id: %", inst.id);
+        return;
+    }
 
     using storage: *Component_Storage = *engine.components[inst.id.type_handle];
 
@@ -219,21 +237,26 @@ remove_component :: (inst: Component_Instance, allow_shrink := true) {
             slot.owner_id.* = last_slot.owner_id.*;
             slot.generation.* += 1;
 
+            moved_id := CID.{type_handle, slot.generation.*, inst.id.index};
+            if set_component_id != null {
+                set_component_id(slot.component, moved_id);
+            }
+
             // the last slot's owner needs their component pointer & tracking data updated
-            if !is_null(slot.owner_id) {
+            if !is_null(slot.owner_id.*) {
                 swap_slot_owner := get_entity(slot.owner_id.*);
 
-                looking_for_id := Component_ID.{type_handle, last_slot.generation.*, last_index};
+                looking_for_id := CID.{type_handle, last_slot.generation.*, last_index};
                 fixed_component_data_on_entity: bool;
 
-                for allocation : swap_slot_owner.component_allocations {
+                for *allocation : swap_slot_owner.component_allocations {
                     if allocation.id == looking_for_id {
-                        pointer_to_component_field := (cast(*u8) entity) + allocation.offset_to_pointer;
+                        pointer_to_component_field := (cast(*u8) swap_slot_owner) + allocation.offset_to_pointer;
                         component_ptr := cast(**void) pointer_to_component_field;
                         engine_check(component_ptr.* == last_slot.component);
 
                         component_ptr.* = slot.component;
-                        allocation.id = {type_handle, slot.generation.*, inst.id.index};
+                        allocation.id = moved_id;
 
                         fixed_component_data_on_entity = true;
                         break;
@@ -248,6 +271,19 @@ remove_component :: (inst: Component_Instance, allow_shrink := true) {
     }
 
     // todo: shrink
+}
+
+set_component_owner :: (id: CID, owner: CID) {
+    storage := *engine.components[id.type_handle];
+    index := to_component_storage_index(id.index);
+    generation := get_slot_generation(storage, index);
+    owner_id := get_slot_owner_id(storage, index);
+    engine_check(generation.* == id.generation);
+    owner_id.* = owner;
+}
+
+is_null :: inline (id: CID) -> bool {
+    return id.index < 0;
 }
 
 last_allocated_index :: (using storage: *Component_Storage) -> int {
@@ -274,7 +310,8 @@ init_engine_default_entity_components :: () {
     add_component_type(Camera);
 }
 
-#scope_file
+// module scope: component_loops.jai uses the slot/list helpers below
+#scope_module
 
 add_chunk :: (using storage: *Component_Storage) {
     alloc_size := component_list_offset(storage, true);
@@ -295,7 +332,7 @@ add_chunk :: (using storage: *Component_Storage) {
 // offsets
 
 generation_list_offset :: inline (using storage: *Component_Storage) -> int {
-    return aligned_offset(0, size_of(Entity_ID), ITEMS_PER_CHUNK, size_of(u16));
+    return aligned_offset(0, size_of(CID), ITEMS_PER_CHUNK, size_of(u16));
 }
 
 component_pointer_list_offset :: (using storage: *Component_Storage) -> int {
@@ -326,7 +363,7 @@ get_component_slot :: inline (storage: *Component_Storage, index: Component_Stor
     };
 }
 
-get_slot_owner_id :: inline (storage: *Component_Storage, index: Component_Storage_Index) -> *Entity_ID {
+get_slot_owner_id :: inline (storage: *Component_Storage, index: Component_Storage_Index) -> *CID {
     return *get_owner_id_list(storage, index.chunk)[index.index];
 }
 
@@ -343,9 +380,9 @@ get_slot_component_memory :: inline (storage: *Component_Storage, index: Compone
 
 // lists
 
-get_owner_id_list :: inline (using storage: *Component_Storage, chunk: int) -> []Entity_ID {
-    array: []Entity_ID = ---;
-    array.data = cast(*Entity_ID) chunks[chunk];
+get_owner_id_list :: inline (using storage: *Component_Storage, chunk: int) -> []CID {
+    array: []CID = ---;
+    array.data = cast(*CID) chunks[chunk];
     array.count = ITEMS_PER_CHUNK;
     return array;
 }

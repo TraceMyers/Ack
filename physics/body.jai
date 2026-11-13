@@ -4,6 +4,9 @@ Physics_Body :: Physics_Body_Base(void);
 Physics_Body_Internal :: Physics_Body_Base(Physics_Properties);
 
 Physics_Body_Base :: struct($properties_type: Type) {
+    // physics bodies are components, so they can be attached to entities. the owning
+    // entity's transform is driven by the body (see update_entity_transforms).
+    using #as component_base: Component;
     using transform: Physics_Body_Transform;
 
     axes: [3]u64;
@@ -67,8 +70,9 @@ init_physics_body :: (entity: *Entity, template_name: string) -> *Physics_Body {
 init_physics_body :: (entity: *Entity, template: *Physics_Body_Template) -> *Physics_Body {
     using engine.physical_world;
 
-    body := get_component(entity, Physics_Body);
-    body.index = get_component_instance(entity, type_info(Physics_Body)).id.index;
+    body := get_entity_component(entity, Physics_Body);
+    engine_check(body != null, "init_physics_body: entity has no allocated Physics_Body component");
+    body.index = body.id.index;
 
     body.flags = template.flags | .AWAKE;
     body.properties = *template.properties;

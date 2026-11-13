@@ -193,6 +193,8 @@ Mesh_Attachment :: struct {
 }
 
 Mesh_Instance :: struct {
+    // mesh instances are components. they draw at their owning entity's transform (plus attachment).
+    using #as component_base: Component;
     ref: Mesh_Ref;
     attachment: Mesh_Attachment;
     // index into the managed meshes' fx. see add_draw_fx.

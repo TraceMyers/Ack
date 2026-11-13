@@ -3,19 +3,16 @@
 #load "component_loops.jai";
 #load "example.jai";
 
-Entity_ID :: #type,isa Component_ID;
-
 // entities are components. in other words, Component is the base object.
 // entities are then defined as components that can own other components (including other entities).
 Entity :: struct {
-    using #as component_base: Scalable_Spatial_Component;
+    using #as spatial_base: Scalable_Spatial_Component;
     flags: Entity_Flags;
-    id: Entity_ID;
     component_allocations: [..]Component_Allocation;
 }
 
 Component_Allocation :: struct {
-    id: Component_ID;
+    id: CID;
     offset_to_pointer: s32;
 }
 
@@ -49,29 +46,24 @@ Transform_Attach_Ruleset :: struct {
 }
 
 make_entity :: inline ($E: Type) -> *E {
-    return xx make_entity_get_instance(T).data;
+    return xx make_entity_get_instance(E).data;
 }
 
 make_entity_get_instance :: inline ($E: Type) -> Component_Instance {
-    #assert(is_subclass_of(E, "Entity"));
-    inst := add_component(E, {});
-    e := cast(*Entity) inst.data;
-    e.id = inst.id;
-    return inst;
+    #assert(is_subtype_of(E, Entity));
+    // component storage writes the id into the entity
+    return add_component(E, {});
 }
 
 destroy_entity :: (entity: *Entity, depth := 0) {
     engine_check(depth < MAX_RECURSION_DEPTH, "potential infinite recursion detected");
 
-    // if this is is a top-level destroy_entity call (not being called in the middle 
-    // of a chain of remove_component calls), and this entity is owned by another entity,
-    // then reroute through remove_component(parent, self) so that the parent
-    // can remove this entity from its table.
-    if component_remove_depth == 0 {
+    // top-level call on an owned entity: remove it from its parent first. (deeper calls
+    // don't bother, since the parent is being destroyed too.)
+    if depth == 0 {
         parent := get_parent(entity);
         if parent != null {
-            detach_component(parent, entity, false);
-            return;
+            detach_component_untyped(parent, entity);
         }
     }
 
@@ -85,10 +77,11 @@ destroy_entity :: (entity: *Entity, depth := 0) {
         }
     }
 
+    array_reset(*entity.component_allocations);
     remove_component({entity, entity.id});
 }
 
-is_entity :: inline (id: Component_ID, $check_null := true) -> bool {
+is_entity :: inline (id: CID, $check_null := true) -> bool {
     #if check_null {
         if is_null(id) {
             return false;
@@ -98,35 +91,31 @@ is_entity :: inline (id: Component_ID, $check_null := true) -> bool {
     return component_storage.component_is_entity;
 }
 
-get_entity :: (id: Entity_ID) -> *Entity {
+get_entity :: (id: CID) -> *Entity {
     if is_null(id) {
         return null;
     }
     engine_check(is_entity(id, false));
-    return cast(*Entity) get_component_data(component_storage, id.index, id.generation);
+    return cast(*Entity) get_component_data(id);
 }
 
-get_entity :: (id: Entity_ID, $T: Type) -> *T {
+get_entity :: (id: CID, $T: Type) -> *T {
     base_entity := get_entity(id);
     return cast_entity(base_entity, T);
 }
 
 cast_entity :: inline (entity: *Entity, $T: Type, $exact_match := false) -> *T {
-    #assert(is_subclass_of(T, "Entity", false));
+    #assert(is_subtype_of(T, Entity));
     return cast_component(entity, T, exact_match);
 }
 
 cast_entity_checked :: inline (entity: *Entity, $T: Type, $exact_match := false) -> *T {
-    #assert(is_subclass_of(T, "Entity", false));
+    #assert(is_subtype_of(T, Entity));
     return cast_component_checked(entity, T, exact_match);
 }
 
-null_entity_id :: inline () -> Entity_ID {
+null_entity_id :: inline () -> CID {
     return .{};
-}
-
-is_null :: inline (id: Entity_ID) -> bool {
-    return id.index < 0;
 }
 
 queue_destroy_entity :: (entity: *Entity) {
@@ -139,6 +128,10 @@ queue_destroy_entity :: (entity: *Entity) {
 execute_destroy_entities :: () {
     for engine.entities_queued_for_destruction {
         e := get_entity(it);
+        // already destroyed, e.g. as the child of an entity destroyed earlier in this list
+        if e == null {
+            continue;
+        }
         engine_check((e.flags & .MARKED_FOR_DESTRUCTION) != 0);
         destroy_entity(e);
     }
@@ -152,8 +145,12 @@ execute_destroy_entities :: () {
 // add_component(e, *e.stuff);
 // can be used to make a new entity, since entities are components.
 add_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component) {
-    COMPONENT_IS_ENTITY :: #run is_subclass_of(C, "Entity");
-    inst := ifx COMPONENT_IS_ENTITY then make_entity_get_inst(C) else add_component(C, {});
+    inst: Component_Instance = ---;
+    #if #run is_subtype_of(C, Entity) {
+        inst = make_entity_get_instance(C);
+    } else {
+        inst = add_component(C, {});
+    }
     attach_component(entity, ptr_on_entity, inst.id);
 }
 
@@ -161,14 +158,15 @@ add_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component) {
 // to add_component. automatically called during destroy entity for each
 // still-allocated component.
 remove_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component) {
-    COMPONENT_IS_ENTITY :: #run is_subclass_of(C, "Entity");
-
     component := ptr_on_entity.*;
-    if COMPONENT_IS_ENTITY {
+    engine_check(component != null);
+
+    #if #run is_subtype_of(C, Entity) {
+        // detaches from 'entity' (nulling ptr_on_entity) and then destroys
         destroy_entity(xx component);
     } else {
-        component_id := detach_component(e, ptr_on_entity, false);
-        remove_component({ptr_on_entity.*, component_id});
+        component_id := detach_component(entity, ptr_on_entity, false);
+        remove_component(Component_Instance.{component, component_id});
     }
 }
 
@@ -181,26 +179,28 @@ transfer_component :: (entity_a: *$E1/Entity, ptr_on_entity_a: **$C/Component, e
 // attach a component to a new parent. (component must be allocated + have no parent)
 // 'rules' determines how the component's transform is interpreted during attachment.
 // after attachment, all component transforms are relative to their parent's.
-attach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, component_id: Component_ID, rules := Transform_Attach_Ruleset.{}) {
+attach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, component_id: CID, rules := Transform_Attach_Ruleset.{}) {
     engine_check(ptr_on_entity.* == null);
 
     component := get_component(component_id, C);
     engine_check(component != null);
     engine_check(get_parent(component) == null);
 
-    ptr_offset := get_component_pointer_offset_validated(entity, pointer_on_entity);
+    ptr_offset := get_component_pointer_offset_validated(entity, ptr_on_entity);
     ptr_on_entity.* = component;
+
     component.parent = entity.id;
+    set_component_owner(component_id, entity.id);
 
     array_add(*entity.component_allocations, {component_id, xx ptr_offset});
 
-    IS_SPATIAL :: #run (is_subclass_of(C, "Spatial_Component");
-    IS_SCALABLE_SPATIAL :: #run (is_subclass_of(C, "Scalable_Spatial_Component");
+    IS_SPATIAL :: #run is_subtype_of(C, Spatial_Component);
+    IS_SCALABLE_SPATIAL :: #run is_subtype_of(C, Scalable_Spatial_Component);
 
-    #if #run IS_SPATIAL || IS_SCALABLE_SPATIAL {
+    #if IS_SPATIAL || IS_SCALABLE_SPATIAL {
         parent_transform: Transform;
         if rules.position_rule == .CALCULATE_RELATIVE_FROM_WORLD || rules.orientation_rule == .CALCULATE_RELATIVE_FROM_WORLD || rules.scale_rule == .CALCULATE_RELATIVE_FROM_WORLD {
-            get_transform(get_parent(component), *parent_transform);
+            get_transform(entity, *parent_transform);
         }
 
         if rules.position_rule == {
@@ -226,7 +226,7 @@ attach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, componen
             case .CALCULATE_RELATIVE_FROM_WORLD;
                 component.transform.scale /= parent_transform.scale;
             case .USE_PARENT;
-                component.transform.scale = {};
+                component.transform.scale = .{1,1,1};
             }
         }
     }
@@ -234,16 +234,17 @@ attach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, componen
 
 // detach a component from its parent. (component must be allocated + have parent)
 // transform_relative_to_world puts the component's transform back into world space.
-detach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, transform_relative_to_world := true) -> Component_ID {
+detach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, transform_relative_to_world := true) -> CID {
     engine_check(ptr_on_entity.* != null);
-    ptr_offset := get_component_pointer_offset_validated(entity, pointer_on_entity);
+    ptr_offset := get_component_pointer_offset_validated(entity, ptr_on_entity);
 
     component := ptr_on_entity.*;
     engine_check(component.parent == entity.id);
 
+    // must happen while the parent is still set, so the parent's transform is included
     if transform_relative_to_world {
-        IS_SPATIAL :: #run (is_subclass_of(C, "Spatial_Component");
-        IS_SCALABLE_SPATIAL :: #run (is_subclass_of(C, "Scalable_Spatial_Component");
+        IS_SPATIAL :: #run is_subtype_of(C, Spatial_Component);
+        IS_SCALABLE_SPATIAL :: #run is_subtype_of(C, Scalable_Spatial_Component);
 
         #if IS_SPATIAL {
             world_transform: Transform_No_Scale;
@@ -257,7 +258,7 @@ detach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, transfor
     }
 
     found_allocation: bool;
-    component_id: Component_ID;
+    component_id: CID;
     for entity.component_allocations {
         if it.offset_to_pointer == ptr_offset {
             component_id = it.id;
@@ -267,17 +268,19 @@ detach_component :: (entity: *$E/Entity, ptr_on_entity: **$C/Component, transfor
         }
     }
     engine_check(found_allocation);
-    engine_check(engine.components[component_id.type_handle].tinfo == type_info(C)]);
+    engine_check(component_id == component.id);
+    engine_check(engine.components[component_id.type_handle].tinfo == type_info(C));
 
     ptr_on_entity.* = null;
     component.parent = {};
+    set_component_owner(component_id, {});
 
     return component_id;
 }
 
 // find first allocated component (not necessarily first pointer on entity) of type *C.
 // returns null if none exist.
-get_entity_component :: inline (entity: *Entity, $C/Component: Type) -> *C {
+get_entity_component :: inline (entity: *Entity, $C: Type) -> *C {
     return xx get_entity_component(entity, type_info(C));
 }
 
@@ -297,7 +300,7 @@ get_entity_component :: (entity: *Entity, tinfo: *Type_Info) -> *void {
 
 // returns temp-allocated array of all all allocated components of type *C.
 // unallocated components are not included.
-get_entity_components :: inline (entity: *Entity, $C/Component: Type) -> []*C {
+get_entity_components :: inline (entity: *Entity, $C: Type) -> []*C {
     return cast,force([]*C) get_entity_components(entity, type_info(C));
 }
 
@@ -324,7 +327,7 @@ get_entity_components :: (entity: *Entity, tinfo: *Type_Info) -> []*void {
 // returns the pointer regardless of allocatedness/validity. so, a null pointer
 // can either mean that the first pointer of type *C on 'entity' is null, or
 // it can mean that no *C exists on type E.
-get_component :: (entity: *$E/Entity, $C/Component: Type) -> *C {
+get_component :: (entity: *$E/Entity, $C: Type) -> *C {
     OFFSETS :: #run collect_offsets(type_info(E), type_info(*C));
     #if OFFSETS.count > 0 {
         return (cast(**C) (cast(*u8) entity + OFFSETS[0])).*;
@@ -335,16 +338,16 @@ get_component :: (entity: *$E/Entity, $C/Component: Type) -> *C {
 
 // get a temp-allocated array of all non-null pointers to components of type C
 // on entity of type E.
-get_components :: (entity: *$E/Entity, $C/Component: Type) ->[]*C {
+get_components :: (entity: *$E/Entity, $C: Type) ->[]*C {
     OFFSETS :: #run collect_offsets(type_info(E), type_info(*C));
     components: []*C = ---;
     #if OFFSETS.count > 0 {
         components = make_static_array(*C, OFFSETS.count,, temp);
         non_null_count: int;
-        for OFFSETS {
-            ptr := (cast(**C) (cast(*u8) entity + OFFSETS[it])).*;
+        for offset : OFFSETS {
+            ptr := (cast(**C) (cast(*u8) entity + offset)).*;
             if ptr != null {
-                components[it] = ptr;
+                components[non_null_count] = ptr;
                 non_null_count += 1;
             }
         }
@@ -357,6 +360,29 @@ get_components :: (entity: *$E/Entity, $C/Component: Type) ->[]*C {
 }
 
 #scope_file
+
+// detach without knowing the static type of the pointer field on 'entity'. finds the field
+// through component_allocations. leaves the component's transform relative (used right
+// before destroying it).
+detach_component_untyped :: (entity: *Entity, component: *Component) {
+    engine_check(component.parent == entity.id);
+
+    found_allocation: bool;
+    for entity.component_allocations {
+        if it.id == component.id {
+            ptr_field := cast(**Component) (cast(*u8) entity + it.offset_to_pointer);
+            engine_check(ptr_field.* == component);
+            ptr_field.* = null;
+            found_allocation = true;
+            remove it;
+            break;
+        }
+    }
+    engine_check(found_allocation);
+
+    component.parent = {};
+    set_component_owner(component.id, {});
+}
 
 get_component_pointer_offset_validated :: (entity: *$E/Entity, ptr_on_entity: **$T) -> int {
     #insert -> string {

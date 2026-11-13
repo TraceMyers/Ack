@@ -38,7 +38,7 @@ example_entity_proc :: () {
 
     guy.child.position.x = 100;
     guy.position.x = 100;
-    child_position := get_position(*guy.child);
+    child_position := get_position(guy.child);
     // the x position of the child is relative to the x position of the parent. 100 + 100 = 200.
     engine_log("guy x pos: %, child x pos: %", guy.position.x, child_position.x);
 
@@ -53,7 +53,7 @@ example_entity_proc :: () {
     // detached_child := get_component(child_id, Example_Child_Entity);
     // detached_child := get_entity(child_id, Example_Child_Entity);
 
-    engine_log("detached child x pos: %", guy.position.x, child_position.x);
+    engine_log("detached child x pos: %", detached_child.position.x);
     
     // we could just directly cast(*Example_Child_Entity), but here is how you can do
     // a dynamic cast from Entity to Example_Child_Entity

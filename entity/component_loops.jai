@@ -48,7 +48,7 @@ Component_Storage_Loop :: struct($T: Type, $using_data: bool) {
 }
 
 Component_Storage_Iteration :: struct($T: Type, $using_data: bool) {
-    entity_id: Entity_ID;
+    entity_id: CID;
     #if using_data && type_info(T).type == .STRUCT {
         using data: *T;
     } else {
