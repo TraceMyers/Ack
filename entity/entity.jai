@@ -48,14 +48,6 @@ Transform_Attach_Ruleset :: struct {
     scale_rule: Transform_Attach_Rule;
 }
 
-// rules that define what happens at the moment of attachment. 
-// all child components are transformed relative to their parents from that point.
-Component_Attach_Flags :: enum_flags {
-    KEEP_WORLD_OFFSET;
-    KEEP_WORLD_ORIENTATION;
-    KEEP_WORLD_SCALE;
-}
-
 make_entity :: inline ($E: Type) -> *E {
     return xx make_entity_get_instance(T);
 }
