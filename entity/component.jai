@@ -53,15 +53,15 @@ get_parent :: (component: *$C/Component) -> *Entity {
 }
 
 // try to cast component to type C. null if failure. if 'exact_match', then
-// the component must be of type T. if not, then T can be a superclass of the component's type.
-cast_component :: inline (component: *Component, $T: Type, $exact_match := false) -> *T {
+// the component must be of type C. if not, then T can be a superclass of the component's type.
+cast_component :: inline (component: *Component, $C: Type, $exact_match := false) -> *C {
     component_tinfo := engine.components[component.id.type_handle].tinfo;
-    if component_tinfo == type_info(T) {
+    if component_tinfo == type_info(C) {
         return xx component;
     }
     #if !exact_match {
-        T_NAME :: #run tprint("%", T);
-        if is_subclass_of(component_tinfo, T_NAME) {
+        C_NAME :: #run tprint("%", C);
+        if is_subclass_of(component_tinfo, C_NAME) {
             return xx component;
         }
     } 
