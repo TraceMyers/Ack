@@ -780,10 +780,10 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
         length, language, num_groups: u32 = ---;
         ttf_try(read(lf, *s, .USHORT, *reserved));
         ttf_try(reserved == 0);
-        ttf_try(read(lf, *s, .ULONG,  *length);
+        ttf_try(read(lf, *s, .ULONG,  *length));
         try_set_subtable_length(*s, length);
-        ttf_try(read(lf, *s, .ULONG,  *language);
-        ttf_try(read(lf, *s, .ULONG,  *num_groups);
+        ttf_try(read(lf, *s, .ULONG,  *language));
+        ttf_try(read(lf, *s, .ULONG,  *num_groups));
         ttf_try(num_groups > 0);
         
         prev_start_code, prev_end_code: u32 = ---;

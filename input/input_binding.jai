@@ -47,7 +47,7 @@ axis_2d_input_binding_with_entity_proc :: #type (x: float32, y: float32, entity:
 Input_Binding :: struct {
     input_type: Input_Type;
     proc: *void;
-    entity_id: Gen_ID;
+    entity_id: Entity_ID;
 }
 
 to_key_code :: inline (gamepad_code: Gamepad_Code) -> Key_Code {
@@ -62,19 +62,19 @@ to_gamepad_code :: inline (key_code: Key_Code) -> gamepad_code: Gamepad_Code, is
     }
 }
 
-set_gamepad_input_binding :: (gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
+set_gamepad_input_binding :: (gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := Entity_ID.{}) {
     set_gamepad_input_binding(0, gamepad_code, input_type, proc, entity_id);
 }
 
-set_gamepad_input_binding :: (controller_id: int, gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
+set_gamepad_input_binding :: (controller_id: int, gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := Entity_ID.{}) {
     set_input_binding(controller_id, to_key_code(gamepad_code), input_type, proc, entity_id);
 }
 
-set_input_binding :: (key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
+set_input_binding :: (key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Entity_ID.{}) {
     set_input_binding(0, key_code, input_type, proc, entity_id);
 }
 
-set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
+set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Entity_ID.{}) {
     Input_Binding_Argtype :: enum u8 {
         KEY_CODE;
         INPUT_TYPE;
@@ -144,7 +144,7 @@ set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_
     }
 }
 
-set_input_binding_impl :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Gen_ID.{}) {
+set_input_binding_impl :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := Entity_ID.{}) {
     assert(proc != null);
 
     if engine.input.controllers.items.count == 0 {

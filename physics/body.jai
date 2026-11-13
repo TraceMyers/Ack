@@ -68,7 +68,7 @@ init_physics_body :: (entity: *Entity, template: *Physics_Body_Template) -> *Phy
     using engine.physical_world;
 
     body := get_component(entity, Physics_Body);
-    body.index = get_component_instance(entity, type_info(Physics_Body)).ref.id.index;
+    body.index = get_component_instance(entity, type_info(Physics_Body)).id.index;
 
     body.flags = template.flags | .AWAKE;
     body.properties = *template.properties;

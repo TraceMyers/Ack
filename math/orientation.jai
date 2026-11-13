@@ -273,6 +273,13 @@ rotate :: (v: *Vector3, axis: Vector3, angle: float32) {
     rotate(v, rot_quat);
 }
 
+// returns c such that a * c = b.
+rotation_from_a_to_b :: (a: Quaternion, b: Quaternion) -> Quaternion {
+    rotation := conjugate(a) * b;
+    if rotation.w < 0 then rotation = -rotation;
+    return rotation;
+}
+
 interp_rotate_with_alpha :: (origin: Quaternion, target: Quaternion, alpha: float32) -> Quaternion {
     engine_check(alpha >= 0.0 && alpha <= 1.0, "alpha: %", alpha, level=.HIGH);
     cos_theta := dot(origin, target);

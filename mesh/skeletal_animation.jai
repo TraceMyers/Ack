@@ -63,7 +63,7 @@ Skeletal_Animation_Graph :: struct {
 
 Skeletal_Animation_Graph_Player :: struct {
     graph: Gen_Ref;
-    entity_id: Gen_ID;
+    entity_id: Entity_ID;
 
     cur_node: s16 = -1;
     cur_edge: s16 = -1;

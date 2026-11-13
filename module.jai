@@ -57,11 +57,6 @@
 
 ACK_VERSION :: Version.{0,1,0};
 
-Gen_ID :: struct {
-    index: s32 = -1;
-    generation: u32;
-}
-
 do_general_validation :: (level: Ack_Validation_Level) -> bool #expand {
     return ENABLE_VALIDATION && level <= GENERAL_VALIDATION_LEVEL;
 }
@@ -143,12 +138,17 @@ game_engine_loop :: () {
 
     while !engine.settings.quit {
         reset_temporary_storage();
+
         update_game_system(engine.settings.input_update);
         // if the window is already closed, then we need to quit right away
         if engine.settings.quit then break;
         update_game_system(engine.settings.physics_update);
         update_game_system(engine.settings.render_update);
         update_game_system(engine.settings.clock_update);
+
+        if engine.settings.auto_destroy_entities {
+            execute_destroy_entities();
+        }
     }
 }
 
@@ -188,10 +188,9 @@ Game_Engine :: struct {
     physical_world: *Physical_World;
 
     components: [..]Component_Storage;
-    type_to_component_handle: Table(*Type_Info, u32);
-    component_combinations: [..]Component_Combination;
+    type_to_component_handle: Table(*Type_Info, u16);
 
-    entities_queued_for_destruction: [..]Gen_ID;
+    entities_queued_for_destruction: [..]Entity_ID;
 
     initialized: bool;
 }
@@ -211,6 +210,7 @@ Engine_Settings :: struct {
     // updatable during loop
     quit: bool;
     auto_sync_frame_time := true;
+    auto_destroy_entities := true;
     using update_procedures: All_Game_System_Updates;
 }
 
@@ -272,16 +272,13 @@ ENGINE_TESTS :: Engine_Test.[
 #load "allocation/allocation.jai";
 #load "math/math.jai";
 #load "input/input.jai";
+#load "entity/entity.jai";
 // #load "animation/animation.jai";
 
 // single-file loads
-#load "entity.jai";
-#load "entity_components.jai";
 #load "array.jai";
 #load "camera.jai";
 #load "color.jai";
-#load "component.jai";
-#load "component_loops.jai";
 #load "compression.jai";
 #load "config.jai";
 #load "encode_text.jai";

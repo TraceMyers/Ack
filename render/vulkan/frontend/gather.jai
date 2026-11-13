@@ -36,7 +36,7 @@ Draw_Section :: struct {
 Instance_Data :: struct {
     transform:                   Matrix4;
     inverse_transpose_transform: Matrix4;
-    entity_id:                   u64; // Gen_ID.index of the instance's entity (generation dropped, must fit in 32 bits)
+    entity_id:                   u64; // Entity_ID.index of the instance's entity (generation dropped, must fit in 32 bits)
     joint_offset:                s32 = -1;
     draw_fx:                     Draw_FX;
 }

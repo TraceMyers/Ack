@@ -155,6 +155,45 @@ get_struct_field :: (s: *$struct_type, $field_type: Type) -> *field_type {
     }
 }
 
+collect_offsets :: (struct_type: *Type_Info, field_type: *Type_Info) -> []int {
+    assert(struct_type.type == .STRUCT);
+    
+    TInfo_Stack_Item :: struct {
+        info: *Type_Info_Struct;
+        field: int;
+        offset: int;
+    };
+
+    stack   := make_dynamic_array(TInfo_Stack_Item, 8,, temp);
+    offsets := make_dynamic_array(int, 8,, temp);
+    array_add(*stack, {struct_type, 0, 0});
+
+    cur_offset: int;
+
+    while stack.count > 0 {
+        item := *stack[stack.count-1];
+        if item.field >= item.info.members.count {
+            cur_offset -= item.offset;
+            stack.count -= 1;
+            continue;
+        }
+
+        field_info := item.info.members[item.field];
+        item.field += 1;
+
+        if field_info.type == field_type {
+            array_add(*offsets, field_info.offset_in_bytes + cur_offset);
+        }
+
+        if field_info.type.type == .STRUCT {
+            array_add(*stack, {cast(*Type_Info_Struct) field_info, 0, field_info.offset_in_bytes});
+            cur_offset += field_info.offset_in_bytes;
+        }
+    }
+
+    return offsets;
+}
+
 // because T2 == *T1 is valid syntax in only one situation I've seen.
 type_2_is_pointer_to_type_1 :: (T1: Type, T2: Type) -> bool {
     tinfo_ptr := cast(*Type_Info_Pointer) T2;
