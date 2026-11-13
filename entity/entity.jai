@@ -49,7 +49,7 @@ Transform_Attach_Ruleset :: struct {
 }
 
 make_entity :: inline ($E: Type) -> *E {
-    return xx make_entity_get_instance(T);
+    return xx make_entity_get_instance(T).data;
 }
 
 make_entity_get_instance :: inline ($E: Type) -> Component_Instance {
