@@ -136,7 +136,7 @@ get_transform_no_scale :: (component: *$C/Component, tform: *Transform_No_Scale)
     }
 }
 
-get_position :: (component: *$T) -> Vector3 
+get_position :: (component: *$C/Component) -> Vector3 
 #modify { 
     return T != Physics_Body;
 } {
@@ -145,7 +145,7 @@ get_position :: (component: *$T) -> Vector3
     return tform.position;
 }
 
-get_orientation :: (component: *$T) -> Quaternion {
+get_orientation :: (component: *$C/Component) -> Quaternion {
     IS_ANY_SPATIAL :: #run component_has_position_and_orientation(C);
 
     orientation: Quaternion = ---;
@@ -168,7 +168,7 @@ get_orientation :: (component: *$T) -> Quaternion {
     return orientation;
 }
 
-get_scale :: (component: *$T) -> Vector3 {
+get_scale :: (component: *$C/Component) -> Vector3 {
     IS_ANY_SPATIAL :: #run component_has_position_and_orientation(C);
 
     scale: Vector3 = ---;
@@ -192,7 +192,7 @@ get_scale :: (component: *$T) -> Vector3 {
 
 }
 
-get_axes :: inline (component: *$T) -> x: Vector3, y: Vector3, z: Vector3 {
+get_axes :: inline (component: *$C/Component) -> x: Vector3, y: Vector3, z: Vector3 {
     x, y, z: Vector3 = ---;
     calculate_axes(get_orientation(component), *x, *y, *z);
     return x, y, z;
