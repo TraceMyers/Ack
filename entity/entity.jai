@@ -88,25 +88,6 @@ destroy_entity :: (entity: *Entity, depth := 0) {
     remove_component({entity, entity.id});
 }
 
-make_spatial_entity :: (owner: *Entity = null) -> *Entity {
-    e := make_entity(owner);
-    add_component(e, Transform);
-    return e;
-}
-
-make_physical_entity :: (physics_template: string, owner: *Entity = null) -> *Entity {
-    e := make_spatial_entity(owner);
-    add_component(e, Physics_Body);
-    init_physics_body(e, physics_template);
-    return e;
-}
-
-make_physical_entity_with_input :: (physics_template: string, owner: *Entity = null) -> *Entity {
-    e := make_physical_entity(physics_template, owner);
-    add_component(e, Input);
-    return e;
-}
-
 is_entity :: inline (id: Component_ID, $check_null := true) -> bool {
     #if check_null {
         if is_null(id) {
