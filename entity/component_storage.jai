@@ -121,14 +121,14 @@ init :: (using storage: *Component_Storage, $T: Type, component_handling: Compon
 }
 
 get_component :: inline (id: CID, $T: Type) -> *T {
-    return cast(*T) get_component_data(id);
+    return cast(*T) get_component_opaque(id);
 }
 
-get_component_data :: inline (id: CID) -> *void {
-    return get_component_data(*engine.components[id.type_handle], id.index, id.generation);
+get_component_opaque :: inline (id: CID) -> *void {
+    return get_component_opaque(*engine.components[id.type_handle], id.index, id.generation);
 }
 
-get_component_data :: inline (using storage: *Component_Storage, slot_index: int, generation: u16) -> *void {
+get_component_opaque :: inline (using storage: *Component_Storage, slot_index: int, generation: u16) -> *void {
     if slot_index < 0 return null;
     index := to_component_storage_index(slot_index);
     if index.chunk >= chunks.count return null;
@@ -188,7 +188,7 @@ add_component :: (using storage: *Component_Storage, owner_id: CID) -> Component
 }
 
 remove_component :: (id: CID, allow_shrink := true) {
-    inst := Component_Instance.{get_component_data(id), id};
+    inst := Component_Instance.{get_component_opaque(id), id};
     remove_component(inst, allow_shrink);
 }
 
@@ -204,7 +204,7 @@ remove_component :: (inst: Component_Instance, allow_shrink := true) {
     // ----------
 
     // a stale or null id would otherwise remove whatever currently lives in that slot
-    if get_component_data(inst.id) == null {
+    if get_component_opaque(inst.id) == null {
         engine_check(false, "tried to remove a stale or null component id: %", inst.id);
         return;
     }
@@ -301,13 +301,14 @@ init_engine_default_entity_components :: () {
     null_handle := add_component_type(void);
     engine_check(null_handle == 0);
 
+    stable_component_flags := DEFAULT_COMPONENT_HANDLING_FLAGS | .STABLE_ID;
+
     // stable ids so body indexes stored in the contact grid never move
-    physics_body_handle = add_component_type(Physics_Body, init_handling = DEFAULT_COMPONENT_HANDLING_FLAGS | .STABLE_ID, deinit=xx deinit_physics_body);
+    physics_body_handle = add_component_type(Physics_Body, init_handling=stable_component_flags, deinit=xx deinit_physics_body);
 
     add_component_type(Static_Mesh_Instance);
     add_component_type(Skeletal_Mesh_Instance);
-    add_component_type(Input);
-    add_component_type(Camera);
+    add_component_type(Camera, stable_component_flags);
 }
 
 // module scope: component_loops.jai uses the slot/list helpers below

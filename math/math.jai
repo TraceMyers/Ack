@@ -13,6 +13,7 @@
 #load "trigonometry_and_exponentials.jai";
 #load "vector.jai";
 #load "frustum.jai";
+// #load "rect.jai";
 
 math_test :: () -> bool {
     near :: (a: float64, b: float64, tolerance := 0.0001) -> bool {

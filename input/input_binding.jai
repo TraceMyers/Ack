@@ -13,7 +13,6 @@ Controller :: struct {
     right_trigger_deadzone := 0.3;
     left_gamepad_stick_deadzone  := 0.3;
     right_gamepad_stick_deadzone := 0.3;
-    look_smooth_speed := 50.0;
 }
 
 make_controller :: (set_active: bool) -> *Controller, id: int {
@@ -25,6 +24,20 @@ make_controller :: (set_active: bool) -> *Controller, id: int {
         engine.input.active_controller = controller_id;
     }
     return controller, controller_id;
+}
+
+// if -1 gets active_controller
+get_controller :: (id := -1) -> *Controller {
+    use_id: int;
+    if id == -1 {
+        if engine.input.active_controler == -1 {
+            return null;
+        }
+        id = engine.input.active_controller;
+    } else {
+        use_id = id;
+    }
+    return *engine.controllers[id];
 }
 
 Input_Type :: enum u16 {

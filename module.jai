@@ -138,6 +138,7 @@ game_engine_loop :: () {
 
     while !engine.settings.quit {
         reset_temporary_storage();
+        flip_ui();
 
         update_game_system(engine.settings.input_update);
         // if the window is already closed, then we need to quit right away

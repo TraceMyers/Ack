@@ -94,6 +94,14 @@ struct Line_Vertex {
     vec4 color;
 };
 
+struct Quad_Vertex {
+    vec2  position;
+    vec2  dimensions;
+    vec2  uv;
+    vec4  color;
+    float rounding;
+};
+
 // mirrors Static_Mesh_Vertex
 struct Static_Mesh_Vertex {
     vec3 position;
@@ -131,17 +139,19 @@ layout(buffer_reference, scalar, buffer_reference_align=4) readonly buffer Mater
 layout(buffer_reference, scalar, buffer_reference_align=4) readonly buffer Static_Vertices_Ref  { Static_Mesh_Vertex   v[]; };
 layout(buffer_reference, scalar, buffer_reference_align=4) readonly buffer Skinned_Vertices_Ref { Skeletal_Mesh_Vertex v[]; };
 layout(buffer_reference, scalar, buffer_reference_align=4) readonly buffer Line_Vertices_Ref    { Line_Vertex          v[]; };
+layout(buffer_reference, scalar, buffer_reference_align=4) readonly buffer Quad_Vertices_Ref    { Quad_Vertex          v[]; };
 
 // ----------------------------------------------- universal bindings
 
 // mirrors Push_Constants
-layout(push_constant, scalar) uniform Push_Constants {
-    Frame_Ref     frame;
-    Sections_Ref  sections;
-    Instances_Ref instances;
-    Joints_Ref    joints;
-    Materials_Ref materials;
-    Line_Vertices_Ref vertices;
+layout(push_constant, scalar) uniform Push_Constants { // max 128
+    Frame_Ref     frame;                // 8
+    Sections_Ref  sections;             // 16
+    Instances_Ref instances;            // 24
+    Joints_Ref    joints;               // 32
+    Materials_Ref materials;            // 40
+    Line_Vertices_Ref line_vertices;    // 48
+    Quad_Vertices_Ref quad_vertices;    // 56
 } pc;
 
 #define frame (pc.frame.data)

@@ -48,6 +48,7 @@ begin_upload :: () {
 end_upload :: () -> bool {
     using engine.renderer;
     render_check(uploads.recording, "end_upload called without begin_upload");
+
     uploads.recording = false;
     cmd := uploads.command_buffer;
 
@@ -65,8 +66,10 @@ end_upload :: () -> bool {
 
     cmd_info    := VkCommandBufferSubmitInfo.{commandBuffer = cmd};
     submit_info := VkSubmitInfo2.{commandBufferInfoCount = 1, pCommandBufferInfos = *cmd_info};
+
     if !render_evaluate(vkQueueSubmit2(graphics_queue, 1, *submit_info, uploads.fence), "failed to submit uploads") then return false;
     if !render_evaluate(vkWaitForFences(logical_device.obj, 1, *uploads.fence, VK_TRUE, U64_MAX), "failed waiting for uploads") then return false;
+    
     vkResetFences(logical_device.obj, 1, *uploads.fence);
 
     gpu_linear_allocator_reset(*uploads.staging_allocator);

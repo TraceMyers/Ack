@@ -21,7 +21,6 @@ backend_create_renderer :: () -> bool {
     bcr_try(create_pipelines());
 
     init_success = true;
-
     return true;
 }
 

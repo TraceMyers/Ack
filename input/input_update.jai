@@ -85,7 +85,7 @@ update_input :: () {
         }
     });
 
-    mouse_cursor_pos.x, mouse_cursor_pos.y = get_mouse_cursor_position();
+    mouse_cursor_pos.x, mouse_cursor_pos.y = get_mouse_cursor_position(false);
     
     engine.settings.quit |= should_quit;
 }

@@ -2,6 +2,7 @@
 case "VULKAN";
     #load "vulkan/vulkan.jai";
 }
+#load "ui/ui.jai";
 
 Renderer :: struct {
     // modify data here and the renderer will react on update.
@@ -25,6 +26,8 @@ Renderer :: struct {
     // copied into renderer post-creation. provided for read-only reference. modifying it 
     // doesn't do anything.
     creation_settings: Renderer_Creation_Settings;
+
+    ui: UI;
 }
 
 Renderer_Creation_Settings :: struct {
@@ -86,7 +89,7 @@ Renderer_Per_Frame_Input :: struct {
     global_shader_time: float32;
     global_shader_delta_time: float32;
 
-    camera_info: Camera_Info;
+    camera_info: Camera_Basic;
     camera_position: Vector3;
     camera_orientation: Quaternion;
     light_direction := Vector3.{0, 0, -1};
@@ -174,7 +177,6 @@ update_renderer :: () {
     render_frame();
     reset_frame_draws();
 }
-
 
 compile_shaders :: () -> success: bool {
     using engine;

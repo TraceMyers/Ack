@@ -14,7 +14,7 @@ Instanced_Mesh :: struct {
 // lives on the renderer (engine.renderer.meshes)
 Managed_Meshes :: struct {
     path_lookup_table: Table(string, Mesh_Ref);
-    instanced_meshes: Pool(Instanced_Mesh) = .{track_generation = true};
+    instanced_meshes: Pool(Instanced_Mesh) = {track_generation = true};
     animation_instances: Pool(Skeletal_Mesh_Animation_Instance);
     draw_fxs: Pool(Draw_FX);
 }
@@ -230,7 +230,7 @@ load_mesh :: (path: string, renderer: *Renderer, set_mesh_path_on_load := true) 
             transforms_pos := read_s32(file, *pos);
             transforms, transforms_type := alloc_or_look_up_buffer(file, transforms_pos, true);
             engine_check(transforms_type == .JOINT_TRANSFORM);
-            animation.transforms = cast,force([]Joint_Transform) transforms;
+            animation.transforms = cast,force([]Transform) transforms;
 
             engine_check(animation.transforms.count == animation.timestamps.count * mesh.skeleton.joints.count);
         }

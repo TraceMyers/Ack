@@ -18,8 +18,8 @@ get_duration :: inline (animation: *Skeletal_Animation) -> float {
     } else return 0;
 }
 
-get_joint_transforms :: inline (skeleton: *Skeleton, animation: *Skeletal_Animation, frame: int) -> []Joint_Transform {
-    transforms: []Joint_Transform;
+get_joint_transforms :: inline (skeleton: *Skeleton, animation: *Skeletal_Animation, frame: int) -> []Transform {
+    transforms: []Transform;
     start_index     := frame * skeleton.joints.count;
     transforms.data  = animation.transforms.data + start_index;
     transforms.count = skeleton.joints.count;
@@ -31,7 +31,7 @@ free_pose :: (pose: *Skeletal_Pose) {
     pose.* = {};
 }
 
-make_transform_matrix :: inline (joint_transform: Joint_Transform) -> Matrix4 {
+make_transform_matrix :: inline (joint_transform: Transform) -> Matrix4 {
     return make_transform_matrix(joint_transform.translation, joint_transform.rotation, joint_transform.scale);
 }
 
@@ -53,7 +53,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
     }
     if blends.count > 0 then engine_check(abs(blend_alpha_sum - 1.0) < 0.0001);
 
-    allocation_size := (size_of(Joint_Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
+    allocation_size := (size_of(Transform) + (size_of(Matrix4) * 2)) * skeleton.joints.count;
     joint_count     := skeleton.joints.count;
     
     if pose.allocation.count != allocation_size {
@@ -65,7 +65,7 @@ make_pose :: (pose: *Skeletal_Pose, skeleton: *Skeleton, blends: []Skeletal_Anim
 
     pose.local_joints.data     = xx pose.allocation.data;
     pose.local_joints.count    = joint_count;
-    pose.model_joints.data     = xx ((cast(*u8) pose.local_joints.data) + size_of(Joint_Transform) * joint_count);
+    pose.model_joints.data     = xx ((cast(*u8) pose.local_joints.data) + size_of(Transform) * joint_count);
     pose.model_joints.count    = joint_count;
     pose.skinning_joints.data  = xx ((cast(*u8) pose.model_joints.data) + size_of(Matrix4) * joint_count);
     pose.skinning_joints.count = joint_count;
@@ -159,6 +159,6 @@ Per_Animation_Data :: struct {
     next_timestamp: float32;
     anim_alpha: float32;
     blend_alpha: float32;
-    prev_frame_transforms: []Joint_Transform;
-    next_frame_transforms: []Joint_Transform;
+    prev_frame_transforms: []Transform;
+    next_frame_transforms: []Transform;
 }

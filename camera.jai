@@ -5,7 +5,8 @@ Camera_Projection :: enum {
     ORTHOGRAPHIC;
 }
 
-Camera_Info :: struct {
+// fundamental non-spatial parameters of a 3d camera
+Camera_Basic :: struct {
     projection := Camera_Projection.PERSPECTIVE;
     orthographic_scale := 1.0;
     perspective_vertical_fov := 80.0; // degrees
@@ -14,9 +15,63 @@ Camera_Info :: struct {
     far_plane  := 10_000.0;
 }
 
+// camera component that can be attached to an entity for higher-level features
+Camera :: struct {
+    using #as base: Spatial_Component;
+    using basic: Camera_Basic;
 
-get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which := enum { X_OVER_Y; Y_OVER_X; }.X_OVER_Y) -> float {
-    if which == .X_OVER_Y {
+    rotation_axis: Vector3;
+    rotation_speed: float32;
+    rotation_speed_target: float32;
+
+    // radians per second per unit input.
+    rotation_acceleration := 1.5;
+    look_up_degree_limit := 85.0;
+}
+
+Camera_Aspect_Ratio :: enum { X_OVER_Y; Y_OVER_X; }
+
+// procedures have a Camera_Basic proc version and *Camera (entity component) proc version,
+// depending on if you need more or less controls
+
+// --- *Camera ---
+
+get_camera_aspect_ratio :: inline (camera: *Camera, which_ratio := Camera_Aspect_Ratio.X_OVER_Y) -> float {
+    return get_camera_aspect_ratio(camera.basic, get_viewport(), which_ratio);
+}
+
+get_camera_perspective_horizontal_fov :: inline (camera: *Camera) -> float {
+    return get_camera_perspective_horizontal_fov(camera.basic, get_viewport());
+}
+
+make_camera_view_matrix :: inline (camera: *Camera) -> Matrix4 {
+    return make_camera_view_matrix(camera.position, camera.orientation);
+}
+
+make_camera_projection_matrix :: (camera: *Camera) -> Matrix4 {
+    return make_camera_projection_matrix(camera.basic, get_viewport());
+}
+
+transform_to_clip_coordinates :: inline (camera: *Camera, point: Vector3) -> Vector4 {
+    return transform_to_clip_coordinates(camera.basic, camera.position, camera.orientation, get_viewport(), point);
+}
+
+get_camera_ray_passing_through_mouse_cursor :: inline (camera: *Camera) -> origin: Vector3, direction: Vector3, success: bool {
+    return get_camera_ray_passing_through_mouse_cursor(camera.basic, camera.position, camera.orientation, get_viewport(), window);
+}
+
+get_camera_ray_passing_through_window_position :: inline (camera: *Camera, window_pos: Vector2) -> origin: Vector3, direction: Vector3 {
+    return get_camera_ray_passing_through_window_position(camera.basic, camera.position, camera.orientation, get_viewport(), window_pos);
+}
+
+get_window_position_from_camera_ray :: inline (camera: *Camera, ray: Vector3) -> window_pos: Vector2 {
+    return get_window_position_from_camera_ray(camera.basic, camera.position, camera.orientation, get_viewport(), ray);
+}
+
+// --- Camera_Basic ---
+
+get_camera_aspect_ratio :: (using camera: Camera_Basic, viewport: Vector2, which_ratio := Camera_Aspect_Ratio.X_OVER_Y) -> float {
+    if which_ratio == .X_OVER_Y {
         engine_check(viewport.y > 0);
         return ifx aspect_ratio == 0.0 then viewport.x / viewport.y else aspect_ratio;
     } else {
@@ -25,7 +80,7 @@ get_camera_aspect_ratio :: (using camera: Camera_Info, viewport: Vector2, which 
     }
 }
 
-get_camera_perspective_horizontal_fov :: (using camera: Camera_Info, viewport: Vector2) -> float {
+get_camera_perspective_horizontal_fov :: (using camera: Camera_Basic, viewport: Vector2) -> float {
     d := tan(camera.perspective_vertical_fov * 0.5 * (PI / 180.0));
     aspect := get_camera_aspect_ratio(camera, viewport);
     return 2 * atan(aspect * d) * (180.0 / PI);
@@ -47,11 +102,8 @@ make_camera_view_matrix :: (camera_center: Vector3, camera_orientation: Quaterni
     return view;
 }
 
-// z_min and z_max can be utilized to compress the projection into only some portion of z-space.
-// this could be used to, say, render the game with z in (0, 0.95) and the UI with z in (0.95 to 1).
-// note that z_max corresponds to the near plane and z_min corresponds to the far plane. this
-// strategy reduces z fighting for the bulk of things, since most things in view tend to be far away.
-make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2, z_min := 0.0, z_max := 1.0) -> Matrix4 {
+// 
+make_camera_projection_matrix :: (using camera: Camera_Basic, viewport: Vector2, z_min := 0.0, z_max := 1.0) -> Matrix4 {
     aspect := get_camera_aspect_ratio(camera, viewport);
     inv_plane_to_plane := 1 / (far_plane - near_plane);
     half_vertical_angle_radians := PI / 180 * perspective_vertical_fov * 0.5;
@@ -105,7 +157,7 @@ make_camera_projection_matrix :: (using camera: Camera_Info, viewport: Vector2, 
 }
 
 // breaking projection into steps and putting it on cpu for debug
-transform_to_clip_coordinates :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector4 {
+transform_to_clip_coordinates :: (using camera: Camera_Basic, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, point: Vector3) -> Vector4 {
     view_mat := make_camera_view_matrix(camera_center, camera_orientation);
     projection_mat := make_camera_projection_matrix(camera, viewport);
     view_coords := view_mat * Vector4.{xyz=point,w=1};
@@ -116,8 +168,8 @@ transform_to_clip_coordinates :: (using camera: Camera_Info, camera_center: Vect
 // returns the ray passing through the camera's near plane at the location of the 
 // mouse cursor. origin is camera center if projection is perspective. if orthographic, the origin
 // is the point on the camera plane at the mouse cursor location.
-get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window: Window_Type) -> origin: Vector3, direction: Vector3, success: bool {
-    cursor_pos_x, cursor_pos_y, success := Window_Creation.get_mouse_pointer_position(window, false);
+get_camera_ray_passing_through_mouse_cursor :: (using camera: Camera_Basic, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2) -> origin: Vector3, direction: Vector3, success: bool {
+    cursor_pos_x, cursor_pos_y := get_mouse_cursor_position(true);
     if success {
         origin, direction := get_camera_ray_passing_through_window_position(camera, camera_center, camera_orientation, viewport, {xx cursor_pos_x, xx cursor_pos_y});
         return origin, direction, true;
@@ -129,7 +181,7 @@ get_camera_ray_passing_through_mouse_pointer_position :: (using camera: Camera_I
 // returns the ray passing through the camera's near plane at the given window position.
 // origin is camera center if projection is perspective. if orthographic, the origin
 // is the point on the camera plane at the given window position.
-get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2) -> origin: Vector3, direction: Vector3 {
+get_camera_ray_passing_through_window_position :: (using camera: Camera_Basic, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, window_pos: Vector2) -> origin: Vector3, direction: Vector3 {
     engine_check(viewport.x > 0);
     engine_check(viewport.y > 0);
     engine_check(is_normalized(camera_orientation), level=.HIGH);
@@ -168,7 +220,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Info, ca
 }
 
 // ray doesn't have to be normalized (?)
-get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
+get_window_position_from_camera_ray :: (using camera: Camera_Basic, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
     engine_check(is_normalized(camera_orientation), level=.HIGH);
 
     camera_axis_fore  := rotate(WORLD_AXIS_FORE, camera_orientation);
@@ -215,35 +267,6 @@ get_window_position_from_camera_ray :: (using camera: Camera_Info, camera_center
         return viewport_pos;
     }
 }
-
-Draw_Plane :: struct {
-    centerline_distance: float;    
-    half_plane_height: float;
-    half_plane_width:  float;
-}
-
-make_draw_plane :: (camera: Camera_Info, viewport: Vector2, distance: float) -> Draw_Plane {
-    engine_check(viewport.x > 0);
-    engine_check(viewport.y > 0);
-
-    draw_plane := Draw_Plane.{centerline_distance=distance}; 
-    vt_fov := camera.perspective_vertical_fov;
-    hz_fov := get_camera_perspective_horizontal_fov(camera, viewport);
-    draw_plane.half_plane_height = distance * tan(0.5 * vt_fov * (PI / 180));
-    draw_plane.half_plane_width  = distance * tan(0.5 * hz_fov * (PI / 180));
-    return draw_plane;
-}
-
-// 0,0 -> bottom left
-get_point_on_draw_plane :: (draw_plane: Draw_Plane, camera: Camera_Info, camera_center: Vector3, camera_fore: Vector3, camera_up: Vector3, norm_point: Vector2) -> Vector3 {
-    engine_check(is_normalized(camera_fore), level=.HIGH);
-    engine_check(is_normalized(camera_up), level=.HIGH);
-    engine_check(is_normalized(norm_point), level=.HIGH);
-
-    camera_right := cross(camera_up, camera_fore);
-    return camera_center + camera_fore * draw_plane.centerline_distance - camera_right * ((norm_point.x-0.5) * 2 * draw_plane.half_plane_width) + camera_up * ((norm_point.y-0.5) * 2 * draw_plane.half_plane_height);
-}
-
 
 #scope_module
 

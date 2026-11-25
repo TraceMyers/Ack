@@ -45,6 +45,7 @@ render_frame :: () -> bool {
     frame_data := write_frame_data(frame, .{xx extent.width, xx extent.height});
     mesh_draws := prepare_mesh_draws(frame);
     line_draws := prepare_line_draws(frame);
+    quad_vertices, quad_vertex_count := prepare_quad_draws(frame);
 
     cmd := frame.command_buffer;
     vkResetCommandBuffer(cmd, 0);
@@ -96,15 +97,25 @@ render_frame :: () -> bool {
     constants: Push_Constants;
     constants.frame     = gpu_address(frame_data);
     constants.materials = gpu_address(materials_buffer);
-    if mesh_draws.instances.allocator.proc != null then constants.instances = gpu_address(mesh_draws.instances);
-    if mesh_draws.joints.allocator.proc    != null then constants.joints    = gpu_address(mesh_draws.joints);
-    if line_draws.vertices.allocator.proc  != null then constants.vertices  = gpu_address(line_draws.vertices);
+
+    if mesh_draws.instances.allocator.proc != null {
+        constants.instances = gpu_address(mesh_draws.instances);
+    }
+    if mesh_draws.joints.allocator.proc != null {
+        constants.joints = gpu_address(mesh_draws.joints);
+    }
+    if line_draws.vertices.allocator.proc != null {
+        constants.line_vertices = gpu_address(line_draws.vertices);
+    }
+    if quad_vertices.allocator.proc != null {
+        constants.quad_vertices = gpu_address(quad_vertices);
+    }
 
     // each layer after the first one drawn starts with a clear depth buffer, so it draws over
     // everything before it
     drew_a_layer := false;
     for layer : DRAW_LAYER_ORDER {
-        if !layer_has_draws(layer, *mesh_draws, *line_draws) {
+        if !layer_has_draws(layer, mesh_draws, *line_draws) {
             continue;
         }
         if drew_a_layer {
@@ -112,10 +123,12 @@ render_frame :: () -> bool {
         }
         drew_a_layer = true;
 
-        draw_mesh_buckets(cmd, *mesh_draws, layer, .STATIC,   pipelines[Graphics_Pipeline.OPAQUE_STATIC_MESH],   *constants);
-        draw_mesh_buckets(cmd, *mesh_draws, layer, .SKELETAL, pipelines[Graphics_Pipeline.OPAQUE_SKELETAL_MESH], *constants);
-        draw_line_batches(cmd, *line_draws, layer, *constants);
+        draw_mesh_buckets(cmd, mesh_draws, layer, .STATIC,   pipelines[Graphics_Pipeline.OPAQUE_STATIC_MESH],   *constants);
+        draw_mesh_buckets(cmd, mesh_draws, layer, .SKELETAL, pipelines[Graphics_Pipeline.OPAQUE_SKELETAL_MESH], *constants);
+        draw_line_batches(cmd, line_draws, layer, *constants);
     }
+
+    draw_quads(cmd, quad_vertex_count, *constants);
 
     vkCmdEndRendering(cmd);
 
@@ -184,7 +197,7 @@ write_frame_data :: (frame: *GPU_Frame, viewport: Vector2) -> GPU_Buffer {
     return buffer;
 }
 
-layer_has_draws :: (layer: Draw_Layer, mesh_draws: *Mesh_Draws, line_draws: *Line_Draws) -> bool {
+layer_has_draws :: (layer: Draw_Layer, mesh_draws: Mesh_Draws, line_draws: *Line_Draws) -> bool {
     for mesh_draws.buckets {
         if it.layer == layer && it.draw_count > 0 return true;
     }
@@ -201,7 +214,7 @@ clear_depth :: (cmd: VkCommandBuffer, extent: VkExtent2D) {
     vkCmdClearAttachments(cmd, 1, *clear, 1, *rect);
 }
 
-draw_mesh_buckets :: (cmd: VkCommandBuffer, mesh_draws: *Mesh_Draws, layer: Draw_Layer, type: Mesh_Type, pipeline: VkPipeline, constants: *Push_Constants) {
+draw_mesh_buckets :: (cmd: VkCommandBuffer, mesh_draws: Mesh_Draws, layer: Draw_Layer, type: Mesh_Type, pipeline: VkPipeline, constants: *Push_Constants) {
     using engine.renderer;
     bound := false;
 
@@ -223,7 +236,7 @@ draw_mesh_buckets :: (cmd: VkCommandBuffer, mesh_draws: *Mesh_Draws, layer: Draw
     }
 }
 
-draw_line_batches :: (cmd: VkCommandBuffer, line_draws: *Line_Draws, layer: Draw_Layer, constants: *Push_Constants) {
+draw_line_batches :: (cmd: VkCommandBuffer, line_draws: Line_Draws, layer: Draw_Layer, constants: *Push_Constants) {
     using engine.renderer;
     bound := false;
 
@@ -242,4 +255,16 @@ draw_line_batches :: (cmd: VkCommandBuffer, line_draws: *Line_Draws, layer: Draw
     if bound {
         vkCmdSetLineWidth(cmd, 1);
     }
+}
+
+draw_quads :: (cmd: VkCommandBuffer, vertex_count: int, constants: *Push_Constants) {
+    using engine.renderer;
+
+    if vertex_count <= 0 {
+        return;
+    }
+
+    vkCmdBindPipeline(cmd, .GRAPHICS, pipelines[Graphics_Pipeline.COLOR_QUAD]);
+    push_constants(cmd, constants);
+    vkCmdDraw(cmd, xx vertex_count, 1, 0, 0);
 }

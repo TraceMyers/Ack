@@ -14,7 +14,7 @@ get_plane :: (frustum: *View_Frustum, plane: View_Frustum.Plane) -> *Vector4 {
     return *frustum.planes[plane];
 }
 
-make_view_frustum :: (camera: Camera_Info, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2) -> View_Frustum {
+make_view_frustum :: (camera: Camera_Basic, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2) -> View_Frustum {
     engine_check(is_normalized(camera_orientation), level=.HIGH);
 
     camera_axis_fore  := rotate(WORLD_AXIS_FORE, camera_orientation);

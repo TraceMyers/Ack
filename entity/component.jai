@@ -24,32 +24,12 @@ Transform_No_Scale :: struct {
     orientation: Quaternion;
 }
 
-Input :: struct {
-    using #as base: Component;
-    move: Vector2;
-    received_move_input_last_physics_step: bool;
-    last_nonzero_move_input: Vector2;
-
-    look: Vector2i;
-    look_smoothed: Vector2;
-}
-
-Camera :: struct {
-    using #as base: Spatial_Component;
-    using info: Camera_Info;
-
-    translation_speed := 1.0;
-    rotation_speed := 2.5;
-    look_up_degree_limit := 85.0;
-
-    free_fly_toggle: bool;
-}
 
 get_parent :: (component: *$C/Component) -> *Entity {
     if is_null(component.parent) {
         return null;
     }
-    return cast(*Entity) get_component_data(component.parent);
+    return cast(*Entity) get_component_opaque(component.parent);
 }
 
 // try to cast component to type C. null if failure. if 'exact_match', then

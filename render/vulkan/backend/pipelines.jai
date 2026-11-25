@@ -5,6 +5,7 @@ Graphics_Pipeline :: enum {
     OPAQUE_LINE;
     TRANSPARENT_LINE;
     DEPTH_VISUALIZATION;
+    COLOR_QUAD;
 }
 
 GRAPHICS_PIPELINE_COUNT :: #run enum_highest_value(Graphics_Pipeline) + 1;
@@ -12,12 +13,13 @@ GRAPHICS_PIPELINE_COUNT :: #run enum_highest_value(Graphics_Pipeline) + 1;
 // pushed to every pipeline. each field is a device address (see gpu_address). mirrored by the
 // push_constant block in shaders/src/header.glsl.
 Push_Constants :: struct {
-    frame:     VkDeviceAddress; // *Frame_Data
-    sections:  VkDeviceAddress; // *[]Draw_Section, indexed by gl_DrawID. changes per indirect draw.
-    instances: VkDeviceAddress; // *[]Instance_Data, indexed by gl_InstanceIndex
-    joints:    VkDeviceAddress; // *[]Matrix4
-    materials: VkDeviceAddress; // *[]GPU_Material
-    vertices:  VkDeviceAddress; // *[]Line_Vertex
+    frame:         VkDeviceAddress; // *Frame_Data
+    sections:      VkDeviceAddress; // *[]Draw_Section, indexed by gl_DrawID. changes per indirect draw.
+    instances:     VkDeviceAddress; // *[]Instance_Data, indexed by gl_InstanceIndex
+    joints:        VkDeviceAddress; // *[]Matrix4
+    materials:     VkDeviceAddress; // *[]GPU_Material
+    line_vertices: VkDeviceAddress; // *[]Line_Vertex
+    quad_vertices: VkDeviceAddress; // *[]Quad_Vertex;
 }
 
 #run assert(size_of(Push_Constants) <= 128, "vulkan only guarantees 128 bytes of push constants");
@@ -42,16 +44,19 @@ create_pipelines :: () -> bool {
         pushConstantRangeCount = 1,
         pPushConstantRanges    = *push_range
     };
+
     if !render_evaluate(vkCreatePipelineLayout(logical_device.obj, *layout_info, null, *pipeline_layout), "failed to create the pipeline layout") then return false;
 
-    pipelines[Graphics_Pipeline.OPAQUE_STATIC_MESH]   = build_pipeline("static mesh",   "mesh_vert",         "mesh_frag");
+    pipelines[Graphics_Pipeline.OPAQUE_STATIC_MESH]   = build_pipeline("static mesh", "mesh_vert", "mesh_frag");
     pipelines[Graphics_Pipeline.OPAQUE_SKELETAL_MESH] = build_pipeline("skeletal mesh", "skinned_mesh_vert", "mesh_frag");
     // lines blend so that colors with alpha < 255 are see-through
-    pipelines[Graphics_Pipeline.OPAQUE_LINE]          = build_pipeline("line",          "line_vert",         "line_frag", .LINE_LIST, blend=true);
+    pipelines[Graphics_Pipeline.OPAQUE_LINE]          = build_pipeline("line", "line_vert", "line_frag", .LINE_LIST, blend=true);
+    pipelines[Graphics_Pipeline.COLOR_QUAD]           = build_pipeline("quad", "rounded_color_quad_vert", "rounded_color_quad_frag", blend=true, depth_test=false);
 
-    for pipeline : Graphics_Pipeline.[.OPAQUE_STATIC_MESH, .OPAQUE_SKELETAL_MESH, .OPAQUE_LINE] {
+    for pipeline : Graphics_Pipeline.[.OPAQUE_STATIC_MESH, .OPAQUE_SKELETAL_MESH, .OPAQUE_LINE, .COLOR_QUAD] {
         if pipelines[pipeline] == null return false;
     }
+
     return true;
 }
 
@@ -59,7 +64,7 @@ create_pipelines :: () -> bool {
 
 // depth tested, drawn into the render target. vertices are pulled in the vertex shader, so
 // there's no vertex input state.
-build_pipeline :: (name: string, vertex_shader: string, fragment_shader: string, topology := VkPrimitiveTopology.TRIANGLE_LIST, blend := false) -> VkPipeline {
+build_pipeline :: (name: string, vertex_shader: string, fragment_shader: string, topology := VkPrimitiveTopology.TRIANGLE_LIST, blend := false, depth_test := true) -> VkPipeline {
     using engine.renderer;
 
     vert := create_shader_module(vertex_shader);
@@ -89,11 +94,21 @@ build_pipeline :: (name: string, vertex_shader: string, fragment_shader: string,
         rasterizationSamples = ._1_BIT,
         minSampleShading     = 1.0,
     };
-    depth_stencil := VkPipelineDepthStencilStateCreateInfo.{
-        depthTestEnable  = VK_TRUE,
-        depthWriteEnable = VK_TRUE,
-        depthCompareOp   = .GREATER, // 1=near, 0=far
-    };
+
+    depth_stencil: VkPipelineDepthStencilStateCreateInfo;
+    if depth_test {
+        depth_stencil = { 
+            depthTestEnable  = VK_TRUE,
+            depthWriteEnable = VK_TRUE,
+            depthCompareOp   = .GREATER, // 1=near, 0=far
+        };
+    } else {
+        depth_stencil = { 
+            depthTestEnable  = VK_FALSE,
+            depthWriteEnable = VK_FALSE,
+        };
+    }
+
     blend_attachment := VkPipelineColorBlendAttachmentState.{
         colorWriteMask      = .R_BIT | .G_BIT | .B_BIT | .A_BIT,
         blendEnable         = xx blend,

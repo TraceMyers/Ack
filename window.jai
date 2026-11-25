@@ -71,7 +71,7 @@ make_window_take_focus :: () {
     }
 }
 
-get_mouse_cursor_position :: (window_relative := false) -> x: s32, y: s32 {
+get_mouse_cursor_position :: (window_relative: bool) -> x: s32, y: s32 {
     x, y: s32;
     #if OS == .WINDOWS {
         pos: Win32.POINT;
@@ -87,7 +87,7 @@ get_mouse_cursor_position :: (window_relative := false) -> x: s32, y: s32 {
     return x, y;
 }
 
-set_mouse_cursor_position :: (x: s32, y: s32, window_relative := false) {
+set_mouse_cursor_position :: (x: s32, y: s32, window_relative: bool) {
     use_x, use_y := x, y;
 
     if window_relative {

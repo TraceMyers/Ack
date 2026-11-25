@@ -36,7 +36,7 @@ Draw_Section :: struct {
 Instance_Data :: struct {
     transform:                   Matrix4;
     inverse_transpose_transform: Matrix4;
-    entity_id:                   u64; // CID.index of the instance's entity (generation dropped, must fit in 32 bits)
+    entity_id:                   u64;
     joint_offset:                s32 = -1;
     draw_fx:                     Draw_FX;
 }
@@ -71,8 +71,8 @@ prepare_mesh_draws :: (frame: *GPU_Frame) -> Mesh_Draws {
     if range_count <= 0 {
         return mesh_draws;
     }
-    counts := NewArray(range_count, s32,, temp); // visible instances per range
-    starts := NewArray(range_count, s32,, temp); // first instance per range, then the fill cursor
+    counts := make_static_array(s32, range_count,, temp); // visible instances per range
+    starts := make_static_array(s32, range_count,, temp); // first instance per range, then the fill cursor
 
     // first pass: cull and count, so every array can be allocated at its exact size
     instance_count, joint_count: int;

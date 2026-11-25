@@ -5,7 +5,7 @@ Skeletal_Animation :: struct {
     name:        string;
     timestamps:  []float32;
     // skeleton joint_count * timestamps.count
-    transforms:  []Joint_Transform; 
+    transforms:  []Transform; 
     // if true, translation and scale = lerp, rotation = slerp; otherwise, teleport
     interpolate: bool;  
     speed: float; // todo: delete

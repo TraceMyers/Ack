@@ -5,6 +5,7 @@
 Frame_Draws :: struct {
     lines:       [..]Line_Draw;
     timed_lines: [..]Timed_Line_Draw;
+    quads:       [..]Quad_Vertex;
 }
 
 Line_Draw :: struct {
@@ -23,6 +24,52 @@ Timed_Line_Draw :: struct {
 // draw_in_front puts a debug draw in LAYER_1, so it draws over everything
 in_front_layer :: inline (draw_in_front: bool) -> Draw_Layer {
     return ifx draw_in_front then .LAYER_1 else .GAME;
+}
+
+// -----------------------------------------------------------------------------------
+// ----------------------------------------------------------------------------- quads
+
+// get normalized device coordinates
+ndc :: inline (window_pos: Vector2) -> ndc_pos: Vector2 {
+    norm_pos := window_pos / get_window_viewport();
+    return norm_pos * 2 - 1;
+}
+
+draw_quad_2d :: (upper_left: Vector2, lower_right: Vector2, color: Color4f, rounding_factor := 0.0, size_dependent_rounding := true) {
+    using engine.renderer;
+
+    REFERENCE_CORNER_RADIUS :: 48.0; // todo: resolution dependent?
+    REFERENCE_MIN_DIMENSION :: 1000.0;
+
+    uv_ul := Vector2.{};
+    uv_lr := lower_right - upper_left;
+    uv_ur := Vector2.{uv_lr.x, uv_ul.y};
+    uv_ll := Vector2.{uv_ul.x, uv_lr.y};
+    min_dim := min(uv_lr.x, uv_lr.y);
+
+    rounding: float = ---;
+
+    if size_dependent_rounding {
+        size_factor := min_dim * (1.0 / REFERENCE_MIN_DIMENSION);
+        // haven't investigated why, but having rounding decrease by half the relative size delta
+        // looks best to my eyes. 
+        rounding = 0.5 * (1 + size_factor) * rounding_factor * REFERENCE_CORNER_RADIUS;
+    } else {
+        rounding = rounding_factor * REFERENCE_CORNER_RADIUS;
+    }
+
+    ndc_ul := ndc(upper_left);
+    ndc_lr := ndc(lower_right);
+    ndc_ur := Vector2.{ndc_lr.x, ndc_ul.y};
+    ndc_ll := Vector2.{ndc_ul.x, ndc_lr.y};
+
+    array_add(*draws.quads, Quad_Vertex.{ndc_ul, uv_lr, uv_ul, color, rounding});
+    array_add(*draws.quads, Quad_Vertex.{ndc_lr, uv_lr, uv_lr, color, rounding});
+    array_add(*draws.quads, Quad_Vertex.{ndc_ll, uv_lr, uv_ll, color, rounding});
+
+    array_add(*draws.quads, Quad_Vertex.{ndc_ul, uv_lr, uv_ul, color, rounding});
+    array_add(*draws.quads, Quad_Vertex.{ndc_ur, uv_lr, uv_ur, color, rounding});
+    array_add(*draws.quads, Quad_Vertex.{ndc_lr, uv_lr, uv_lr, color, rounding});
 }
 
 // -----------------------------------------------------------------------------------
@@ -281,6 +328,7 @@ draw_particle :: (draw: Particle_Draw) {
 reset_frame_draws :: () {
     using engine.renderer;
     array_reset_keeping_memory(*draws.lines);
+    array_reset_keeping_memory(*draws.quads);
     for *draws.timed_lines {
         it.time_remaining -= unscaled_delta_time;
         if it.time_remaining <= 0 {

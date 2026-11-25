@@ -145,24 +145,24 @@ Joint :: struct {
     name:               string;
     parent:             s16;  // -1 = root
     inverse_bind_pose:  Matrix4;
-    local_rest_pose:    Joint_Transform;
+    local_rest_pose:    Transform;
 }
 
-Joint_Transform :: struct {
-    translation: Vector3;
-    rotation:    Quaternion;
-    scale:       Vector3;
+Skeletal_Socket :: struct {
+    joint_index: s16 = -1;
+    offset: Transform_No_Scale;
 }
 
 Skeleton :: struct {
     joints:     []Joint;
     animations: []Skeletal_Animation;
     joint_name_hashes: []u32;
+    sockets: [..]Skeletal_Socket;
 }
 
 Skeletal_Pose :: struct {
     allocation:      []u8;
-    local_joints:    []Joint_Transform;
+    local_joints:    []Transform;
     model_joints:    []Matrix4;    // local accumulated down the hierarchy
     skinning_joints: []Matrix4;    // world * inverse_bind_pose, uploaded to gpu
 }
@@ -185,18 +185,20 @@ Skeletal_Mesh_Animation_Instance :: struct {
     prev:      s32 = -1;
 }
 
-Mesh_Attachment :: struct {
+Socket_Attachment :: struct {
+    // todo:
+    // socket: s32 = -1;
+    // skeletal_instance_ref: Component_Ref;
+    skeletal_mesh_joint: s16 = NO_JOINT;
     translation: Vector3;
     rotation: Quaternion;
-    scale := Vector3.{1,1,1};
-    skeletal_mesh_joint: s16 = NO_JOINT; 
+    scale: Vector3;
 }
 
 Mesh_Instance :: struct {
-    // mesh instances are components. they draw at their owning entity's transform (plus attachment).
-    using #as component_base: Component;
+    using #as base: Scalable_Spatial_Component;
     ref: Mesh_Ref;
-    attachment: Mesh_Attachment;
+    attachment: Socket_Attachment;
     // index into the managed meshes' fx. see add_draw_fx.
     draw_fx: s32 = -1;
     layer: Draw_Layer;
@@ -212,7 +214,7 @@ Mesh_Instance :: struct {
 Static_Mesh_Instance :: Mesh_Instance;
 
 Skeletal_Mesh_Instance :: struct {
-    using #as base: Mesh_Instance; 
+    using #as mesh_base: Mesh_Instance; 
     // points to a single entry in world.skeletal_mesh_animation_instances
     idle: s32 = -1;
     // points to the first entry in this mesh's linked list of animations within world.skeletal_mesh_animation_instances
@@ -277,6 +279,12 @@ Buffer_Type :: enum s32 {
     NONE :: S32_MAX;
 }
 
+add_socket :: (skeleton: *Skeleton, socket: Skeletal_Socket) -> int {
+    index := sockets.count;
+    array_add(*skeleton.sockets, socket);
+    return index;
+}
+
 #scope_module
 
 read_u16     :: #bake_arguments read_primitive(T=u16);
@@ -333,7 +341,7 @@ read_joint :: inline (joint: *Joint, file: string, location: *int) {
     read_joint_transform(*joint.local_rest_pose, file, location);
 }
 
-read_joint_transform :: inline (tform: *Joint_Transform, file: string, location: *int) {
+read_joint_transform :: inline (tform: *Transform, file: string, location: *int) {
     tform.translation = read_vector3(file, location);
     tform.rotation    = xx,force read_vector4(file, location);
     tform.scale       = read_vector3(file, location);
@@ -460,11 +468,11 @@ alloc_buffer :: (file: string, start_pos: int, self_allocation: bool) -> []u8, B
             read_mesh_skinned_vertex(v, file, *pos);
         }
     case .JOINT_TRANSFORM;
-        engine_check(size_of_one_item == size_of(Joint_Transform));
+        engine_check(size_of_one_item == size_of(Transform));
         bytes = xx,force ifx self_allocation
-            then allocate_self_array(Joint_Transform, count)
-            else make_static_array(Joint_Transform, count);
-        transforms := cast,force([]Joint_Transform) bytes;
+            then allocate_self_array(Transform, count)
+            else make_static_array(Transform, count);
+        transforms := cast,force([]Transform) bytes;
         for *t : transforms {
             read_joint_transform(t, file, *pos);
         }

@@ -7,14 +7,12 @@
 
 Example_Entity :: struct {
     using #as base: Entity;
-    input: *Input;
     camera: *Camera;
     child: *Example_Child_Entity;
 }
 
 Example_Child_Entity :: struct {
     using #as base: Entity;
-    input: *Input;
     physics: *Physics_Body;
 }
 

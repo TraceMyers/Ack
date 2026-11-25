@@ -13,7 +13,12 @@ Entity :: struct {
 
 Component_Allocation :: struct {
     id: CID;
-    offset_to_pointer: s32;
+    offset_to_pointer: s32 = -1;
+}
+
+Component_Ref :: struct {
+    parent: CID;
+    offset_to_pointer: s32 = -1;
 }
 
 Entity_Flags :: enum_flags {
@@ -58,8 +63,8 @@ make_entity_get_instance :: inline ($E: Type) -> Component_Instance {
 destroy_entity :: (entity: *Entity, depth := 0) {
     engine_check(depth < MAX_RECURSION_DEPTH, "potential infinite recursion detected");
 
-    // top-level call on an owned entity: remove it from its parent first. (deeper calls
-    // don't bother, since the parent is being destroyed too.)
+    // if this is the first call (recursion depth == 0) then detach from
+    // the parent. if not, no need to detach since everybody is getting freed anyway.
     if depth == 0 {
         parent := get_parent(entity);
         if parent != null {
@@ -96,7 +101,7 @@ get_entity :: (id: CID) -> *Entity {
         return null;
     }
     engine_check(is_entity(id, false));
-    return cast(*Entity) get_component_data(id);
+    return cast(*Entity) get_component_opaque(id);
 }
 
 get_entity :: (id: CID, $T: Type) -> *T {
@@ -357,6 +362,27 @@ get_components :: (entity: *$E/Entity, $C: Type) ->[]*C {
         components.count = 0;
     }
     return components;
+}
+
+// alternative to CID, you can reference a component via its entity owner.
+// not as ideal since you have to do the lookup through the entity, but
+// if the component doesn't have stable IDs it's the only way to keep a reference to the component.
+get_component_ref :: (entity: *Entity, ptr_on_entity: **$C/Component) -> Component_Ref {
+    engine_check(ptr_on_entity.* != null);
+    ptr_offset := get_component_pointer_offset_validated(entity, ptr_on_entity);
+    return {entity.id, ptr_offset};
+}
+
+get_component_opaque :: inline (ref: Component_Ref) -> *void {
+    entity := get_entity(ref.parent);
+    if entity == null {
+        return null;
+    }
+    return (cast(**void) (cast(*u8) entity + ref.offset_to_pointer)).*;
+}
+
+get_component :: inline (ref: Component_Ref, $T: Type) -> *T {
+    return cast_component(get_component_opaque(ref), T);
 }
 
 #scope_file

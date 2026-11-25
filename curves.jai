@@ -109,7 +109,7 @@ apply_sawtooth_curve :: (alpha: float, x_min := 0.0, x_max := 0.999999, y_offset
 }
 
 // todo: make a universal curve palette that 1. applies to any engine float field (including user-made interfaces) and many under-the-hood float values and 2. you can call up the interface whenever and apply your interactions (curve selection + params) to whatever you like in code.
-use_curve_palette :: (window: Window_Type, renderer: *Renderer, camera_info: Camera_Info, camera_position: Vector3, camera_orientation: Quaternion, viewport: Vector2, time: float, screen_portion_max := 0.4) -> float {
+use_curve_palette :: (window: Window_Type, renderer: *Renderer, camera_info: Camera_Basic, camera_position: Vector3, camera_orientation: Quaternion, viewport: Vector2, time: float, screen_portion_max := 0.4) -> float {
     if viewport.x == 0 || viewport.y == 0 {
         engine_warning("viewport = % both components must be nonzero", viewport, flags=.VERBOSE_ONLY);
         return 0;
@@ -201,7 +201,7 @@ use_curve_palette :: (window: Window_Type, renderer: *Renderer, camera_info: Cam
             }
 
             raycast_result: Raycast_Result_Simple;
-            _, pointer_ray := get_camera_ray_passing_through_mouse_pointer_position(camera_info, camera_position, camera_orientation, viewport, window);
+            _, pointer_ray := get_camera_ray_passing_through_mouse_cursor(camera_info, camera_position, camera_orientation, viewport, window);
             if raycast_rectangle(*raycast_result, camera_position, pointer_ray, (ll + ur) * 0.5, length(lr-ll) * 0.5, length(ul-ll) * 0.5, right_dir, up_dir, -fore_dir) {
                 draw_line(ul, ur, COLOR4B_WHITE, 3);
                 draw_line(ur, lr, COLOR4B_WHITE, 3);
