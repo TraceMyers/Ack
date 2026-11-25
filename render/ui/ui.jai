@@ -1,10 +1,14 @@
 #load "rect.jai";
 #load "color_rect.jai";
 
+Rect_UI_Style :: struct {
+    color: Color4f;
+    rounding: float;
+    padding: [4]float;
+}
+
 UI_Style :: struct {
-    rect_color: Color4f;
-    rect_rounding: float;
-    rect_padding: [4]float;
+    rect: Rect_UI_Style;
 }
 
 UI_Style_Memory :: struct {
@@ -13,41 +17,33 @@ UI_Style_Memory :: struct {
     bytes:  [16]u8;
 }
 
-// style memories type-strip and just store plain bytes when style vars are pushed.
-// this checks to make sure that style memories are always large enough to contain
-// a style push.
-#run {
-    for member : (cast(*Type_Info_Struct) type_info(UI_Style)).members {
-        assert(member.type.runtime_size <= UI_Style_Memory.bytes.count);
-    }
-}
-
 UI :: struct {
     rect_stack: [..]Rect;
-    resize_rect_stack: [..]Push_Rect_Args;
+    dynamic_rect_stack: [..]Dynamic_Rect_Args;
     style: UI_Style;
     style_memories: [..]UI_Style_Memory;
 }
 
-push_ui_style :: ($name: string, value: $T) {
+scope_push_ui_style :: ($path: string, value: $T) #expand {
+    push_ui_style(path, value);
+    `defer pop_ui_style();
+}
+
+push_ui_style :: ($path: string, value: $T) {
+    #assert(size_of(T) <= UI_Style_Memory.bytes.count);
+
     using engine.renderer.ui;
 
-    offset, size :: #run -> u16, u16 {
-        for member : (cast(*Type_Info_Struct) type_info(UI_Style)).members {
-            if member.name == name {
-                assert(member.type == type_info(T), "value type % doesn't match expected type % for var named %", T, (cast(*Type) *member.type).*, member.name);
-                return xx member.offset_in_bytes, xx member.type.runtime_size;
-            }
-        }
-        assert(false, "failed to find field %: % in UI_Style", name, T);
-        return 0, 0;
-    };
+    // note the intentional limitation to keep UI_Style from becoming deep:
+    // paths to fields can be no deeper than two steps beyond ui.style, e.g. ui.style.rect.color;
+    offset :: #run find_field_offset(type_info(UI_Style), path, type_info(T), 2);
+    #assert(offset >= 0);
 
     memory := array_add(*style_memories);
     memory.offset = offset;
-    memory.size   = size;
-    memcpy(memory.bytes.data, (cast(*u8) *style) + offset, size);
-    memcpy((cast(*u8) *style) + offset, cast(*u8) *value, size);
+    memory.size   = size_of(T);
+    memcpy(memory.bytes.data, (cast(*u8) *style) + offset, size_of(T));
+    memcpy((cast(*u8) *style) + offset, cast(*u8) *value, size_of(T));
 }
 
 pop_ui_style :: (pop_count := 1) {
@@ -68,7 +64,7 @@ pop_ui_style :: (pop_count := 1) {
 flip_ui :: () {
     using engine.renderer.ui;
     rect_stack.count = 0;
-    resize_rect_stack.count = 0;
+    dynamic_rect_stack.count = 0;
     // i think it's ok to have a style memory stack with stuff in it at the top of the frame,
     // but maybe just check it's not leaking with a basic sanity check
     engine_check(style_memories.count < 3_000);

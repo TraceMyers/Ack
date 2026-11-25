@@ -218,10 +218,44 @@ is_subtype_of :: (info: *Type_Info, base: *Type_Info) -> bool {
     return false;
 }
 
+// recursively search for a field within a struct and retrieve its offset.
+// does not dive into pointers, because that jumps to another hypothetical place in memory,
+// invalidating the offset calculation.
+// if returns -1, no matching field was found.
+find_field_offset :: (struct_type: *Type_Info, field_path: string, field_type: *Type_Info, max_depth := S64_MAX) -> int {
+    Find_Offset :: struct { 
+        path: string; 
+        type: *Type_Info; 
+        offset: int = -1; 
+        found: bool; 
+    };
+    data := Find_Offset.{path=field_path, type=field_type};
+
+    visitor := (visit: *Struct_Visit, data: *Find_Offset) -> Struct_Visitor_Command {
+        log("path: %, data path: %", view_string(visit.path), data.path);
+        if view_string(visit.path) == data.path && visit.member.type == data.type {
+            data.found = true;
+            data.offset = 0;
+            for visit.parent_stack {
+                if it.member {
+                    data.offset += xx it.member.offset_in_bytes;
+                }
+            }
+            data.offset += xx visit.member.offset_in_bytes;
+            return .EXIT;
+        }
+        return .PUSH_MEMBER_OR_CONTINUE;
+    }
+
+    struct_visit(struct_type, *data, xx visitor, {visit_pointers=false, max_depth=max_depth});
+    return data.offset;
+}
+
 Struct_Visit_Item :: struct {
     data: *u8;
     info: *Type_Info;
     member: *Type_Info_Struct_Member;
+    pointer: *Type_Info_Pointer; // only set if this is a pointer field
     iter_index: int;
     iter_index_matching_options: int;
 }
@@ -242,38 +276,68 @@ Struct_Visitor_Command :: enum {
 Struct_Visitor :: #type (visit_data: *Struct_Visit, user_data: *void) -> command: Struct_Visitor_Command;
 
 Struct_Visit_Options :: struct {
-    visit_pointers      := true;
+    visit_pointers := true;
     visit_only_non_null_pointers := true;
-    visit_procedures    := false;
-    visit_constants     := false;
-    visit_overlays      := false;
+    visit_procedures := false;
+    visit_constants := false;
+    visit_overlays := false;
+    max_depth := S64_MAX;
 }
 
-struct_visit :: (struct_data: *$T, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options = {}) {
+// version 1 of struct visit = traverse a struct's type using an instance of the struct.
+// while traversing the type you can query the instance.
+struct_visit :: (struct_data: *$T, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options = {}) #modify { return T != Type_Info; } {
     parent_stack: [..]Struct_Visit_Item;
-    parent_stack.allocator = temp;
+    if #compile_time {
+        parent_stack.allocator = temp;
+    }
     array_reserve(*parent_stack, 16);
 
     cur_parent_tinfo := cast(*Type_Info_Struct) type_info(T);
     engine_check(cur_parent_tinfo.type == .STRUCT);
-    array_add(*parent_stack, {xx struct_data, cur_parent_tinfo, null, 0, 0});
+    array_add(*parent_stack, {xx struct_data, cur_parent_tinfo, null, null, 0, 0});
     
-    struct_visit_impl(*parent_stack, user_data, visitor, options);
+    struct_visit_impl(*parent_stack, user_data, visitor, options, true);
+}
+
+// version 2 of struct visit = traverse a struct's type without any struct data.
+// no instance to query while traversing the type.
+// options.visit_only_non_null_pointers is ignored in this variant.
+struct_visit :: (struct_type: *Type_Info, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options = {}) {
+    parent_stack: [..]Struct_Visit_Item;
+    if #compile_time {
+        parent_stack.allocator = temp;
+    }
+    array_reserve(*parent_stack, 16);
+    
+    engine_check(struct_type.type == .STRUCT);
+    array_add(*parent_stack, {null, struct_type, null, null, 0, 0});
+
+    struct_visit_impl(*parent_stack, user_data, visitor, options, false);
 }
 
 #scope_module
 
 // reducing code bloat by doing this part without generics
-struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options) {
-
+struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data: *void, visitor: Struct_Visitor, options: Struct_Visit_Options, valid_data: bool) {
     path: String_Stack;
     init(*path);
     defer free_stack(*path);
 
     while parent_stack.count > 0 {
-
         cur_parent := *parent_stack.*[parent_stack.count-1];
         cur_parent_info := cast(*Type_Info_Struct) cur_parent.info;
+
+        if cur_parent.iter_index == cur_parent_info.members.count {
+            parent_stack.count -= 1;
+            if path.sizes.count > 0 {
+                pop(*path);
+            } else {
+                engine_check(parent_stack.count == 0);
+            }
+            continue;
+        }
+
         command: Struct_Visitor_Command = .CONTINUE;
 
         while cur_parent.iter_index < cur_parent_info.members.count {
@@ -291,17 +355,25 @@ struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data:
             }
 
             use_info := member.type;
-            member_data := cur_parent.data + member.offset_in_bytes;
+            member_data: *u8;
+            if valid_data {
+                member_data = cur_parent.data + member.offset_in_bytes;
+            }
 
+            pointer_info: *Type_Info_Pointer;
             if use_info.type == .POINTER {
                 if !options.visit_pointers {
                     continue;
                 }
-                use_info    = (cast(*Type_Info_Pointer) use_info).pointer_to;
-                member_data = (cast(**u8) member_data).*;
 
-                if options.visit_only_non_null_pointers && member_data == null {
-                    continue;
+                pointer_info = cast(*Type_Info_Pointer) use_info;
+                use_info = pointer_info.pointer_to;
+
+                if valid_data {
+                    member_data = (cast(**u8) member_data).*;
+                    if options.visit_only_non_null_pointers && member_data == null {
+                        continue;
+                    }
                 }
             }
 
@@ -316,7 +388,7 @@ struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data:
                 defer pop(*path);
 
                 visit_data := Struct_Visit.{
-                    item = {xx member_data, use_info, member, 0, 0},
+                    item = {xx member_data, use_info, member, pointer_info, 0, 0},
                     parent_stack = parent_stack.*,
                     path = *path
                 };
@@ -326,24 +398,19 @@ struct_visit_impl :: no_inline (parent_stack: *[..]Struct_Visit_Item, user_data:
 
             if command == {
             case .PUSH_MEMBER_OR_CONTINUE;
-                if use_info.type == .STRUCT && member_data != null {
-                    array_add(parent_stack, {member_data, use_info, member, 0, 0});
-                    push(*path, ".%", member.name);
+                if parent_stack.count < options.max_depth && use_info.type == .STRUCT && (!valid_data || member_data != null) {
+                    if path.sizes.count == 0 {
+                        push(*path, "%", member.name);
+                    } else {
+                        push(*path, ".%", member.name);
+                    }
+                    array_add(parent_stack, {member_data, use_info, member, pointer_info, 0, 0});
                     break;
                 }
             case .POP_PARENT;
                 break;
             case .EXIT;
                 return;
-            }
-        }
-
-        if command == .POP_PARENT || cur_parent.iter_index == cur_parent_info.members.count {
-            parent_stack.count -= 1;
-            if path.sizes.count > 0 {
-                pop(*path);
-            } else {
-                engine_check(parent_stack.count == 0);
             }
         }
     }

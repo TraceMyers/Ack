@@ -35,12 +35,12 @@ Rect :: struct {
     #overlay(dimensions.y)      height: float;
 }
 
-Push_Rect_Args :: struct {
-    _anchor:  Vector2;
-    _pivot:   Vector2;
-    dims:    Rect_Vector;
-    offset:  Vector2;
-    padding: [4]float;
+Composite_Rect_Args :: struct {
+    _anchor:    Vector2;
+    _pivot:     Vector2;
+    dims:       Rect_Vector;
+    offset:     Vector2;
+    padding:    [4]float;
 }
 
 Rect_Vector :: struct {
@@ -61,17 +61,23 @@ all_pad :: (value := 0.0) -> [4]float #expand {
     return .[value, value, value, value];
 }
 
+get_rect_high_water_mark :: () -> int {
+    top_rect();
+    return engine.renderer.ui.rect_stack.count - 1;
+}
+
+set_rect_high_water_mark :: (i: int) {
+    engine_check(i >= 0 && i < engine.renderer.ui.rect_stack.count);
+    engine.renderer.ui.rect_stack.count = i + 1;
+}
+
+auto_reset_rect_hwm :: () #expand {
+    hwm := get_rect_high_water_mark();
+    defer `set_rect_high_water_mark(hwm);
+}
 
 push_rect :: (_anchor: Vector2, _pivot: Vector2, dims: Rect_Vector, offset := Vector2.{}, padding := float.[0,0,0,0]) -> Rect {
     using engine.renderer.ui;
-
-    // if resize_rect_stack.count > 0 {
-    //     array_add(*resize_rect_stack, {_anchor, _pivot, dims, offset, padding});
-    //     temp_stack := resize_rect_stack;
-    //     resize_rect_stack.count = 0;
-    //     push_composite_rect(..temp_stack);
-    //     return top_rect();
-    // }
 
     parent := top_rect();
     anchored_position, parent_padded_ul, parent_padded_dims := apply_anchor(parent, _anchor);
@@ -107,14 +113,10 @@ push_rect :: (_anchor: Vector2, _pivot: Vector2, dims: Rect_Vector, offset := Ve
     return new_rect;
 }
 
-push_resize_rect :: (_anchor:  Vector2, _pivot: Vector2, offset := Vector2.{}, padding := float.[0,0,0,0]) {
-    array_add(*engine.renderer.ui.resize_rect_stack, {_anchor, _pivot, {}, offset, padding});
-}
-
-// push a stack of rects at once, ignoring the 'dims' field of all but the last one.
+// push a stack of rects at once, the final rect's dimensions being passed separately
 // each former rect will resize to fit its child. in other words, the final
 // rect has a fixed size and the rest are dynamically sized.
-push_composite_rect :: (arg_stack: ..Push_Rect_Args) -> Rect {
+push_composite_rect :: (last_rect_dimensions: Vector2, arg_stack: ..Dynamic_Rect_Args) -> Rect {
     engine_check(arg_stack.count > 0);
     engine_check(arg_stack[arg_stack.count-1].dims.type == .PIXEL);
 

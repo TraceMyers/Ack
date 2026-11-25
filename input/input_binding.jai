@@ -15,7 +15,7 @@ Controller :: struct {
     right_gamepad_stick_deadzone := 0.3;
 }
 
-make_controller :: (set_active: bool) -> *Controller, id: int {
+make_controller :: (set_active: bool) -> id: int {
     controller_id := pool_borrow(*engine.input.controllers);
     controller    := *engine.input.controllers[controller_id];
     controller.any_input_bindings_at_key_code = make_bit_array(enum_highest_value(Key_Code) + 1);
@@ -23,7 +23,7 @@ make_controller :: (set_active: bool) -> *Controller, id: int {
     if set_active {
         engine.input.active_controller = controller_id;
     }
-    return controller, controller_id;
+    return controller_id;
 }
 
 // if -1 gets active_controller
@@ -76,7 +76,7 @@ to_gamepad_code :: inline (key_code: Key_Code) -> gamepad_code: Gamepad_Code, is
 }
 
 set_gamepad_input_binding :: (gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := CID.{}) {
-    set_gamepad_input_binding(0, gamepad_code, input_type, proc, entity_id);
+    set_gamepad_input_binding(engine.input.active_controller, gamepad_code, input_type, proc, entity_id);
 }
 
 set_gamepad_input_binding :: (controller_id: int, gamepad_code: Gamepad_Code, input_type: Input_Type, proc: $proc_type, entity_id := CID.{}) {
@@ -84,7 +84,7 @@ set_gamepad_input_binding :: (controller_id: int, gamepad_code: Gamepad_Code, in
 }
 
 set_input_binding :: (key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := CID.{}) {
-    set_input_binding(0, key_code, input_type, proc, entity_id);
+    set_input_binding(engine.input.active_controller, key_code, input_type, proc, entity_id);
 }
 
 set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := CID.{}) {
@@ -160,13 +160,15 @@ set_input_binding :: (controller_id: int, key_code: Key_Code, input_type: Input_
 set_input_binding_impl :: (controller_id: int, key_code: Key_Code, input_type: Input_Type, proc: $proc_type, entity_id := CID.{}) {
     assert(proc != null);
 
+    use_controller_id := controller_id;
     if engine.input.controllers.items.count == 0 {
         engine_check(engine.input.active_controller == -1);
-        engine_check(controller_id == 0);
-        make_controller(true); // make the default controller at index 0
+        engine_check(controller_id == -1);
+        make_controller(true); // make a default controller at index 0
+        use_controller_id = engine.input.active_controller;
     }
 
-    using engine.input.controllers[controller_id];
+    using engine.input.controllers[use_controller_id];
 
     any_input_bindings_at_key_code[cast(int) key_code] = true;
     input_id := get_input_id(key_code, input_type);

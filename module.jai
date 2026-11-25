@@ -151,6 +151,8 @@ game_engine_loop :: () {
             execute_destroy_entities();
         }
     }
+
+    engine_log("engine.settings.quit = true. exiting.");
 }
 
 ack_engine_path :: () -> string {
