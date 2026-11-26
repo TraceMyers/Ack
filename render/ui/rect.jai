@@ -57,7 +57,7 @@ pad :: (left := 0.0, top := 0.0, right := 0.0, bottom := 0.0) -> [4]float #expan
     return .[left, top, right, bottom];
 }
 
-all_pad :: (value := 0.0) -> [4]float #expand {
+pad_all :: (value := 0.0) -> [4]float #expand {
     return .[value, value, value, value];
 }
 
@@ -118,36 +118,40 @@ push_rect :: (_anchor: Vector2, _pivot: Vector2, dims: Rect_Vector, offset := Ve
 // rect has a fixed size and the rest are dynamically sized.
 push_composite_rect :: (last_rect_dimensions: Vector2, arg_stack: ..Dynamic_Rect_Args) -> Rect {
     engine_check(arg_stack.count > 0);
-    engine_check(arg_stack[arg_stack.count-1].dims.type == .PIXEL);
 
     if arg_stack.count == 1 {
         using arg_stack[0];
-        return push_rect(_anchor, _pivot, dims, offset, padding);     
+        return push_rect(_anchor, _pivot, {last_rect_dimensions, .PIXEL}, offset, arg_stack[0].draw_style.padding);     
     }
 
     auto_release_temp();
     push_stack := array_copy(arg_stack,, temp);
+    dims       := make_static_array(Vector2, arg_stack.count,, temp);
+    dims[arg_stack.count-1] = last_rect_dimensions;
 
     for < 0..arg_stack.count-2 {
-        child  := push_stack[it+1];
-        parent := *push_stack[it];
+        child       := push_stack[it+1];
+        parent      := *push_stack[it];
+        child_dims  := *dims[it+1];
+        parent_dims := *dims[it];
+        parent_args := arg_stack[it];
 
         parent_inner_x := max(
-            safe_div((1-child._pivot.x) * child.dims.x + child.offset.x, 1-child._anchor.x, false),
-            safe_div(   child._pivot.x  * child.dims.x - child.offset.x, child._anchor.x,   false)
+            safe_div((1-child._pivot.x) * child_dims.x + child.offset.x, 1-child._anchor.x, false),
+            safe_div(   child._pivot.x  * child_dims.x - child.offset.x, child._anchor.x,   false)
         );
         parent_inner_y := max(
-            safe_div((1-child._pivot.y) * child.dims.y + child.offset.y, 1-child._anchor.y, false),
-            safe_div(   child._pivot.y  * child.dims.y - child.offset.y, child._anchor.y,   false)
+            safe_div((1-child._pivot.y) * child_dims.y + child.offset.y, 1-child._anchor.y, false),
+            safe_div(   child._pivot.y  * child_dims.y - child.offset.y, child._anchor.y,   false)
         );
 
-        parent.dims    = {{parent_inner_x, parent_inner_y}, .PIXEL};
-        parent.dims.x += parent.padding[0] + parent.padding[2];
-        parent.dims.y += parent.padding[1] + parent.padding[3];
+        parent_dims.*  = {parent_inner_x, parent_inner_y};
+        parent_dims.x += parent_args.draw_style.padding[0] + parent_args.draw_style.padding[2];
+        parent_dims.y += parent_args.draw_style.padding[1] + parent_args.draw_style.padding[3];
     }
 
     for push_stack {
-        push_rect(it._anchor, it._pivot, it.dims, it.offset, it.padding);
+        push_rect(it._anchor, it._pivot, {dims[it_index], .PIXEL}, it.offset, arg_stack[it_index].draw_style.padding);
     }
 
     return top_rect();

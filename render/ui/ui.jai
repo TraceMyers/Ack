@@ -42,8 +42,9 @@ push_ui_style :: ($path: string, value: $T) {
     memory := array_add(*style_memories);
     memory.offset = offset;
     memory.size   = size_of(T);
-    memcpy(memory.bytes.data, (cast(*u8) *style) + offset, size_of(T));
-    memcpy((cast(*u8) *style) + offset, cast(*u8) *value, size_of(T));
+    field_ptr  := cast(*T) ((cast(*u8) *style) + offset);
+    memcpy(memory.bytes.data, field_ptr, size_of(T));
+    field_ptr.* = value;
 }
 
 pop_ui_style :: (pop_count := 1) {

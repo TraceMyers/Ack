@@ -477,9 +477,9 @@ reverse_bytes :: inline (in: $T) -> T
     return out;
 }
 
-reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, size: s64) {
+reverse_bytes :: (bytes_out: *u8, bytes_in: *u8, $size: s64) {
     engine_check(size > 0);
-    if size == {
+    #if size == {
     case 1;
         bytes_out.* = bytes_in.*;
     case 2;

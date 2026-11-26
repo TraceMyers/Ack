@@ -20,7 +20,7 @@ init_render_text :: () -> bool {
 
 // loads most ttf and some otf font files. OpenType is a web of extensions to TrueType,
 // so they overlap extensively.
-// the whole-file checksum is not checked by default, because that would mean reordering and
+// the whole-file checksum is not checked by default, because that would mean
 // resumming every doubleword from head to tail in the file. every table already
 // has its own checksum, and every procedure should already be checking the validity
 // of memory ranges, so it is largely redundant. if the error you get back seems odd,
@@ -108,7 +108,7 @@ load_truetype_font_impl :: (font: *Font, fonts_relative_path: string, run_whole_
     // my directory leaves a lot of optional tables out, because don't need
     // table directories are supposed to be in a certain order, probably for
     // legacy speed reasons, but they were put in a confusing order. I reordered
-    // them so they are in the right processing order.
+    // them so they are in processing order.
     loading_font.table_directory = Table_Directory_Entry.[
         // font header
         {tag="head", proc=read_ttf_table_head, required=true},
@@ -197,7 +197,6 @@ load_truetype_font_impl :: (font: *Font, fonts_relative_path: string, run_whole_
         }
 
         table_data := array_view(as_array(font_data, u8), table.offset, table.length);
-
         checksum, success := calculate_ttf_checksum(table_data);
 
         if !success {
@@ -215,7 +214,7 @@ load_truetype_font_impl :: (font: *Font, fonts_relative_path: string, run_whole_
         }
         
         if table.tag == "head" {
-            // the header table's checksum is supposed to not include the 'checksum_adjustment' 
+            // the header table's checksum is supposed to exclude the 'checksum_adjustment' 
             // field, so that has to be treated specially.
             header_checksum := checksum - lf.header.checksum_adjustment;
             if header_checksum != table.checksum {
@@ -815,7 +814,55 @@ read_ttf_table_cmap :: (table_data: []u8, lf: *Loading_Font) -> bool {
 }
 
 read_ttf_table_glyf :: (table_data: []u8, lf: *Loading_Font) -> bool {
-    return false;
+    engine_check(lf.header.num_glyphs > 0);
+
+    for 0..lf.header.num_glyphs-1 {
+        glyph: []u8 = ---;
+        glyph.data  = *table_data[lf.glyph_offsets[it]];
+        glyph.count = lf.glyph_offsets[it+1] - lf.glyph_offsets[it];
+
+        s: Serializer;
+        initialize(*s, .READ, as_string(glyph), true);
+
+        // todo: put data somewheres
+        number_of_contours, x_min, y_min, x_max, y_max: u16 = ---;
+        ttf_try(read(*s, *number_of_contours));
+        ttf_try(read(*s, *x_min)); // lower left
+        ttf_try(read(*s, *y_min));
+        ttf_try(read(*s, *x_max)); // upper right
+        ttf_try(read(*s, *y_max));
+        
+        if number_of_contours >= 0 { // simple glyph description
+            if number_of_contours == 0 {
+                // according to ms docs, no more info is needed from glyf table
+                // data about how to operate on 'phantom points' may come from elsewhere,
+                // whatever that means.
+                // todo: ?
+                continue;
+            }
+
+            // probably not temp...
+            end_points := make_static_array(u16, number_of_contours,, temp);
+            ttf_try(read_array_data(*s, *end_points, end_points.count));
+
+            instruction_length: u16 = ---;
+            ttf_try(read(*s, *instruction_length));
+
+            // this shit is literally byte code that I guess is supposed
+            // to get passed into an interpreter defined either in the spec
+            // or in the font file itself..?
+            instructions: []u8;
+            if instruction_length > 0 {
+                instructions = make_static_array(u8, instruction_length,, temp);
+                ttf_try(read_array_data(*s, *instructions, instructions.count));
+            }
+
+            // this is the worst format I have ever experienced
+            
+        } else { // composite glyph description
+
+        }
+    }
 }
 
 read_ttf_table_name :: (table_data: []u8, lf: *Loading_Font) -> bool {
@@ -842,31 +889,23 @@ calculate_ttf_checksum :: (file_data: []u8) -> u32, bool {
     i: int;
     sum: u32;
     while i < file_data.count {
-        byte1, byte2, byte3, byte4: u32 = ---;
-        // big-endian to little-endian, accounting for padding at the end of the data
+        // big-endian to little-endian, accounting for variable padding at the end of the data
         remaining_count := file_data.count - i;
         if remaining_count >= 4 {
-            byte4 = file_data[i+0];
-            byte3 = file_data[i+1];
-            byte2 = file_data[i+2];
-            byte1 = file_data[i+3];
+            sum += (file_data[i+0] << 24) 
+                |  (file_data[i+1] << 16) 
+                |  (file_data[i+2] << 8) 
+                |  (file_data[i+3]);
         } else if remaining_count == 3 {
-            byte4 = 0;
-            byte3 = file_data[i+0];
-            byte2 = file_data[i+1];
-            byte1 = file_data[i+2];
+            sum += (file_data[i+0] << 16) 
+                |  (file_data[i+1] << 8) 
+                |  (file_data[i+2]);
         } else if remaining_count == 2 {
-            byte4 = 0;
-            byte3 = 0;
-            byte2 = file_data[i+0];
-            byte1 = file_data[i+1];
+            sum += (file_data[i+0] << 8) 
+                |  (file_data[i+1]);
         } else {
-            byte4 = 0;
-            byte3 = 0;
-            byte2 = 0;
-            byte1 = file_data[i+0];
+            sum += (file_data[i+0]);
         }
-        sum += (byte4 << 24) | (byte3 << 16) | (byte2 << 8) | byte1;
         i += 4;
     }
     return sum;

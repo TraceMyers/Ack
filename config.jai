@@ -4,7 +4,7 @@
 // usage:
 //
 // My_Config :: struct {
-//      clear_color := Color3f.{r=1};
+     // clear_color := Color3f.{r=1};
 // }
 // config_path := "path/to/config_file";
 //
@@ -37,8 +37,7 @@ save_config :: (filename: string, data: *$T) {
     save_data: Save_Data;
     save_data.file_builder.allocator = temp;
 
-    // not inlining to avoid code bloat
-    no_inline struct_visit(data, *save_data, xx save_config_visitor, VISIT_OPTIONS);
+    struct_visit(data, *save_data, xx save_config_visitor, VISIT_OPTIONS);
     write_entire_file(filename, *save_data.file_builder);
 }
 
@@ -54,7 +53,8 @@ load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, data
     data.* = {};
     data_init(data);
 
-    file_data, success := read_entire_file(filename,, temp);
+    // no inline to reduce code bloat
+    file_data, success := no_inline read_entire_file(filename,, temp);
     if !success {
         log("WARNING: file % not loaded. config file default initialized", filename);
         return .[];
@@ -62,10 +62,10 @@ load_config :: (filename: string, data: *$T, shrink_strings_buffer := true, data
     
     load_data: Load_Data;
     init(*load_data.table, 512,, temp);
-    no_inline parse_file(file_data, *load_data.table);
 
-    // not inlining to avoid code bloat
-    no_inline struct_visit(data, *load_data, xx load_config_visitor, VISIT_OPTIONS);
+    // no inline to reduce code bloat
+    no_inline parse_file(file_data, *load_data.table);
+    struct_visit(data, *load_data, xx load_config_visitor, VISIT_OPTIONS);
 
     if string_buffer.count > 0 {
         strings := make_static_array(u8, string_buffer.count);

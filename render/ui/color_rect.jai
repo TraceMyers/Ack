@@ -2,14 +2,23 @@ push_ui_rect :: (_anchor: Vector2, _pivot: Vector2, dims: Rect_Vector, offset: V
     using engine.renderer.ui;
 
     if dynamic_rect_stack.count > 0 {
-        // array_add(*dynamic_rect_stack, {_anchor, _pivot, dims, offset, padding, true});
-        // temp_stack := dynamic_rect_stack;
-        // dynamic_rect_stack.count = 0;
-        // push_composite_rect(..temp_stack);
+        engine_check(dims.type == .PIXEL);
 
-        // for 
+        prev_stack_size := engine.renderer.ui.rect_stack.count;
+        array_add(*dynamic_rect_stack, {_anchor, _pivot, offset, true, style.rect});
+        push_composite_rect(dims.vector, ..dynamic_rect_stack);
 
-        // return top_rect();
+        for 0..dynamic_rect_stack.count-1 {
+            if !dynamic_rect_stack[it].draw {
+                continue;
+            }
+            rect := engine.renderer.ui.rect_stack[prev_stack_size + it];
+            lower_right := rect.upper_left + rect.dimensions;
+            draw_quad_2d(rect.upper_left, lower_right, dynamic_rect_stack[it].draw_style.color, dynamic_rect_stack[it].draw_style.rounding);
+        }
+        dynamic_rect_stack.count = 0;
+
+        return top_rect();
     }
 
     rect        := push_rect(_anchor, _pivot, dims, offset, style.rect.padding);
@@ -44,7 +53,7 @@ Dynamic_Rect_Args :: struct {
 
 push_dynamic_ui_rect :: (_anchor: Vector2, _pivot: Vector2, offset: Vector2, draw := true) {
     using engine.renderer.ui;
-    array_add(*dymamic_rect_stack, {_anchor, _pivot, offset, draw, style.rect});
+    array_add(*dynamic_rect_stack, {_anchor, _pivot, offset, draw, style.rect});
 }
 
 push_dynamic_ui_rect :: inline (_anchor: Vector2, offset := Vector2.{}, draw := true) {

@@ -232,7 +232,6 @@ find_field_offset :: (struct_type: *Type_Info, field_path: string, field_type: *
     data := Find_Offset.{path=field_path, type=field_type};
 
     visitor := (visit: *Struct_Visit, data: *Find_Offset) -> Struct_Visitor_Command {
-        log("path: %, data path: %", view_string(visit.path), data.path);
         if view_string(visit.path) == data.path && visit.member.type == data.type {
             data.found = true;
             data.offset = 0;
@@ -254,8 +253,10 @@ find_field_offset :: (struct_type: *Type_Info, field_path: string, field_type: *
 Struct_Visit_Item :: struct {
     data: *u8;
     info: *Type_Info;
-    member: *Type_Info_Struct_Member;
-    pointer: *Type_Info_Pointer; // only set if this is a pointer field
+    // only set if this is a struct member field (so, for everything except parent_stack[0])
+    member: *Type_Info_Struct_Member; 
+    // only set if this is a pointer field
+    pointer: *Type_Info_Pointer; 
     iter_index: int;
     iter_index_matching_options: int;
 }

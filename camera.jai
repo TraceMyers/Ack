@@ -219,7 +219,7 @@ get_camera_ray_passing_through_window_position :: (using camera: Camera_Basic, c
     }
 }
 
-// ray doesn't have to be normalized (?)
+// ray doesn't have to be normalized I think (?)
 get_window_position_from_camera_ray :: (using camera: Camera_Basic, camera_center: Vector3, camera_orientation: Quaternion, viewport: Vector2, ray: Vector3) -> window_pos: Vector2 {
     engine_check(is_normalized(camera_orientation), level=.HIGH);
 
